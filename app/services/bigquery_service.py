@@ -4,8 +4,8 @@ from app.config.settings import settings
 
 
 class BigQueryService:
-    def __init__(self):
-        self._client = None
+    def __init__(self, client=None):
+        self._client = client
 
     @property
     def client(self):
@@ -20,8 +20,9 @@ class BigQueryService:
         query = "SELECT 1 AS connection_test"
 
         result = self.client.query(query).result()
+        row = next(result)
 
-        return next(result).connection_test == 1
+        return row.connection_test == 1
 
     def get_table_reference(self) -> str:
         project = settings.GOOGLE_CLOUD_PROJECT
@@ -34,3 +35,26 @@ class BigQueryService:
             )
 
         return f"{project}.{dataset}.{table}"
+
+    def get_table(self):
+        return self.client.get_table(
+            self.get_table_reference()
+        )
+
+    def get_sample_rows(self, limit: int = 5) -> list[dict]:
+        if limit < 1:
+            raise ValueError(
+                "El limite debe ser mayor que cero."
+            )
+
+        table = self.get_table()
+
+        rows = self.client.list_rows(
+            table,
+            max_results=limit,
+        )
+
+        return [
+            dict(row.items())
+            for row in rows
+        ]
