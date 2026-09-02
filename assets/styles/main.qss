@@ -1,0 +1,140 @@
+﻿QMainWindow {
+    background-color: #f5f7fa;
+}
+
+QWidget {
+    font-family: "Segoe UI";
+    font-size: 14px;
+    color: #202124;
+}
+
+#sidebar {
+    background-color: #111827;
+}
+
+#appTitle {
+    color: white;
+    font-size: 19px;
+    font-weight: 700;
+}
+
+#appSubtitle {
+    color: #9ca3af;
+    font-size: 11px;
+}
+
+#sidebarButton {
+    background-color: transparent;
+    color: #d1d5db;
+    border: none;
+    border-radius: 6px;
+    padding: 11px 14px;
+    text-align: left;
+}
+
+#sidebarButton:hover {
+    background-color: #1f2937;
+    color: white;
+}
+
+#sidebarButton:checked {
+    background-color: #374151;
+    color: white;
+    font-weight: 600;
+}
+
+#pageTitle {
+    font-size: 27px;
+    font-weight: 700;
+    color: #111827;
+}
+
+#pageSubtitle {
+    color: #6b7280;
+    font-size: 14px;
+}
+
+#dashboardCard {
+    background-color: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+}
+
+#cardTitle {
+    color: #6b7280;
+    font-size: 13px;
+}
+
+#cardValue {
+    color: #111827;
+    font-size: 28px;
+    font-weight: 700;
+}
+
+#cardDescription {
+    color: #9ca3af;
+    font-size: 12px;
+}
+
+QPushButton {
+    min-height: 36px;
+    padding-left: 16px;
+    padding-right: 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background-color: white;
+}
+
+QPushButton:hover {
+    background-color: #f3f4f6;
+}
+
+QPushButton:disabled {
+    color: #9ca3af;
+    background-color: #f3f4f6;
+}
+
+#primaryButton {
+    background-color: #2563eb;
+    color: white;
+    border: none;
+    font-weight: 600;
+}
+
+#primaryButton:hover {
+    background-color: #1d4ed8;
+}
+
+QLineEdit {
+    min-height: 36px;
+    padding-left: 12px;
+    padding-right: 12px;
+    background-color: white;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #2563eb;
+}
+
+QTableWidget {
+    background-color: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    gridline-color: #e5e7eb;
+    alternate-background-color: #f9fafb;
+}
+
+QHeaderView::section {
+    background-color: #f3f4f6;
+    border: none;
+    border-bottom: 1px solid #d1d5db;
+    padding: 10px;
+    font-weight: 600;
+}
+
+#tableStatus {
+    color: #6b7280;
+    font-size: 12px;
+}
