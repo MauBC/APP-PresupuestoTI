@@ -1,4 +1,4 @@
-﻿QMainWindow {
+QMainWindow {
     background-color: #f5f7fa;
 }
 
@@ -118,7 +118,8 @@ QLineEdit:focus {
     border: 1px solid #2563eb;
 }
 
-QTableWidget {
+QTableWidget,
+QTableView {
     background-color: white;
     border: 1px solid #e5e7eb;
     border-radius: 6px;

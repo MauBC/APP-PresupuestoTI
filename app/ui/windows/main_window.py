@@ -1,4 +1,4 @@
-﻿from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -97,6 +97,16 @@ class MainWindow(QMainWindow):
 
         return sidebar
 
+    def _navigate_to(
+        self,
+        page_index: int,
+    ):
+        self.pages.setCurrentIndex(
+            page_index
+        )
+
+        if page_index == 1:
+            self.presupuesto_page.ensure_loaded()
     def _create_nav_button(
         self,
         text: str,
@@ -112,7 +122,7 @@ class MainWindow(QMainWindow):
 
         button.clicked.connect(
             lambda checked=False, index=page_index:
-            self.pages.setCurrentIndex(index)
+            self._navigate_to(index)
         )
 
         self.button_group.addButton(button)
