@@ -34,3 +34,6 @@ secrets/
 Thumbs.db.pytest_cache/
 .coverage
 htmlcov/
+
+# Temporary data cleaning scripts
+scriptLimpieza/
