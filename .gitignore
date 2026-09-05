@@ -29,11 +29,25 @@ dist/
 credentials/
 secrets/
 
-# OS
-.DS_Store
-Thumbs.db.pytest_cache/
+# Test artifacts
+.pytest_cache/
 .coverage
 htmlcov/
 
-# Temporary data cleaning scripts
-scriptLimpieza/
+# OS
+.DS_Store
+Thumbs.db
+
+# Local data
+*.csv
+*.xlsx
+*.xls
+*.xlsm
+
+# Data-cleaning outputs
+scriptLimpieza/salidas/
+
+# Generated inspection files
+estado_*.txt
+codigo_gui_actual.txt
+main_window_actual.txt

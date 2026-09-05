@@ -1,16 +1,23 @@
+from decimal import Decimal
+
 from PySide6.QtCore import (
     QSortFilterProxyModel,
     Qt,
+    Signal,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableView,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -18,21 +25,33 @@ from PySide6.QtWidgets import (
 from app.ui.models.presupuesto_table_model import (
     PresupuestoTableModel,
 )
-from app.ui.workers.presupuesto_loader import (
-    PresupuestoLoadThread,
-)
 
 
 class PresupuestoPage(QWidget):
-    def __init__(self):
+    workspace_changed = Signal()
+
+    MAX_CHANGE_PREVIEW = 5000
+
+    def __init__(
+        self,
+        *,
+        workspace,
+        analysis_service,
+    ):
         super().__init__()
+
+        self._workspace = workspace
+
+        self._analysis_service = (
+            analysis_service
+        )
 
         self._page_index = 0
         self._page_size = 250
         self._total_rows = 0
 
+        self._workspace_ready = False
         self._loaded_once = False
-        self._loader = None
 
         self._setup_ui()
 
@@ -46,20 +65,23 @@ class PresupuestoPage(QWidget):
             32,
         )
 
-        layout.setSpacing(16)
+        layout.setSpacing(14)
 
         title = QLabel(
             "Presupuesto"
         )
+
         title.setObjectName(
             "pageTitle"
         )
 
         subtitle = QLabel(
-            "Consulta de registros "
-            "presupuestales almacenados "
-            "en Google Cloud"
+            "Simula modificaciones en USD. "
+            "Todos los cambios permanecen "
+            "locales hasta que exista un "
+            "proceso de guardado aprobado."
         )
+
         subtitle.setObjectName(
             "pageSubtitle"
         )
@@ -91,7 +113,11 @@ class PresupuestoPage(QWidget):
         )
 
         self.refresh_button = QPushButton(
-            "Actualizar"
+            "Actualizar vista"
+        )
+
+        self.refresh_button.setEnabled(
+            False
         )
 
         toolbar.addWidget(
@@ -115,9 +141,57 @@ class PresupuestoPage(QWidget):
             toolbar
         )
 
+        changes_layout = QHBoxLayout()
+
+        self.pending_label = QLabel(
+            "Cambios pendientes: 0"
+        )
+
+        self.pending_label.setObjectName(
+            "pendingSummary"
+        )
+
+        self.view_changes_button = QPushButton(
+            "Ver cambios"
+        )
+
+        self.undo_button = QPushButton(
+            "Deshacer"
+        )
+
+        self.discard_button = QPushButton(
+            "Descartar todos"
+        )
+
+        self.discard_button.setObjectName(
+            "dangerButton"
+        )
+
+        changes_layout.addWidget(
+            self.pending_label,
+            1,
+        )
+
+        changes_layout.addWidget(
+            self.view_changes_button
+        )
+
+        changes_layout.addWidget(
+            self.undo_button
+        )
+
+        changes_layout.addWidget(
+            self.discard_button
+        )
+
+        layout.addLayout(
+            changes_layout
+        )
+
         self.model = (
             PresupuestoTableModel(
-                self
+                workspace=self._workspace,
+                parent=self,
             )
         )
 
@@ -166,7 +240,9 @@ class PresupuestoPage(QWidget):
         )
 
         self.table.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
+            QAbstractItemView.EditTrigger.DoubleClicked
+            |
+            QAbstractItemView.EditTrigger.EditKeyPressed
         )
 
         self.table.setHorizontalScrollMode(
@@ -205,7 +281,7 @@ class PresupuestoPage(QWidget):
         footer = QHBoxLayout()
 
         self.status_label = QLabel(
-            "Datos no cargados"
+            "Esperando carga del presupuesto..."
         )
 
         self.status_label.setObjectName(
@@ -246,7 +322,8 @@ class PresupuestoPage(QWidget):
         )
 
         self.search_input.textChanged.connect(
-            self.proxy_model.setFilterFixedString
+            self.proxy_model
+            .setFilterFixedString
         )
 
         self.refresh_button.clicked.connect(
@@ -265,20 +342,89 @@ class PresupuestoPage(QWidget):
             self._page_size_changed
         )
 
+        self.model.workspace_changed.connect(
+            self._on_model_workspace_changed
+        )
+
+        self.model.edit_failed.connect(
+            self._on_edit_failed
+        )
+
+        self.view_changes_button.clicked.connect(
+            self.show_pending_changes
+        )
+
+        self.undo_button.clicked.connect(
+            self.undo_last
+        )
+
+        self.discard_button.clicked.connect(
+            self.discard_all
+        )
+
         self._update_navigation()
+        self._update_change_controls()
+
+    def set_workspace_ready(self):
+        self._workspace_ready = True
+
+        self.refresh_button.setEnabled(
+            True
+        )
+
+        self.status_label.setText(
+            "Presupuesto local disponible."
+        )
+
+        self._update_navigation()
+        self._update_change_controls()
+
+    def set_workspace_error(
+        self,
+        message: str,
+    ):
+        self._workspace_ready = False
+
+        self.refresh_button.setEnabled(
+            False
+        )
+
+        self.previous_button.setEnabled(
+            False
+        )
+
+        self.next_button.setEnabled(
+            False
+        )
+
+        self.status_label.setText(
+            "Error al preparar presupuesto: "
+            + message
+        )
+
+    def invalidate(self):
+        self._loaded_once = False
 
     def ensure_loaded(self):
-        if self._loaded_once:
-            return
-
-        self._load_page(0)
+        if (
+            self._workspace_ready
+            and
+            not self._loaded_once
+        ):
+            self._load_page(0)
 
     def refresh(self):
+        if not self._workspace_ready:
+            return
+
         self._load_page(
             self._page_index
         )
 
     def previous_page(self):
+        if not self._workspace_ready:
+            return
+
         if self._page_index <= 0:
             return
 
@@ -287,6 +433,9 @@ class PresupuestoPage(QWidget):
         )
 
     def next_page(self):
+        if not self._workspace_ready:
+            return
+
         total_pages = (
             self._calculate_total_pages()
         )
@@ -307,94 +456,363 @@ class PresupuestoPage(QWidget):
     ):
         self._page_size = int(text)
 
-        if self._loaded_once:
+        if (
+            self._workspace_ready
+            and
+            self._loaded_once
+        ):
             self._load_page(0)
 
     def _load_page(
         self,
         page_index: int,
     ):
+        if not self._workspace_ready:
+            return
+
+        self._set_loading(True)
+
+        try:
+            result = (
+                self._analysis_service
+                .get_page(
+                    page_index=page_index,
+                    page_size=self._page_size,
+                )
+            )
+
+            self.model.set_page(
+                result
+            )
+
+            self._page_index = (
+                result.page_index
+            )
+
+            self._total_rows = (
+                result.total_rows
+            )
+
+            self._loaded_once = True
+
+            self.search_input.clear()
+
+        except Exception as exc:
+            self.status_label.setText(
+                "Error al cargar datos locales: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+        finally:
+            self._set_loading(False)
+
+        self._update_navigation()
+        self._update_change_controls()
+
+    def _on_model_workspace_changed(
+        self,
+    ):
+        self._update_change_controls()
+
+        self.status_label.setText(
+            "Cambio aplicado localmente. "
+            "BigQuery no ha sido modificado."
+        )
+
+        self.workspace_changed.emit()
+
+    def _on_edit_failed(
+        self,
+        message: str,
+    ):
+        self.status_label.setText(
+            "No se pudo aplicar el cambio: "
+            + message
+        )
+
+        QMessageBox.warning(
+            self,
+            "Cambio no valido",
+            message,
+        )
+
+    def undo_last(self):
+        if not self._workspace.has_changes:
+            return
+
+        changed = (
+            self._workspace.undo_last()
+        )
+
+        if not changed:
+            return
+
+        self._load_page(
+            self._page_index
+        )
+
+        self.status_label.setText(
+            "Ultima operacion deshecha."
+        )
+
+        self.workspace_changed.emit()
+
+    def discard_all(self):
+        if not self._workspace.has_changes:
+            return
+
+        result = QMessageBox.question(
+            self,
+            "Descartar cambios",
+            "Se descartaran todos los "
+            "cambios realizados durante "
+            "esta simulacion.\n\n"
+            "¿Desea continuar?",
+            QMessageBox.StandardButton.Yes
+            |
+            QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
         if (
-            self._loader is not None
-            and self._loader.isRunning()
+            result
+            != QMessageBox.StandardButton.Yes
         ):
             return
 
-        self._set_loading(
+        self._workspace.discard_all()
+
+        self._load_page(
+            self._page_index
+        )
+
+        self.status_label.setText(
+            "Todos los cambios locales "
+            "fueron descartados."
+        )
+
+        self.workspace_changed.emit()
+
+    def show_pending_changes(self):
+        pending = (
+            self._workspace
+            .get_pending_changes()
+        )
+
+        if not pending:
+            QMessageBox.information(
+                self,
+                "Cambios pendientes",
+                "No existen cambios pendientes.",
+            )
+            return
+
+        flattened = []
+
+        for row_change in pending:
+            row = self._workspace.get_row(
+                row_change.session_row_id
+            )
+
+            gasto = (
+                row.get("nombre_gasto")
+                or ""
+            )
+
+            ceco = (
+                row.get("ceco")
+                or ""
+            )
+
+            for change in row_change.changes:
+                flattened.append(
+                    (
+                        row_change.session_row_id,
+                        gasto,
+                        ceco,
+                        change.column,
+                        change.before,
+                        change.after,
+                    )
+                )
+
+        total_changes = len(flattened)
+
+        visible_changes = flattened[
+            :self.MAX_CHANGE_PREVIEW
+        ]
+
+        dialog = QDialog(self)
+
+        dialog.setWindowTitle(
+            "Cambios pendientes"
+        )
+
+        dialog.resize(
+            1050,
+            600,
+        )
+
+        layout = QVBoxLayout(
+            dialog
+        )
+
+        summary = QLabel(
+            f"{self._workspace.pending_row_count:,} "
+            f"filas modificadas | "
+            f"{total_changes:,} campos modificados"
+        )
+
+        summary.setObjectName(
+            "pendingSummary"
+        )
+
+        layout.addWidget(
+            summary
+        )
+
+        if (
+            total_changes
+            > self.MAX_CHANGE_PREVIEW
+        ):
+            warning = QLabel(
+                "Vista limitada a los primeros "
+                f"{self.MAX_CHANGE_PREVIEW:,} cambios."
+            )
+
+            warning.setObjectName(
+                "tableStatus"
+            )
+
+            layout.addWidget(
+                warning
+            )
+
+        table = QTableWidget(
+            len(visible_changes),
+            6,
+        )
+
+        table.setHorizontalHeaderLabels(
+            [
+                "ID SESION",
+                "GASTO",
+                "CECO",
+                "CAMPO",
+                "ANTES",
+                "AHORA",
+            ]
+        )
+
+        table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+
+        table.setAlternatingRowColors(
             True
         )
 
-        self.status_label.setText(
-            "Cargando datos desde BigQuery..."
-        )
-
-        self._loader = (
-            PresupuestoLoadThread(
-                page_index=page_index,
-                page_size=self._page_size,
-                parent=self,
-            )
-        )
-
-        self._loader.loaded.connect(
-            self._on_loaded
-        )
-
-        self._loader.failed.connect(
-            self._on_failed
-        )
-
-        self._loader.finished.connect(
-            self._on_loader_finished
-        )
-
-        self._loader.start()
-
-    def _on_loaded(
-        self,
-        result,
-    ):
-        self.model.set_page(
-            result
-        )
-
-        self._page_index = (
-            result.page_index
-        )
-
-        self._total_rows = (
-            result.total_rows
-        )
-
-        self._loaded_once = True
-
-        self.search_input.clear()
-
-        self._update_navigation()
-
-    def _on_failed(
-        self,
-        error_message: str,
-    ):
-        self.status_label.setText(
-            "Error al cargar datos: "
-            + error_message
-        )
-
-    def _on_loader_finished(self):
-        self._set_loading(
+        table.verticalHeader().setVisible(
             False
         )
 
-        if self._loader is not None:
-            self._loader.deleteLater()
-            self._loader = None
+        for row_index, values in enumerate(
+            visible_changes
+        ):
+            for column_index, value in enumerate(
+                values
+            ):
+                item = QTableWidgetItem(
+                    self._format_value(
+                        value
+                    )
+                )
+
+                table.setItem(
+                    row_index,
+                    column_index,
+                    item,
+                )
+
+        table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+
+        table.horizontalHeader().setStretchLastSection(
+            True
+        )
+
+        layout.addWidget(
+            table,
+            1,
+        )
+
+        close_button = QPushButton(
+            "Cerrar"
+        )
+
+        close_button.clicked.connect(
+            dialog.accept
+        )
+
+        button_layout = QHBoxLayout()
+
+        button_layout.addStretch()
+
+        button_layout.addWidget(
+            close_button
+        )
+
+        layout.addLayout(
+            button_layout
+        )
+
+        dialog.exec()
+
+    def _update_change_controls(self):
+        if not self._workspace.is_loaded:
+            rows = 0
+            fields = 0
+        else:
+            rows = (
+                self._workspace
+                .pending_row_count
+            )
+
+            fields = (
+                self._workspace
+                .pending_change_count
+            )
+
+        self.pending_label.setText(
+            f"Cambios pendientes: "
+            f"{rows:,} filas / "
+            f"{fields:,} campos"
+        )
+
+        has_changes = (
+            rows > 0
+        )
+
+        self.view_changes_button.setEnabled(
+            has_changes
+        )
+
+        self.undo_button.setEnabled(
+            has_changes
+        )
+
+        self.discard_button.setEnabled(
+            has_changes
+        )
 
     def _set_loading(
         self,
         loading: bool,
     ):
         self.refresh_button.setEnabled(
+            self._workspace_ready
+            and
             not loading
         )
 
@@ -402,15 +820,16 @@ class PresupuestoPage(QWidget):
             not loading
         )
 
-        self.previous_button.setEnabled(
-            False if loading else True
-        )
+        if loading:
+            self.previous_button.setEnabled(
+                False
+            )
 
-        self.next_button.setEnabled(
-            False if loading else True
-        )
+            self.next_button.setEnabled(
+                False
+            )
 
-        if not loading:
+        else:
             self._update_navigation()
 
     def _calculate_total_pages(self):
@@ -424,6 +843,21 @@ class PresupuestoPage(QWidget):
         ) // self._page_size
 
     def _update_navigation(self):
+        if not self._workspace_ready:
+            self.previous_button.setEnabled(
+                False
+            )
+
+            self.next_button.setEnabled(
+                False
+            )
+
+            self.page_label.setText(
+                "Pagina -"
+            )
+
+            return
+
         total_pages = (
             self._calculate_total_pages()
         )
@@ -469,5 +903,24 @@ class PresupuestoPage(QWidget):
             f"{last_row:,} "
             f"de "
             f"{self._total_rows:,} "
-            f"registros"
+            f"registros locales"
         )
+
+    @staticmethod
+    def _format_value(
+        value,
+    ) -> str:
+        if value is None:
+            return ""
+
+        if isinstance(value, Decimal):
+            return f"{value:,.2f}"
+
+        if isinstance(value, bool):
+            return (
+                "Si"
+                if value
+                else "No"
+            )
+
+        return str(value)

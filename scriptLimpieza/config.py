@@ -54,48 +54,10 @@ AMOUNT_COLUMNS = tuple(
     )
 )
 
-LEGACY_EXPECTED_COLUMNS = (
+EXPECTED_COLUMNS = (
     *STRING_COLUMNS,
     *AMOUNT_COLUMNS,
 )
 
-LEGACY_EXPECTED_TYPES = {
-    **{
-        column: "STRING"
-        for column in STRING_COLUMNS
-    },
-    **{
-        column: "NUMERIC"
-        for column in AMOUNT_COLUMNS
-    },
-}
-
-PERSISTENCE_COLUMNS = (
-    "row_id",
-    "habilitado",
-    "version",
-    "created_at",
-    "created_by",
-    "updated_at",
-    "updated_by",
-)
-
-PERSISTENCE_TYPES = {
-    "row_id": "STRING",
-    "habilitado": "BOOLEAN",
-    "version": "INTEGER",
-    "created_at": "TIMESTAMP",
-    "created_by": "STRING",
-    "updated_at": "TIMESTAMP",
-    "updated_by": "STRING",
-}
-
-EXPECTED_COLUMNS = (
-    *LEGACY_EXPECTED_COLUMNS,
-    *PERSISTENCE_COLUMNS,
-)
-
-EXPECTED_TYPES = {
-    **LEGACY_EXPECTED_TYPES,
-    **PERSISTENCE_TYPES,
-}
+BIGQUERY_STRING_TYPE = "STRING"
+BIGQUERY_AMOUNT_TYPE = "NUMERIC"
