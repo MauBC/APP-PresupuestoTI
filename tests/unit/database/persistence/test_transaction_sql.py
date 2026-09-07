@@ -169,14 +169,14 @@ def test_merge_updates_all_editable_values():
     sql = build_sql()
 
     assert (
-        "target.`habilitado` = "
+        "`habilitado` = "
         "stage.`habilitado`"
         in sql
     )
 
     for column in USD_COLUMNS:
         assert (
-            f"target.`{column}` = "
+            f"`{column}` = "
             f"stage.`{column}`"
             in sql
         )
@@ -186,7 +186,7 @@ def test_merge_increments_version():
     sql = build_sql()
 
     assert (
-        "target.version = "
+        "version = "
         "target.version + 1"
         in sql
     )
@@ -196,13 +196,13 @@ def test_merge_updates_actor_and_timestamp():
     sql = build_sql()
 
     assert (
-        "target.updated_at = "
+        "updated_at = "
         "CURRENT_TIMESTAMP()"
         in sql
     )
 
     assert (
-        "target.updated_by = @actor"
+        "updated_by = @actor"
         in sql
     )
 
@@ -295,3 +295,55 @@ def test_empty_table_id_is_rejected(
         build_apply_staged_batch_sql(
             **values
         )
+
+
+def test_audit_count_is_validated_before_merge():
+    sql = build_sql()
+
+    assert (
+        "v_audit_row_count"
+        in sql
+    )
+
+    assert (
+        "Audit row count does not match"
+        in sql
+    )
+
+    audit_check_position = sql.index(
+        "SET v_audit_row_count"
+    )
+
+    merge_position = sql.index(
+        "MERGE "
+        "`project.dataset."
+        "presupuesto_2026`"
+    )
+
+    assert (
+        audit_check_position
+        < merge_position
+    )
+
+
+def test_merge_left_side_is_not_target_qualified():
+    sql = build_sql()
+
+    assert (
+        "`enero_usd` = "
+        "stage.`enero_usd`"
+        in sql
+    )
+
+    assert (
+        "target.`enero_usd` = "
+        "stage.`enero_usd`"
+        not in sql
+    )
+
+    assert (
+        "version = "
+        "target.version + 1"
+        in sql
+    )
+

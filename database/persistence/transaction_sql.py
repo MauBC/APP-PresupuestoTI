@@ -121,7 +121,7 @@ def build_apply_staged_batch_sql(
 
     merge_assignments = [
         (
-            f"target.`{column}` = "
+            f"`{column}` = "
             f"stage.`{column}`"
         )
         for column
@@ -130,11 +130,11 @@ def build_apply_staged_batch_sql(
 
     merge_assignments.extend(
         (
-            "target.version = "
+            "version = "
             "target.version + 1",
-            "target.updated_at = "
+            "updated_at = "
             "CURRENT_TIMESTAMP()",
-            "target.updated_by = "
+            "updated_by = "
             "@actor",
         )
     )
@@ -150,6 +150,7 @@ DECLARE v_batch_row_count INT64;
 DECLARE v_batch_field_count INT64;
 DECLARE v_staging_row_count INT64 DEFAULT 0;
 DECLARE v_conflict_count INT64 DEFAULT 0;
+DECLARE v_audit_row_count INT64 DEFAULT 0;
 
 BEGIN
 
@@ -160,19 +161,32 @@ BEGIN
         v_batch_field_count
     ) = (
         SELECT AS STRUCT
-            ANY_VALUE(row_count),
-            ANY_VALUE(field_count)
+            IF(
+                COUNT(*) = 1,
+                ANY_VALUE(row_count),
+                NULL
+            ),
+            IF(
+                COUNT(*) = 1,
+                ANY_VALUE(field_count),
+                NULL
+            )
         FROM `{batch_table}`
         WHERE
             batch_id = @batch_id
             AND status = 'PENDING'
-        HAVING COUNT(*) = 1
     );
 
     ASSERT
         v_batch_row_count IS NOT NULL
     AS
         'Batch must exist exactly once and be PENDING.';
+
+    ASSERT
+        v_batch_field_count IS NOT NULL
+        AND v_batch_field_count > 0
+    AS
+        'Batch field_count must be greater than zero.';
 
     SET v_staging_row_count = (
         SELECT COUNT(*)
@@ -263,6 +277,18 @@ BEGIN
         )
 
         {audit_union};
+
+        SET v_audit_row_count = (
+            SELECT COUNT(*)
+            FROM `{audit_table}`
+            WHERE batch_id = @batch_id
+        );
+
+        ASSERT
+            v_audit_row_count
+                = v_batch_field_count
+        AS
+            'Audit row count does not match batch field_count.';
 
         MERGE `{main_table}` AS target
 
