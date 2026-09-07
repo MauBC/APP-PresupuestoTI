@@ -580,7 +580,7 @@ class BigQueryPersistenceRepository:
             )
 
             try:
-                self._mark_batch_failed(
+                self.mark_batch_failed(
                     batch_id_value,
                     error_text,
                 )
@@ -606,7 +606,7 @@ class BigQueryPersistenceRepository:
             f"{status}"
         )
 
-    def _mark_batch_failed(
+    def mark_batch_failed(
         self,
         batch_id: str,
         error_message: str,
@@ -840,5 +840,6 @@ class BigQueryPersistenceRepository:
             )
 
         return text
+
 
 
