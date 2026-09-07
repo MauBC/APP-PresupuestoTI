@@ -13,8 +13,13 @@ from database.persistence.contract import (
     STAGING_COLUMNS,
 )
 from database.persistence.models import (
+    ConflictDetail,
     PersistenceBatch,
+    PersistenceResult,
     StagingRow,
+)
+from database.persistence.transaction_sql import (
+    build_apply_staged_batch_sql,
 )
 
 
@@ -399,6 +404,267 @@ class BigQueryPersistenceRepository:
             value
         )
 
+    def apply_staged_batch(
+        self,
+        batch_id: str,
+        actor: str,
+    ) -> PersistenceResult:
+        batch_id_value = (
+            self._required_text(
+                batch_id,
+                "batch_id",
+            )
+        )
+
+        actor_value = (
+            self._required_text(
+                actor,
+                "actor",
+            )
+        )
+
+        sql = (
+            build_apply_staged_batch_sql(
+                main_table_id=(
+                    self.main_table_id
+                ),
+                batch_table_id=(
+                    self.batch_table_id
+                ),
+                audit_table_id=(
+                    self.audit_table_id
+                ),
+                staging_table_id=(
+                    self.staging_table_id
+                ),
+            )
+        )
+
+        job_config = (
+            bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter(
+                        "batch_id",
+                        "STRING",
+                        batch_id_value,
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "actor",
+                        "STRING",
+                        actor_value,
+                    ),
+                ]
+            )
+        )
+
+        try:
+            job = self._client.query(
+                sql,
+                job_config=job_config,
+                location=self._location,
+            )
+
+            rows = list(
+                job.result()
+            )
+
+        except Exception as exc:
+            raise BigQueryPersistenceError(
+                "No se pudo confirmar el "
+                "resultado de la transaccion "
+                "BigQuery. El estado debe "
+                "verificarse antes de reintentar."
+            ) from exc
+
+        if not rows:
+            raise BigQueryPersistenceError(
+                "La transaccion no devolvio "
+                "un resultado."
+            )
+
+        status = str(
+            self._row_value(
+                rows[0],
+                "status",
+            )
+        ).strip().upper()
+
+        row_count = int(
+            self._row_value(
+                rows[0],
+                "row_count",
+            )
+            or 0
+        )
+
+        field_count = int(
+            self._row_value(
+                rows[0],
+                "field_count",
+            )
+            or 0
+        )
+
+        if status == "APPLIED":
+            return PersistenceResult(
+                batch_id=batch_id_value,
+                status="APPLIED",
+                row_count=row_count,
+                field_count=field_count,
+            )
+
+        if status == "CONFLICT":
+            conflicts = []
+
+            for row in rows:
+                row_id = self._row_value(
+                    row,
+                    "row_id",
+                )
+
+                expected_version = (
+                    self._row_value(
+                        row,
+                        "expected_version",
+                    )
+                )
+
+                current_version = (
+                    self._row_value(
+                        row,
+                        "current_version",
+                    )
+                )
+
+                conflicts.append(
+                    ConflictDetail(
+                        row_id=str(
+                            row_id
+                        ),
+                        expected_version=int(
+                            expected_version
+                        ),
+                        current_version=(
+                            int(
+                                current_version
+                            )
+                            if current_version
+                            is not None
+                            else None
+                        ),
+                    )
+                )
+
+            return PersistenceResult(
+                batch_id=batch_id_value,
+                status="CONFLICT",
+                row_count=row_count,
+                field_count=field_count,
+                conflicts=tuple(
+                    conflicts
+                ),
+            )
+
+        if status == "FAILED":
+            error_message = (
+                self._row_value(
+                    rows[0],
+                    "error_message",
+                )
+            )
+
+            error_text = str(
+                error_message
+                if error_message is not None
+                else "Unknown transaction error."
+            )
+
+            try:
+                self._mark_batch_failed(
+                    batch_id_value,
+                    error_text,
+                )
+
+            except Exception as exc:
+                raise BigQueryPersistenceError(
+                    "La transaccion fallo y "
+                    "no se pudo actualizar el "
+                    "batch a FAILED."
+                ) from exc
+
+            return PersistenceResult(
+                batch_id=batch_id_value,
+                status="FAILED",
+                row_count=row_count,
+                field_count=field_count,
+                error_message=error_text,
+            )
+
+        raise BigQueryPersistenceError(
+            "Estado transaccional "
+            "no reconocido: "
+            f"{status}"
+        )
+
+    def _mark_batch_failed(
+        self,
+        batch_id: str,
+        error_message: str,
+    ) -> None:
+        sql = f"""
+            UPDATE `{self.batch_table_id}`
+            SET
+                status = 'FAILED',
+                completed_at = CURRENT_TIMESTAMP(),
+                error_message = @error_message
+            WHERE
+                batch_id = @batch_id
+                AND status = 'PENDING'
+        """
+
+        job_config = (
+            bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter(
+                        "batch_id",
+                        "STRING",
+                        batch_id,
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "error_message",
+                        "STRING",
+                        error_message,
+                    ),
+                ]
+            )
+        )
+
+        job = self._client.query(
+            sql,
+            job_config=job_config,
+            location=self._location,
+        )
+
+        job.result()
+
+    @staticmethod
+    def _row_value(
+        row,
+        key,
+    ):
+        try:
+            return row[
+                key
+            ]
+
+        except (
+            KeyError,
+            TypeError,
+        ):
+            return getattr(
+                row,
+                key,
+            )
     def _validate_staging_rows(
         self,
         rows: tuple[
@@ -574,4 +840,5 @@ class BigQueryPersistenceRepository:
             )
 
         return text
+
 
