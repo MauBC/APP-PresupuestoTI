@@ -1,0 +1,12 @@
+[tool.pytest]
+minversion = "9.1"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["."]
+addopts = ["-ra"]
+strict_markers = true
+
+markers = [
+    "unit: pruebas aisladas que no utilizan servicios externos",
+    "integration: pruebas que utilizan servicios externos reales",
+]

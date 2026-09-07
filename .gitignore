@@ -29,6 +29,25 @@ dist/
 credentials/
 secrets/
 
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Local data
+*.csv
+*.xlsx
+*.xls
+*.xlsm
+
+# Data-cleaning outputs
+scriptLimpieza/salidas/
+
+# Generated inspection files
+estado_*.txt
+codigo_gui_actual.txt
+main_window_actual.txt
