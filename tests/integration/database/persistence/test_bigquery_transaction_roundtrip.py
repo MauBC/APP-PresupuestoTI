@@ -897,3 +897,273 @@ def test_real_transaction_applied_then_conflict():
             row_id=row_id,
             batch_ids=batch_ids,
         )
+
+
+def test_real_transaction_rolls_back_on_audit_mismatch():
+    service = BigQueryService()
+
+    repository = (
+        BigQueryPersistenceRepository(
+            service.client
+        )
+    )
+
+    token = uuid4().hex
+
+    row_id = (
+        "integration-rollback-row-"
+        + token
+    )
+
+    batch_id = (
+        "integration-rollback-batch-"
+        + token
+    )
+
+    try:
+        #
+        # Main row starts at 100 USD,
+        # version 1.
+        #
+        insert_synthetic_main_row(
+            service.client,
+            row_id=row_id,
+        )
+
+        original = read_main_row(
+            service.client,
+            row_id=row_id,
+        )
+
+        assert (
+            original["version"]
+            == 1
+        )
+
+        assert (
+            original["enero_usd"]
+            == Decimal("100.00")
+        )
+
+        assert (
+            original["anio_usd"]
+            == Decimal("100.00")
+        )
+
+        #
+        # Intentionally malformed batch:
+        #
+        # field_count will be 1 because
+        # field_changes contains only enero_usd.
+        #
+        # But final editable state changes BOTH
+        # enero_usd and anio_usd from 100 to 125.
+        #
+        # Therefore transactional audit creates
+        # 2 rows while batch.field_count = 1.
+        #
+        # The ASSERT after audit must fail and
+        # rollback the whole transaction before
+        # MERGE reaches the main table.
+        #
+        field_changes = (
+            PersistenceFieldChange(
+                column="enero_usd",
+                before=Decimal(
+                    "100.00"
+                ),
+                after=Decimal(
+                    "125.00"
+                ),
+                value_type=(
+                    EDITABLE_VALUE_TYPES[
+                        "enero_usd"
+                    ]
+                ),
+            ),
+        )
+
+        persistence_row = (
+            PersistenceRowChange(
+                row_id=row_id,
+                expected_version=1,
+                field_changes=(
+                    field_changes
+                ),
+                editable_values=(
+                    editable_state(
+                        "125.00"
+                    )
+                ),
+            )
+        )
+
+        batch = PersistenceBatch(
+            batch_id=batch_id,
+            status=PENDING_STATUS,
+            actor=ACTOR,
+            created_at=(
+                datetime.now(
+                    timezone.utc
+                )
+            ),
+            app_version=(
+                settings.APP_VERSION
+            ),
+            rows=(
+                persistence_row,
+            ),
+        )
+
+        assert batch.row_count == 1
+        assert batch.field_count == 1
+
+        staging = (
+            build_staging_rows(
+                batch
+            )
+        )
+
+        repository.insert_pending_batch(
+            batch
+        )
+
+        assert (
+            repository
+            .replace_staging_rows(
+                staging
+            )
+            == 1
+        )
+
+        #
+        # Transaction must return FAILED.
+        #
+        result = (
+            repository
+            .apply_staged_batch(
+                batch_id,
+                ACTOR,
+            )
+        )
+
+        assert (
+            result.status
+            == "FAILED"
+        )
+
+        assert not result.is_applied
+
+        assert (
+            result.error_message
+            is not None
+        )
+
+        assert (
+            "Audit row count"
+            in result.error_message
+        )
+
+        #
+        # Main table must be untouched.
+        #
+        after_failure = (
+            read_main_row(
+                service.client,
+                row_id=row_id,
+            )
+        )
+
+        assert (
+            after_failure["version"]
+            == 1
+        )
+
+        assert (
+            after_failure[
+                "enero_usd"
+            ]
+            == Decimal(
+                "100.00"
+            )
+        )
+
+        assert (
+            after_failure[
+                "anio_usd"
+            ]
+            == Decimal(
+                "100.00"
+            )
+        )
+
+        #
+        # Audit INSERT happened before
+        # the ASSERT, but rollback must
+        # remove those partial rows.
+        #
+        audit = read_audit(
+            service.client,
+            batch_id=batch_id,
+        )
+
+        assert audit == []
+
+        #
+        # Batch is marked FAILED outside
+        # the rolled-back transaction.
+        #
+        stored_batch = (
+            read_batch_status(
+                service.client,
+                batch_id=batch_id,
+            )
+        )
+
+        assert (
+            stored_batch["status"]
+            == "FAILED"
+        )
+
+        assert (
+            stored_batch[
+                "completed_at"
+            ]
+            is not None
+        )
+
+        assert (
+            stored_batch[
+                "error_message"
+            ]
+            is not None
+        )
+
+        assert (
+            "Audit row count"
+            in stored_batch[
+                "error_message"
+            ]
+        )
+
+        #
+        # Staging is intentionally retained
+        # after FAILED so the failed operation
+        # can be diagnosed safely.
+        #
+        assert (
+            repository
+            .count_staging_rows(
+                batch_id
+            )
+            == 1
+        )
+
+    finally:
+        cleanup(
+            service.client,
+            row_id=row_id,
+            batch_ids=(
+                batch_id,
+            ),
+        )
