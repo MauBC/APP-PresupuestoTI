@@ -141,6 +141,10 @@ class BigQueryPersistenceRepository:
                 @app_version,
                 NULL
 
+            FROM (
+                SELECT 1
+            )
+
             WHERE NOT EXISTS (
                 SELECT 1
                 FROM `{self.batch_table_id}`
@@ -570,3 +574,4 @@ class BigQueryPersistenceRepository:
             )
 
         return text
+
