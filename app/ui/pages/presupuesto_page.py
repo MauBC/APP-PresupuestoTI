@@ -28,6 +28,9 @@ from app.services.presupuesto_change_summary_service import (
 from app.ui.dialogs.change_summary_dialog import (
     ChangeSummaryDialog,
 )
+from app.ui.dialogs.monthly_distribution_dialog import (
+    MonthlyDistributionDialog,
+)
 from app.ui.models.presupuesto_table_model import (
     PresupuestoTableModel,
 )
@@ -132,6 +135,16 @@ class PresupuestoPage(QWidget):
             False
         )
 
+        self.distribute_months_button = (
+            QPushButton(
+                "Distribuir meses"
+            )
+        )
+
+        self.distribute_months_button.setEnabled(
+            False
+        )
+
         toolbar.addWidget(
             self.search_input,
             1,
@@ -143,6 +156,10 @@ class PresupuestoPage(QWidget):
 
         toolbar.addWidget(
             self.page_size_combo
+        )
+
+        toolbar.addWidget(
+            self.distribute_months_button
         )
 
         toolbar.addWidget(
@@ -342,6 +359,10 @@ class PresupuestoPage(QWidget):
             self.refresh
         )
 
+        self.distribute_months_button.clicked.connect(
+            self.show_monthly_distribution
+        )
+
         self.previous_button.clicked.connect(
             self.previous_page
         )
@@ -360,6 +381,10 @@ class PresupuestoPage(QWidget):
 
         self.model.edit_failed.connect(
             self._on_edit_failed
+        )
+
+        self.table.selectionModel().currentChanged.connect(
+            self._on_table_selection_changed
         )
 
         self.view_changes_button.clicked.connect(
@@ -390,6 +415,7 @@ class PresupuestoPage(QWidget):
 
         self._update_navigation()
         self._update_change_controls()
+        self._update_distribution_button()
 
     def set_workspace_error(
         self,
@@ -406,6 +432,10 @@ class PresupuestoPage(QWidget):
         )
 
         self.next_button.setEnabled(
+            False
+        )
+
+        self.distribute_months_button.setEnabled(
             False
         )
 
@@ -520,6 +550,7 @@ class PresupuestoPage(QWidget):
 
         self._update_navigation()
         self._update_change_controls()
+        self._update_distribution_button()
 
     def _on_model_workspace_changed(
         self,
@@ -601,6 +632,146 @@ class PresupuestoPage(QWidget):
         self.status_label.setText(
             "Todos los cambios locales "
             "fueron descartados."
+        )
+
+        self.workspace_changed.emit()
+
+    def _on_table_selection_changed(
+        self,
+        *_,
+    ):
+        self._update_distribution_button()
+
+    def _update_distribution_button(
+        self,
+    ):
+        enabled = (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+            and
+            self._workspace
+            .module_config
+            .capabilities
+            .monthly_distribution
+            and
+            self.table.currentIndex().isValid()
+        )
+
+        self.distribute_months_button.setEnabled(
+            bool(enabled)
+        )
+
+    def show_monthly_distribution(
+        self,
+    ):
+        if not (
+            self._workspace
+            .module_config
+            .capabilities
+            .monthly_distribution
+        ):
+            QMessageBox.information(
+                self,
+                "Distribucion mensual",
+                "El modulo activo no permite "
+                "distribucion mensual.",
+            )
+            return
+
+        proxy_index = (
+            self.table.currentIndex()
+        )
+
+        if not proxy_index.isValid():
+            QMessageBox.information(
+                self,
+                "Distribucion mensual",
+                "Selecciona primero una fila "
+                "del presupuesto.",
+            )
+            return
+
+        source_index = (
+            self.proxy_model
+            .mapToSource(
+                proxy_index
+            )
+        )
+
+        session_row_id = (
+            self.model.session_row_id(
+                source_index.row()
+            )
+        )
+
+        if session_row_id is None:
+            QMessageBox.warning(
+                self,
+                "Distribucion mensual",
+                "No se pudo identificar "
+                "la fila seleccionada.",
+            )
+            return
+
+        try:
+            row = (
+                self._workspace
+                .get_row(
+                    session_row_id
+                )
+            )
+
+            dialog = (
+                MonthlyDistributionDialog(
+                    row=row,
+                    module_config=(
+                        self._workspace
+                        .module_config
+                    ),
+                    parent=self,
+                )
+            )
+
+            if not dialog.exec():
+                return
+
+            changed = (
+                self._workspace
+                .edit_monthly_distribution(
+                    session_row_id,
+                    dialog.percentages(),
+                    annual_total=(
+                        dialog.annual_total()
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Distribucion mensual",
+                "No se pudo aplicar "
+                "la distribucion.\n\n"
+                f"{type(exc).__name__}: {exc}",
+            )
+            return
+
+        if not changed:
+            self.status_label.setText(
+                "La distribucion mensual "
+                "no produjo cambios."
+            )
+            return
+
+        self._load_page(
+            self._page_index
+        )
+
+        self.status_label.setText(
+            "Distribucion mensual aplicada "
+            "localmente. BigQuery no ha sido "
+            "modificado."
         )
 
         self.workspace_changed.emit()

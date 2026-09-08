@@ -1,4 +1,4 @@
-from app.config.budget_module_config import (
+﻿from app.config.budget_module_config import (
     BudgetModule,
     BudgetModuleCapabilities,
     BudgetModuleConfig,
@@ -39,6 +39,8 @@ OPEX_MODULE_CONFIG = (
                 grouped_editing=True,
             )
         ),
+        country_column="pais",
+        budgeter_column="presupuestador",
         change_detail_columns=(
             "presupuestador",
             "pais",
@@ -75,6 +77,8 @@ CAPEX_MODULE_CONFIG = (
                 grouped_editing=True,
             )
         ),
+        country_column=None,
+        budgeter_column=None,
         change_detail_columns=(),
         configured=False,
     )

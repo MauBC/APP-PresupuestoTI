@@ -12,7 +12,6 @@ from app.config.budget_modules import (
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
     ROW_ID_COLUMN,
-    USD_COLUMNS,
     VERSION_COLUMN,
 )
 from app.models.workspace_change import (

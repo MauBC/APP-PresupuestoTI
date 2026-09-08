@@ -1,4 +1,4 @@
-﻿from decimal import Decimal
+from decimal import Decimal
 
 from PySide6.QtGui import (
     QBrush,
@@ -836,42 +836,45 @@ class ChangeSummaryDialog(QDialog):
     def _field_label(
         column,
     ):
-        labels = {
-            "habilitado":
-                "Estado",
-            "anio_usd":
-                "Total anual USD",
-            "enero_usd":
-                "Enero USD",
-            "febrero_usd":
-                "Febrero USD",
-            "marzo_usd":
-                "Marzo USD",
-            "abril_usd":
-                "Abril USD",
-            "mayo_usd":
-                "Mayo USD",
-            "junio_usd":
-                "Junio USD",
-            "julio_usd":
-                "Julio USD",
-            "agosto_usd":
-                "Agosto USD",
-            "setiembre_usd":
-                "Setiembre USD",
-            "octubre_usd":
-                "Octubre USD",
-            "noviembre_usd":
-                "Noviembre USD",
-            "diciembre_usd":
-                "Diciembre USD",
-        }
+        if column == "habilitado":
+            return "Estado"
 
-        return labels.get(
-            column,
-            column
-            .replace("_", " ")
-            .title(),
+        parts = [
+            part
+            for part in str(column)
+            .strip()
+            .split("_")
+            if part
+        ]
+
+        if not parts:
+            return ""
+
+        if parts[0].lower() in (
+            "anio",
+            "ano",
+            "annual",
+        ):
+            parts = [
+                "total",
+                "anual",
+                *parts[1:],
+            ]
+
+        result = []
+
+        for part in parts:
+            if part.lower() == "usd":
+                result.append(
+                    "USD"
+                )
+            else:
+                result.append(
+                    part.capitalize()
+                )
+
+        return " ".join(
+            result
         )
 
     @staticmethod

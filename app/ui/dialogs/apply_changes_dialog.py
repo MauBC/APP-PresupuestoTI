@@ -1,4 +1,4 @@
-﻿from decimal import Decimal
+from decimal import Decimal
 
 from PySide6.QtGui import (
     QBrush,
@@ -310,21 +310,45 @@ class ChangeDetailsDialog(
     def _field_label(
         column,
     ):
-        labels = {
-            "habilitado": "Estado",
-            "anio_usd": "Total anual USD",
-        }
+        if column == "habilitado":
+            return "Estado"
 
-        if column in labels:
-            return labels[
-                column
+        parts = [
+            part
+            for part in str(column)
+            .strip()
+            .split("_")
+            if part
+        ]
+
+        if not parts:
+            return ""
+
+        if parts[0].lower() in (
+            "anio",
+            "ano",
+            "annual",
+        ):
+            parts = [
+                "total",
+                "anual",
+                *parts[1:],
             ]
 
-        return (
-            column
-            .replace("_usd", "")
-            .replace("_", " ")
-            .title()
+        result = []
+
+        for part in parts:
+            if part.lower() == "usd":
+                result.append(
+                    "USD"
+                )
+            else:
+                result.append(
+                    part.capitalize()
+                )
+
+        return " ".join(
+            result
         )
 
     @staticmethod

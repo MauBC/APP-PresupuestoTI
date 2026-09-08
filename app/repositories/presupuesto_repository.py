@@ -11,7 +11,6 @@ from app.config.presupuesto_app_config import (
     APP_COLUMNS,
     GROUPABLE_COLUMNS,
     LOAD_COLUMNS,
-    USD_COLUMNS,
 )
 from app.models.aggregation_result import AggregationResult
 from app.models.dashboard_result import DashboardResult

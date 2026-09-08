@@ -19,10 +19,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config.presupuesto_app_config import (
-    GROUPABLE_COLUMNS,
-    USD_COLUMNS,
-)
 from app.services.presupuesto_change_summary_service import (
     PresupuestoChangeSummaryService,
 )
@@ -132,10 +128,35 @@ class AggregationPage(QWidget):
             )
         )
 
-        self._set_combo_value(
-            self.group_1,
-            "presupuestador",
+        default_group = (
+            self._workspace
+            .module_config
+            .budgeter_column
         )
+
+        if (
+            default_group
+            not in self._workspace
+            .module_config
+            .groupable_columns
+        ):
+            groupable = (
+                self._workspace
+                .module_config
+                .groupable_columns
+            )
+
+            default_group = (
+                groupable[0]
+                if groupable
+                else None
+            )
+
+        if default_group is not None:
+            self._set_combo_value(
+                self.group_1,
+                default_group,
+            )
 
         self.group_button = QPushButton(
             "Aplicar agrupacion"
@@ -327,7 +348,12 @@ class AggregationPage(QWidget):
         )
 
         self.model = ResultTableModel(
-            self
+            self,
+            amount_columns=(
+                self._workspace
+                .module_config
+                .amount_columns
+            ),
         )
 
         self.proxy_model = (
@@ -509,7 +535,11 @@ class AggregationPage(QWidget):
                 None,
             )
 
-        for column in GROUPABLE_COLUMNS:
+        for column in (
+            self._workspace
+            .module_config
+            .groupable_columns
+        ):
             label = (
                 column
                 .replace("_", " ")
@@ -621,7 +651,11 @@ class AggregationPage(QWidget):
 
         total_usd = sum(
             (
-                row.get("anio_usd")
+                row.get(
+                    self._workspace
+                    .module_config
+                    .annual_column
+                )
                 or Decimal("0")
             )
             for row in result.rows
@@ -719,13 +753,16 @@ class AggregationPage(QWidget):
     def _go_to_annual(self):
         column_index = (
             self._find_column_index(
-                "anio_usd"
+                self._workspace
+                .module_config
+                .annual_column
             )
         )
 
         if column_index is None:
             self.status_label.setText(
-                "No se encontro ANIO USD."
+                "No se encontro la columna "
+                "de total anual."
             )
             return
 
@@ -812,10 +849,15 @@ class AggregationPage(QWidget):
             source_index.column()
         )
 
-        if column not in USD_COLUMNS:
+        if (
+            column
+            not in self._workspace
+            .module_config
+            .amount_columns
+        ):
             self.status_label.setText(
-                "Solo los importes USD "
-                "pueden modificarse."
+                "Solo los importes configurados "
+                "para el modulo pueden modificarse."
             )
             return
 
@@ -858,6 +900,11 @@ class AggregationPage(QWidget):
         dialog = GroupEditDialog(
             initial_preview,
             self,
+            annual_column=(
+                self._workspace
+                .module_config
+                .annual_column
+            ),
         )
 
         if not dialog.exec():

@@ -13,11 +13,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from app.config.presupuesto_app_config import (
-    USD_TOTAL_COLUMN,
-)
-
-
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
 
@@ -27,10 +22,13 @@ class GroupEditDialog(QDialog):
         self,
         preview,
         parent=None,
+        *,
+        annual_column: str | None = None,
     ):
         super().__init__(parent)
 
         self._preview = preview
+        self._annual_column = annual_column
 
         self.setObjectName(
             "groupEditDialog"
@@ -269,8 +267,10 @@ class GroupEditDialog(QDialog):
         )
 
         if (
+            self._annual_column is not None
+            and
             self._preview.column
-            == USD_TOTAL_COLUMN
+            == self._annual_column
         ):
             explanation = (
                 "El nuevo total anual se distribuira "

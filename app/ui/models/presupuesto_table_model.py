@@ -13,9 +13,6 @@ from PySide6.QtGui import QColor
 
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
-    USD_COLUMNS,
-    USD_MONTH_COLUMNS,
-    USD_TOTAL_COLUMN,
 )
 from app.models.page_result import (
     PageResult,
@@ -55,18 +52,25 @@ class PresupuestoTableModel(
         super().__init__(parent)
 
         self._workspace = workspace
+        self._config = (
+            workspace.module_config
+        )
 
         self._rows = []
         self._columns = ()
 
         self._original_rows = {}
 
-        self._usd_columns = set(
-            USD_COLUMNS
+        self._amount_columns = set(
+            self._config.amount_columns
         )
 
-        self._usd_month_columns = set(
-            USD_MONTH_COLUMNS
+        self._month_columns = set(
+            self._config.month_columns
+        )
+
+        self._annual_column = (
+            self._config.annual_column
         )
 
     def set_page(
@@ -172,7 +176,7 @@ class PresupuestoTableModel(
             return str(value)
 
         if role == Qt.ItemDataRole.EditRole:
-            if column in self._usd_columns:
+            if column in self._amount_columns:
                 if value is None:
                     return ""
 
@@ -208,7 +212,7 @@ class PresupuestoTableModel(
                     self.DISABLED_BACKGROUND
                 )
 
-            if column in self._usd_columns:
+            if column in self._amount_columns:
                 return self.USD_BACKGROUND
 
         if (
@@ -223,7 +227,7 @@ class PresupuestoTableModel(
         if (
             role
             == Qt.ItemDataRole.TextAlignmentRole
-            and column in self._usd_columns
+            and column in self._amount_columns
         ):
             return (
                 Qt.AlignmentFlag.AlignRight
@@ -238,13 +242,13 @@ class PresupuestoTableModel(
                     "eliminar sus importes."
                 )
 
-            if column in self._usd_month_columns:
+            if column in self._month_columns:
                 return (
                     "Doble clic para modificar "
                     "el importe mensual en USD."
                 )
 
-            if column == USD_TOTAL_COLUMN:
+            if column == self._annual_column:
                 return (
                     "Doble clic para modificar el "
                     "total anual. Los meses se "
@@ -276,7 +280,7 @@ class PresupuestoTableModel(
                 Qt.ItemFlag.ItemIsUserCheckable
             )
 
-        if column in self._usd_columns:
+        if column in self._amount_columns:
             flags |= (
                 Qt.ItemFlag.ItemIsEditable
             )
@@ -336,7 +340,7 @@ class PresupuestoTableModel(
                 )
 
             elif (
-                column in self._usd_columns
+                column in self._amount_columns
                 and
                 role
                 in (
@@ -350,7 +354,7 @@ class PresupuestoTableModel(
                     )
                 )
 
-                if column == USD_TOTAL_COLUMN:
+                if column == self._annual_column:
                     changed = (
                         self._workspace
                         .edit_annual(
@@ -456,6 +460,23 @@ class PresupuestoTableModel(
                 )
 
         return section + 1
+
+    def session_row_id(
+        self,
+        row_index: int,
+    ):
+        if (
+            row_index < 0
+            or
+            row_index >= len(self._rows)
+        ):
+            return None
+
+        return self._rows[
+            row_index
+        ].get(
+            SESSION_ROW_ID
+        )
 
     def _is_modified(
         self,

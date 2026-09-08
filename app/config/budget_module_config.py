@@ -49,6 +49,9 @@ class BudgetModuleConfig:
 
     capabilities: BudgetModuleCapabilities
 
+    country_column: str | None = None
+    budgeter_column: str | None = None
+
     change_detail_columns: tuple[
         str,
         ...

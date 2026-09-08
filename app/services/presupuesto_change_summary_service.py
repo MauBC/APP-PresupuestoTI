@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 from decimal import (
     Decimal,
     InvalidOperation,
@@ -179,14 +179,12 @@ class PresupuestoChangeSummaryService:
 
         details = []
 
-        has_country = (
-            "pais"
-            in self._config.dimension_columns
+        country_column = (
+            self._config.country_column
         )
 
-        has_budgeter = (
-            "presupuestador"
-            in self._config.dimension_columns
+        budgeter_column = (
+            self._config.budgeter_column
         )
 
         for row_change in pending:
@@ -225,11 +223,11 @@ class PresupuestoChangeSummaryService:
                 - original_amount
             )
 
-            if has_country:
+            if country_column is not None:
                 country = self._context_label(
                     current,
                     original,
-                    "pais",
+                    country_column,
                 )
 
                 self._accumulate(
@@ -239,11 +237,11 @@ class PresupuestoChangeSummaryService:
                     simulated_amount,
                 )
 
-            if has_budgeter:
+            if budgeter_column is not None:
                 budgeter = self._context_label(
                     current,
                     original,
-                    "presupuestador",
+                    budgeter_column,
                 )
 
                 self._accumulate(
