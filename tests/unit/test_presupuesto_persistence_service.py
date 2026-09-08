@@ -148,7 +148,7 @@ class FakePersistenceRepository:
 
         return 1
 
-    def replace_staging_rows(
+    def stage_rows(
         self,
         rows,
     ):
@@ -653,3 +653,5 @@ def test_result_from_different_batch_is_rejected():
         )
 
     assert workspace.has_changes
+
+

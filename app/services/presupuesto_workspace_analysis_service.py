@@ -2,10 +2,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from app.config.presupuesto_app_config import (
-    APP_COLUMNS,
-    GROUPABLE_COLUMNS,
     HABILITADO_COLUMN,
-    USD_COLUMNS,
 )
 from app.models.aggregation_result import (
     AggregationResult,
@@ -33,6 +30,15 @@ class PresupuestoWorkspaceAnalysisService:
         workspace: PresupuestoWorkspace,
     ):
         self._workspace = workspace
+        self._config = (
+            workspace.module_config
+        )
+
+        self._app_columns = (
+            *self._config.dimension_columns,
+            HABILITADO_COLUMN,
+            *self._config.amount_columns,
+        )
 
     @staticmethod
     def _decimal(value) -> Decimal:
@@ -97,7 +103,7 @@ class PresupuestoWorkspaceAnalysisService:
 
             item = {
                 column: row.get(column)
-                for column in APP_COLUMNS
+                for column in self._app_columns
             }
 
             item[SESSION_ROW_ID] = row[
@@ -108,7 +114,7 @@ class PresupuestoWorkspaceAnalysisService:
 
         return PageResult(
             rows=tuple(selected_rows),
-            columns=APP_COLUMNS,
+            columns=self._app_columns,
             total_rows=self._workspace.row_count,
             page_index=page_index,
             page_size=page_size,
@@ -145,7 +151,7 @@ class PresupuestoWorkspaceAnalysisService:
         invalid = [
             column
             for column in columns
-            if column not in GROUPABLE_COLUMNS
+            if column not in self._config.groupable_columns
         ]
 
         if invalid:
@@ -170,7 +176,7 @@ class PresupuestoWorkspaceAnalysisService:
                     "registros": 0,
                     **{
                         column: ZERO
-                        for column in USD_COLUMNS
+                        for column in self._config.amount_columns
                     },
                 }
 
@@ -178,10 +184,14 @@ class PresupuestoWorkspaceAnalysisService:
 
             group["registros"] += 1
 
-            for usd_column in USD_COLUMNS:
-                group[usd_column] += (
+            for amount_column in (
+                self._config.amount_columns
+            ):
+                group[amount_column] += (
                     self._decimal(
-                        row.get(usd_column)
+                        row.get(
+                            amount_column
+                        )
                     )
                 )
 
@@ -202,7 +212,9 @@ class PresupuestoWorkspaceAnalysisService:
 
         result_rows.sort(
             key=lambda row: self._decimal(
-                row.get("anio_usd")
+                row.get(
+                    self._config.annual_column
+                )
             ),
             reverse=True,
         )
@@ -212,7 +224,7 @@ class PresupuestoWorkspaceAnalysisService:
             columns=(
                 *columns,
                 "registros",
-                *USD_COLUMNS,
+                *self._config.amount_columns,
             ),
             group_columns=columns,
         )
@@ -247,7 +259,9 @@ class PresupuestoWorkspaceAnalysisService:
             active_rows += 1
 
             amount = self._decimal(
-                row.get("anio_usd")
+                row.get(
+                    self._config.annual_column
+                )
             )
 
             total_usd += amount

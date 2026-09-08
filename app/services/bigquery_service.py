@@ -1,4 +1,4 @@
-﻿from google.cloud import bigquery
+from google.cloud import bigquery
 
 from app.config.settings import settings
 
@@ -24,21 +24,42 @@ class BigQueryService:
 
         return row.connection_test == 1
 
-    def get_table_reference(self) -> str:
+    def get_table_reference(
+        self,
+        table_name: str | None = None,
+    ) -> str:
         project = settings.GOOGLE_CLOUD_PROJECT
         dataset = settings.BIGQUERY_DATASET
-        table = settings.BIGQUERY_TABLE
 
-        if not project or not dataset or not table:
+        table = str(
+            table_name
+            if table_name is not None
+            else settings.BIGQUERY_TABLE
+        ).strip()
+
+        if (
+            not project
+            or not dataset
+            or not table
+        ):
             raise ValueError(
                 "La configuracion de BigQuery esta incompleta."
             )
 
-        return f"{project}.{dataset}.{table}"
+        return (
+            f"{project}."
+            f"{dataset}."
+            f"{table}"
+        )
 
-    def get_table(self):
+    def get_table(
+        self,
+        table_name: str | None = None,
+    ):
         return self.client.get_table(
-            self.get_table_reference()
+            self.get_table_reference(
+                table_name
+            )
         )
 
     def get_sample_rows(self, limit: int = 5) -> list[dict]:

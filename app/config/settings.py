@@ -30,6 +30,11 @@ class Settings:
         "US",
     )
 
+    BIGQUERY_CAPEX_TABLE = os.getenv(
+        "BIGQUERY_CAPEX_TABLE",
+        "capex_2026",
+    )
+
     BIGQUERY_BATCH_TABLE = os.getenv(
         "BIGQUERY_BATCH_TABLE",
         "presupuesto_change_batches",

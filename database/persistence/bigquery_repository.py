@@ -1,9 +1,15 @@
-﻿from datetime import datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Iterable
 
 from google.cloud import bigquery
 
+from app.config.budget_module_config import (
+    BudgetModuleConfig,
+)
+from app.config.budget_modules import (
+    OPEX_MODULE_CONFIG,
+)
 from app.config.settings import settings
 from database.persistence.bigquery_contract import (
     build_staging_schema,
@@ -23,6 +29,9 @@ from database.persistence.transaction_sql import (
 )
 
 
+SMALL_STAGING_QUERY_THRESHOLD = 50
+
+
 class BigQueryPersistenceError(
     RuntimeError
 ):
@@ -37,8 +46,16 @@ class BigQueryPersistenceRepository:
         project: str | None = None,
         dataset: str | None = None,
         location: str | None = None,
+        module_config:
+            BudgetModuleConfig | None = None,
     ):
         self._client = client
+
+        self._module_config = (
+            module_config
+            if module_config is not None
+            else OPEX_MODULE_CONFIG
+        )
 
         self._project = self._required_text(
             project
@@ -62,11 +79,17 @@ class BigQueryPersistenceRepository:
         )
 
     @property
+    def module_config(
+        self,
+    ) -> BudgetModuleConfig:
+        return self._module_config
+
+    @property
     def main_table_id(
         self,
     ) -> str:
         return self._table_id(
-            settings.BIGQUERY_TABLE
+            self._module_config.main_table
         )
 
     @property
@@ -314,6 +337,141 @@ class BigQueryPersistenceRepository:
 
         return int(
             output_rows
+        )
+
+    def stage_rows(
+        self,
+        rows: Iterable[
+            StagingRow
+        ],
+    ) -> int:
+        staging_rows = tuple(
+            rows
+        )
+
+        self._validate_staging_rows(
+            staging_rows
+        )
+
+        if (
+            len(staging_rows)
+            <= SMALL_STAGING_QUERY_THRESHOLD
+        ):
+            return self.insert_staging_rows(
+                staging_rows
+            )
+
+        return self.load_staging_rows(
+            staging_rows
+        )
+
+    def insert_staging_rows(
+        self,
+        rows: Iterable[
+            StagingRow
+        ],
+    ) -> int:
+        staging_rows = tuple(
+            rows
+        )
+
+        self._validate_staging_rows(
+            staging_rows
+        )
+
+        schema = tuple(
+            build_staging_schema()
+        )
+
+        struct_values = []
+
+        for staging_row in staging_rows:
+            record = (
+                staging_row.as_record()
+            )
+
+            fields = []
+
+            for schema_field in schema:
+                column = (
+                    schema_field.name
+                )
+
+                fields.append(
+                    bigquery.ScalarQueryParameter(
+                        column,
+                        self._query_parameter_type(
+                            schema_field.field_type
+                        ),
+                        record[column],
+                    )
+                )
+
+            struct_values.append(
+                bigquery.StructQueryParameter
+                .positional(
+                    *fields
+                )
+            )
+
+        rows_parameter = (
+            bigquery.ArrayQueryParameter(
+                "rows",
+                "STRUCT",
+                struct_values,
+            )
+        )
+
+        insert_columns = ",\n                ".join(
+            f"`{field.name}`"
+            for field in schema
+        )
+
+        select_columns = ",\n                ".join(
+            f"staged.`{field.name}`"
+            for field in schema
+        )
+
+        sql = f"""
+            INSERT INTO `{self.staging_table_id}` (
+                {insert_columns}
+            )
+
+            SELECT
+                {select_columns}
+
+            FROM UNNEST(@rows) AS staged
+        """
+
+        job_config = (
+            bigquery.QueryJobConfig(
+                query_parameters=[
+                    rows_parameter
+                ]
+            )
+        )
+
+        job = self._client.query(
+            sql,
+            job_config=job_config,
+            location=self._location,
+        )
+
+        job.result()
+
+        affected_rows = getattr(
+            job,
+            "num_dml_affected_rows",
+            None,
+        )
+
+        if affected_rows is None:
+            return len(
+                staging_rows
+            )
+
+        return int(
+            affected_rows
         )
 
     def replace_staging_rows(
@@ -759,6 +917,41 @@ class BigQueryPersistenceRepository:
                         "el contrato."
                     )
                 )
+
+    @staticmethod
+    def _query_parameter_type(
+        field_type: str,
+    ) -> str:
+        normalized = str(
+            field_type
+        ).strip().upper()
+
+        aliases = {
+            "INTEGER": "INT64",
+            "INT64": "INT64",
+            "BOOLEAN": "BOOL",
+            "BOOL": "BOOL",
+            "FLOAT": "FLOAT64",
+            "FLOAT64": "FLOAT64",
+            "STRING": "STRING",
+            "NUMERIC": "NUMERIC",
+            "BIGNUMERIC": "BIGNUMERIC",
+            "TIMESTAMP": "TIMESTAMP",
+            "DATE": "DATE",
+            "DATETIME": "DATETIME",
+        }
+
+        try:
+            return aliases[
+                normalized
+            ]
+
+        except KeyError as exc:
+            raise BigQueryPersistenceError(
+                "Tipo BigQuery no soportado "
+                "para staging parametrizado: "
+                f"{field_type}"
+            ) from exc
 
     @staticmethod
     def _staging_record(

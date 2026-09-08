@@ -1,4 +1,5 @@
 ﻿from datetime import datetime
+from time import perf_counter
 
 from app.config.settings import settings
 from database.persistence.batch_builder import (
@@ -19,6 +20,23 @@ class PresupuestoPersistenceServiceError(
     RuntimeError
 ):
     pass
+
+
+def _print_timing(
+    label: str,
+    started: float,
+):
+    elapsed = (
+        perf_counter()
+        - started
+    )
+
+    print(
+        f"[OPEX SAVE] "
+        f"{label:<22} "
+        f"{elapsed:>7.2f} s",
+        flush=True,
+    )
 
 
 class PresupuestoPersistenceService:
@@ -45,6 +63,14 @@ class PresupuestoPersistenceService:
         timestamp: datetime | None = None,
         batch_id_factory=generate_batch_id,
     ) -> PersistenceResult:
+        total_started = (
+            perf_counter()
+        )
+
+        preparation_started = (
+            perf_counter()
+        )
+
         try:
             batch = build_persistence_batch(
                 self._workspace,
@@ -67,11 +93,25 @@ class PresupuestoPersistenceService:
             PersistenceBuildError,
             StagingBuildError,
         ) as exc:
+            _print_timing(
+                "Preparacion ERROR",
+                preparation_started,
+            )
+
             raise (
                 PresupuestoPersistenceServiceError(
                     str(exc)
                 )
             ) from exc
+
+        _print_timing(
+            "Preparacion",
+            preparation_started,
+        )
+
+        pending_started = (
+            perf_counter()
+        )
 
         try:
             self._repository.insert_pending_batch(
@@ -79,6 +119,11 @@ class PresupuestoPersistenceService:
             )
 
         except Exception as exc:
+            _print_timing(
+                "Insert PENDING ERROR",
+                pending_started,
+            )
+
             raise (
                 PresupuestoPersistenceServiceError(
                     "No se pudo registrar "
@@ -87,12 +132,26 @@ class PresupuestoPersistenceService:
                 )
             ) from exc
 
+        _print_timing(
+            "Insert PENDING",
+            pending_started,
+        )
+
+        staging_started = (
+            perf_counter()
+        )
+
         try:
-            self._repository.replace_staging_rows(
+            self._repository.stage_rows(
                 staging
             )
 
         except Exception as exc:
+            _print_timing(
+                "Carga staging ERROR",
+                staging_started,
+            )
+
             self._mark_preparation_failed(
                 batch.batch_id,
                 exc,
@@ -107,6 +166,15 @@ class PresupuestoPersistenceService:
                 )
             ) from exc
 
+        _print_timing(
+            "Carga staging",
+            staging_started,
+        )
+
+        transaction_started = (
+            perf_counter()
+        )
+
         try:
             result = (
                 self._repository
@@ -117,6 +185,11 @@ class PresupuestoPersistenceService:
             )
 
         except Exception as exc:
+            _print_timing(
+                "Transaccion ERROR",
+                transaction_started,
+            )
+
             raise (
                 PresupuestoPersistenceServiceError(
                     "No se pudo confirmar "
@@ -126,6 +199,16 @@ class PresupuestoPersistenceService:
                     "todos sus cambios."
                 )
             ) from exc
+
+        _print_timing(
+            "Transaccion",
+            transaction_started,
+        )
+
+        _print_timing(
+            "Persistencia total",
+            total_started,
+        )
 
         if (
             result.batch_id
@@ -166,3 +249,5 @@ class PresupuestoPersistenceService:
                     "de reintentar."
                 )
             ) from mark_error
+
+

@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 from typing import Callable
 
 from PySide6.QtCore import (
@@ -44,13 +44,19 @@ def build_save_coordinator(
 
     read_repository = (
         PresupuestoRepository(
-            bigquery
+            bigquery,
+            module_config=(
+                workspace.module_config
+            ),
         )
     )
 
     persistence_repository = (
         BigQueryPersistenceRepository(
-            bigquery.client
+            bigquery.client,
+            module_config=(
+                workspace.module_config
+            ),
         )
     )
 

@@ -1,4 +1,4 @@
-from decimal import Decimal
+﻿from decimal import Decimal
 
 from PySide6.QtWidgets import (
     QDialog,
@@ -19,18 +19,20 @@ class ApplyChangesDialog(QDialog):
     def __init__(
         self,
         summary,
+        actor: str,
         parent=None,
     ):
         super().__init__(parent)
 
         self._summary = summary
+        self._actor = actor
 
         self.setObjectName(
             "applyChangesDialog"
         )
 
         self.setWindowTitle(
-            "Aplicar cambios"
+            "Aplicar cambios OPEX"
         )
 
         self.setMinimumWidth(
@@ -68,12 +70,13 @@ class ApplyChangesDialog(QDialog):
                 font-weight: 600;
             }
 
-            QLabel#demoText {
-                background-color: #EEF4FF;
-                color: #3538CD;
-                border: 1px solid #C7D7FE;
+            QLabel#persistenceText {
+                background-color: #ECFDF3;
+                color: #067647;
+                border: 1px solid #ABEFC6;
                 border-radius: 7px;
                 padding: 10px;
+                font-weight: 600;
             }
 
             QLineEdit {
@@ -99,10 +102,14 @@ class ApplyChangesDialog(QDialog):
             }
 
             QPushButton#confirmApplyButton {
-                background-color: #B42318;
+                background-color: #2F7650;
                 color: #FFFFFF;
-                border: 1px solid #B42318;
+                border: 1px solid #2F7650;
                 font-weight: 700;
+            }
+
+            QPushButton#confirmApplyButton:hover {
+                background-color: #285F42;
             }
 
             QPushButton#confirmApplyButton:disabled {
@@ -126,26 +133,35 @@ class ApplyChangesDialog(QDialog):
         layout.setSpacing(15)
 
         title = QLabel(
-            "Aplicar cambios al presupuesto"
+            "Aplicar cambios OPEX"
         )
 
         title.setStyleSheet(
-            "font-size: 20px; font-weight: 700;"
+            "font-size: 20px; "
+            "font-weight: 700;"
         )
 
-        layout.addWidget(title)
+        layout.addWidget(
+            title
+        )
 
         warning = QLabel(
-            "Esta operacion representara el guardado "
-            "definitivo de los cambios pendientes."
+            "Esta operacion guardara de forma "
+            "definitiva los cambios pendientes "
+            "en BigQuery."
         )
 
-        warning.setWordWrap(True)
+        warning.setWordWrap(
+            True
+        )
+
         warning.setObjectName(
             "warningText"
         )
 
-        layout.addWidget(warning)
+        layout.addWidget(
+            warning
+        )
 
         summary_box = QFrame()
 
@@ -165,12 +181,12 @@ class ApplyChangesDialog(QDialog):
         )
 
         rows_label = QLabel(
-            f"Filas modificadas: "
+            "Filas modificadas: "
             f"{self._summary.pending_rows:,}"
         )
 
         fields_label = QLabel(
-            f"Campos modificados: "
+            "Campos modificados: "
             f"{self._summary.pending_fields:,}"
         )
 
@@ -181,7 +197,7 @@ class ApplyChangesDialog(QDialog):
         )
 
         simulated_label = QLabel(
-            "Presupuesto simulado: "
+            "Presupuesto modificado: "
             f"US$ "
             f"{self._summary.simulated_total:,.2f}"
         )
@@ -199,6 +215,15 @@ class ApplyChangesDialog(QDialog):
             )
         )
 
+        actor_label = QLabel(
+            "Usuario: "
+            + self._actor
+        )
+
+        actor_label.setStyleSheet(
+            "color: #475467;"
+        )
+
         summary_layout.addWidget(
             rows_label
         )
@@ -207,7 +232,9 @@ class ApplyChangesDialog(QDialog):
             fields_label
         )
 
-        summary_layout.addSpacing(5)
+        summary_layout.addSpacing(
+            5
+        )
 
         summary_layout.addWidget(
             original_label
@@ -221,20 +248,52 @@ class ApplyChangesDialog(QDialog):
             variation_label
         )
 
+        summary_layout.addSpacing(
+            5
+        )
+
+        summary_layout.addWidget(
+            actor_label
+        )
+
         layout.addWidget(
             summary_box
         )
 
+        persistence = QLabel(
+            "Los cambios se validaran antes de "
+            "guardarse. Si otra sesion modifico "
+            "una fila desde que cargaste el "
+            "presupuesto, se detectara un "
+            "conflicto y tus cambios locales "
+            "se conservaran."
+        )
+
+        persistence.setWordWrap(
+            True
+        )
+
+        persistence.setObjectName(
+            "persistenceText"
+        )
+
+        layout.addWidget(
+            persistence
+        )
+
         instruction = QLabel(
             "Para continuar, escribe "
-            "<b>CONFIRMAR</b> en el siguiente campo:"
+            "<b>CONFIRMAR</b> en el "
+            "siguiente campo:"
         )
 
         layout.addWidget(
             instruction
         )
 
-        self.confirmation_input = QLineEdit()
+        self.confirmation_input = (
+            QLineEdit()
+        )
 
         self.confirmation_input.setPlaceholderText(
             "Escribe CONFIRMAR"
@@ -244,29 +303,20 @@ class ApplyChangesDialog(QDialog):
             self.confirmation_input
         )
 
-        demo = QLabel(
-            "Modo actual: demostracion. "
-            "Aunque confirmes esta operacion, "
-            "todavia NO se escribira ningun "
-            "cambio en BigQuery."
-        )
-
-        demo.setWordWrap(True)
-        demo.setObjectName(
-            "demoText"
-        )
-
-        layout.addWidget(demo)
-
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            |
-            QDialogButtonBox.StandardButton.Cancel
+        self.buttons = (
+            QDialogButtonBox(
+                QDialogButtonBox
+                .StandardButton.Ok
+                |
+                QDialogButtonBox
+                .StandardButton.Cancel
+            )
         )
 
         self.confirm_button = (
             self.buttons.button(
-                QDialogButtonBox.StandardButton.Ok
+                QDialogButtonBox
+                .StandardButton.Ok
             )
         )
 
@@ -284,7 +334,8 @@ class ApplyChangesDialog(QDialog):
 
         cancel_button = (
             self.buttons.button(
-                QDialogButtonBox.StandardButton.Cancel
+                QDialogButtonBox
+                .StandardButton.Cancel
             )
         )
 

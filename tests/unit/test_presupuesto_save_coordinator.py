@@ -1,4 +1,4 @@
-﻿from datetime import (
+from datetime import (
     datetime,
     timezone,
 )
@@ -159,6 +159,28 @@ class FakeRepository:
     def get_all_rows(self):
         self.calls += 1
         return self.rows
+
+    def get_rows_by_ids(
+        self,
+        row_ids,
+    ):
+        wanted = {
+            str(row_id).strip()
+            for row_id in row_ids
+        }
+
+        return tuple(
+            row
+            for row in self.get_all_rows()
+            if str(
+                row.get(
+                    "row_id",
+                    ""
+                )
+            ).strip()
+            in wanted
+        )
+
 
 
 def applied_result():
@@ -481,3 +503,5 @@ def test_save_arguments_are_forwarded():
         call["batch_id_factory"]
         is factory
     )
+
+

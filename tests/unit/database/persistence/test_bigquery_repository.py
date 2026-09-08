@@ -744,3 +744,153 @@ def test_missing_project_is_rejected():
             dataset="dataset_test",
             location="US",
         )
+
+
+def test_stage_rows_uses_query_for_small_batch(
+    monkeypatch,
+):
+    repo = repository()
+
+    _, staging = (
+        make_batch_and_staging()
+    )
+
+    calls = []
+
+    monkeypatch.setattr(
+        repo,
+        "insert_staging_rows",
+        lambda rows: (
+            calls.append(
+                (
+                    "query",
+                    len(tuple(rows)),
+                )
+            )
+            or len(tuple(rows))
+        ),
+    )
+
+    monkeypatch.setattr(
+        repo,
+        "load_staging_rows",
+        lambda rows: (
+            calls.append(
+                (
+                    "load",
+                    len(tuple(rows)),
+                )
+            )
+            or len(tuple(rows))
+        ),
+    )
+
+    count = repo.stage_rows(
+        staging
+    )
+
+    assert count == 1
+
+    assert calls == [
+        (
+            "query",
+            1,
+        )
+    ]
+
+
+def test_stage_rows_uses_load_job_for_large_batch(
+    monkeypatch,
+):
+    from dataclasses import replace
+
+    repo = repository()
+
+    _, staging = (
+        make_batch_and_staging()
+    )
+
+    rows = tuple(
+        replace(
+            staging[0],
+            row_id=f"row-{index}",
+        )
+        for index in range(
+            51
+        )
+    )
+
+    calls = []
+
+    monkeypatch.setattr(
+        repo,
+        "insert_staging_rows",
+        lambda values: (
+            calls.append(
+                (
+                    "query",
+                    len(tuple(values)),
+                )
+            )
+            or len(tuple(values))
+        ),
+    )
+
+    monkeypatch.setattr(
+        repo,
+        "load_staging_rows",
+        lambda values: (
+            calls.append(
+                (
+                    "load",
+                    len(tuple(values)),
+                )
+            )
+            or len(tuple(values))
+        ),
+    )
+
+    count = repo.stage_rows(
+        rows
+    )
+
+    assert count == 51
+
+    assert calls == [
+        (
+            "load",
+            51,
+        )
+    ]
+
+
+def test_query_parameter_type_aliases():
+    repo = repository()
+
+    assert (
+        repo._query_parameter_type(
+            "INTEGER"
+        )
+        == "INT64"
+    )
+
+    assert (
+        repo._query_parameter_type(
+            "BOOLEAN"
+        )
+        == "BOOL"
+    )
+
+    assert (
+        repo._query_parameter_type(
+            "NUMERIC"
+        )
+        == "NUMERIC"
+    )
+
+    assert (
+        repo._query_parameter_type(
+            "TIMESTAMP"
+        )
+        == "TIMESTAMP"
+    )

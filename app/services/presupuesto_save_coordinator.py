@@ -1,5 +1,6 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 from datetime import datetime
+from time import perf_counter
 from typing import Callable
 
 from app.services.presupuesto_persistence_service import (
@@ -40,7 +41,8 @@ class PresupuestoReloadAfterApplyError(
 ):
     def __init__(
         self,
-        persistence_result: PersistenceResult,
+        persistence_result:
+            PersistenceResult,
     ):
         self.persistence_result = (
             persistence_result
@@ -54,6 +56,23 @@ class PresupuestoReloadAfterApplyError(
             "a guardar el mismo cambio hasta "
             "recargar los datos."
         )
+
+
+def _print_timing(
+    label: str,
+    started: float,
+):
+    elapsed = (
+        perf_counter()
+        - started
+    )
+
+    print(
+        f"[OPEX SAVE] "
+        f"{label:<22} "
+        f"{elapsed:>7.2f} s",
+        flush=True,
+    )
 
 
 class PresupuestoSaveCoordinator:
@@ -81,6 +100,14 @@ class PresupuestoSaveCoordinator:
             Callable[[], str]
             = generate_batch_id,
     ) -> PresupuestoSaveOutcome:
+        total_started = (
+            perf_counter()
+        )
+
+        persistence_started = (
+            perf_counter()
+        )
+
         result = (
             self._persistence_service
             .save_changes(
@@ -92,24 +119,69 @@ class PresupuestoSaveCoordinator:
             )
         )
 
+        _print_timing(
+            "Servicio persistencia",
+            persistence_started,
+        )
+
         if not result.is_applied:
+            _print_timing(
+                "TOTAL",
+                total_started,
+            )
+
             return PresupuestoSaveOutcome(
                 persistence_result=result,
                 reload_result=None,
             )
 
+        reload_started = (
+            perf_counter()
+        )
+
         try:
-            reload_result = (
-                self._workspace_loader
-                .load()
+            reload_pending = getattr(
+                self._workspace_loader,
+                "reload_pending_rows",
+                None,
             )
 
+            if reload_pending is None:
+                reload_result = (
+                    self._workspace_loader
+                    .load()
+                )
+            else:
+                reload_result = (
+                    reload_pending()
+                )
+
         except Exception as exc:
+            _print_timing(
+                "Reload ERROR",
+                reload_started,
+            )
+
+            _print_timing(
+                "TOTAL",
+                total_started,
+            )
+
             raise (
                 PresupuestoReloadAfterApplyError(
                     result
                 )
             ) from exc
+
+        _print_timing(
+            "Reload selectivo",
+            reload_started,
+        )
+
+        _print_timing(
+            "TOTAL",
+            total_started,
+        )
 
         return PresupuestoSaveOutcome(
             persistence_result=result,

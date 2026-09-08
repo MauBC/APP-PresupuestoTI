@@ -8,14 +8,23 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from app.config.budget_module_config import (
+    BudgetModule,
+)
+from app.config.budget_modules import (
+    get_budget_module_config,
+)
 from app.config.settings import settings
+from app.services.current_actor_service import (
+    CurrentActorError,
+    resolve_current_actor,
+)
 from app.services.presupuesto_change_summary_service import (
     PresupuestoChangeSummaryService,
 )
@@ -24,6 +33,11 @@ from app.services.presupuesto_workspace import (
 )
 from app.services.presupuesto_workspace_analysis_service import (
     PresupuestoWorkspaceAnalysisService,
+)
+from app.ui.dialogs.app_message_box import (
+    show_error,
+    show_info,
+    show_warning,
 )
 from app.ui.dialogs.apply_changes_dialog import (
     ApplyChangesDialog,
@@ -36,6 +50,9 @@ from app.ui.pages.dashboard_page import (
 )
 from app.ui.pages.presupuesto_page import (
     PresupuestoPage,
+)
+from app.ui.workers.presupuesto_save import (
+    PresupuestoSaveThread,
 )
 from app.ui.workers.workspace_loader import (
     WorkspaceLoadThread,
@@ -55,8 +72,16 @@ class MainWindow(QMainWindow):
             settings.WINDOW_HEIGHT,
         )
 
+        self.active_module = (
+            get_budget_module_config(
+                BudgetModule.OPEX
+            )
+        )
+
         self.workspace = (
-            PresupuestoWorkspace()
+            PresupuestoWorkspace(
+                self.active_module
+            )
         )
 
         self.analysis_service = (
@@ -72,6 +97,11 @@ class MainWindow(QMainWindow):
         )
 
         self._workspace_loader = None
+        self._save_thread = None
+
+        self._save_in_progress = False
+        self._reload_after_applied_failure = False
+
         self._initial_load_seconds = None
 
         self._setup_ui()
@@ -119,7 +149,7 @@ class MainWindow(QMainWindow):
         content_layout.setSpacing(0)
 
         self.workspace_banner = QLabel(
-            "Preparando simulacion local..."
+            "Preparando presupuesto..."
         )
 
         self.workspace_banner.setObjectName(
@@ -236,7 +266,17 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(title)
         layout.addWidget(subtitle)
-        layout.addSpacing(26)
+        layout.addSpacing(18)
+
+        module_selector = (
+            self._create_module_selector()
+        )
+
+        layout.addWidget(
+            module_selector
+        )
+
+        layout.addSpacing(18)
 
         self.button_group = (
             QButtonGroup(self)
@@ -349,6 +389,185 @@ class MainWindow(QMainWindow):
 
         return sidebar
 
+    def _create_module_selector(
+        self,
+    ):
+        container = QFrame()
+
+        container.setObjectName(
+            "moduleSelector"
+        )
+
+        layout = QHBoxLayout(
+            container
+        )
+
+        layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        layout.setSpacing(
+            6
+        )
+
+        self.module_button_group = (
+            QButtonGroup(self)
+        )
+
+        self.module_button_group.setExclusive(
+            True
+        )
+
+        self.opex_module_button = (
+            self._create_module_button(
+                "OPEX",
+                BudgetModule.OPEX,
+            )
+        )
+
+        self.capex_module_button = (
+            self._create_module_button(
+                "CAPEX",
+                BudgetModule.CAPEX,
+            )
+        )
+
+        layout.addWidget(
+            self.opex_module_button
+        )
+
+        layout.addWidget(
+            self.capex_module_button
+        )
+
+        self._sync_module_selector()
+
+        return container
+
+    def _create_module_button(
+        self,
+        text: str,
+        module: BudgetModule,
+    ):
+        button = QPushButton(
+            text
+        )
+
+        button.setCheckable(
+            True
+        )
+
+        button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #FFFFFF;
+                color: #344054;
+                border: 1px solid #D0D5DD;
+                border-radius: 7px;
+                padding: 8px 6px;
+                font-weight: 700;
+            }
+
+            QPushButton:hover {
+                border-color: #2F7650;
+                color: #2F7650;
+            }
+
+            QPushButton:checked {
+                background-color: #2F7650;
+                color: #FFFFFF;
+                border-color: #2F7650;
+            }
+            """
+        )
+
+        button.clicked.connect(
+            lambda checked=False, value=module:
+            self._select_budget_module(
+                value
+            )
+        )
+
+        self.module_button_group.addButton(
+            button
+        )
+
+        return button
+
+    def _select_budget_module(
+        self,
+        module: BudgetModule,
+    ):
+        config = (
+            get_budget_module_config(
+                module
+            )
+        )
+
+        if (
+            config.module
+            == self.active_module.module
+        ):
+            self._sync_module_selector()
+            return
+
+        if not config.configured:
+            show_info(
+                self,
+                "CAPEX",
+                "El modulo CAPEX ya esta "
+                "contemplado en la arquitectura, "
+                "pero todavia no se ha conectado "
+                "su esquema de proyectos.\n\n"
+                "OPEX continuara activo.",
+            )
+
+            self._sync_module_selector()
+            return
+
+        if (
+            self.workspace.is_loaded
+            and self.workspace.has_changes
+        ):
+            show_warning(
+                self,
+                "Cambios pendientes",
+                "No se puede cambiar de modulo "
+                "mientras existan cambios locales "
+                "sin aplicar.\n\n"
+                "Aplica o descarta los cambios "
+                "antes de continuar.",
+            )
+
+            self._sync_module_selector()
+            return
+
+        self.active_module = config
+        self._sync_module_selector()
+
+    def _sync_module_selector(
+        self,
+    ):
+        is_opex = (
+            self.active_module.module
+            == BudgetModule.OPEX
+        )
+
+        self.opex_module_button.setChecked(
+            is_opex
+        )
+
+        self.capex_module_button.setChecked(
+            not is_opex
+        )
+
     def _create_nav_button(
         self,
         text: str,
@@ -400,9 +619,18 @@ class MainWindow(QMainWindow):
         ):
             return
 
+        self.pages.setEnabled(
+            False
+        )
+
+        self._update_apply_button(
+            0
+        )
+
         self.workspace_banner.setText(
-            "Cargando presupuesto desde "
-            "BigQuery para trabajar en modo local..."
+            f"{self.active_module.label}  |  "
+            "Cargando presupuesto "
+            "desde BigQuery..."
         )
 
         self._workspace_loader = (
@@ -432,6 +660,10 @@ class MainWindow(QMainWindow):
     ):
         self._initial_load_seconds = (
             result.total_seconds
+        )
+
+        self.pages.setEnabled(
+            True
         )
 
         self.dashboard_page.set_workspace_ready()
@@ -489,7 +721,8 @@ class MainWindow(QMainWindow):
         )
 
         text = (
-            "MODO SIMULACION LOCAL  |  "
+            f"{self.active_module.label}  |  "
+            "MODO EDICION LOCAL  |  "
             f"{self.workspace.row_count:,} registros"
         )
 
@@ -515,9 +748,15 @@ class MainWindow(QMainWindow):
                 "  |  Sin cambios pendientes"
             )
 
-        text += (
-            "  |  BigQuery sin cambios"
-        )
+        if pending_rows > 0:
+            text += (
+                "  |  BigQuery pendiente "
+                "de sincronizacion"
+            )
+        else:
+            text += (
+                "  |  BigQuery sincronizado"
+            )
 
         self.workspace_banner.setText(
             text
@@ -531,6 +770,17 @@ class MainWindow(QMainWindow):
         self,
         pending_rows: int,
     ):
+        if self._save_in_progress:
+            self.apply_changes_button.setEnabled(
+                False
+            )
+
+            self.apply_changes_button.setText(
+                "Guardando cambios..."
+            )
+
+            return
+
         has_changes = (
             pending_rows > 0
         )
@@ -550,20 +800,34 @@ class MainWindow(QMainWindow):
             )
 
     def _show_apply_changes_dialog(self):
+        if self._save_in_progress:
+            return
+
         if not self.workspace.is_loaded:
-            QMessageBox.information(
+            show_info(
                 self,
-                "Aplicar cambios",
+                f"Aplicar cambios {self.active_module.label}",
                 "El presupuesto todavia "
                 "no se encuentra cargado.",
             )
             return
 
         if not self.workspace.has_changes:
-            QMessageBox.information(
+            show_info(
                 self,
-                "Aplicar cambios",
+                f"Aplicar cambios {self.active_module.label}",
                 "No existen cambios pendientes.",
+            )
+            return
+
+        try:
+            actor = resolve_current_actor()
+
+        except CurrentActorError as exc:
+            show_warning(
+                self,
+                "Usuario no identificado",
+                str(exc),
             )
             return
 
@@ -574,9 +838,9 @@ class MainWindow(QMainWindow):
             )
 
         except Exception as exc:
-            QMessageBox.warning(
+            show_warning(
                 self,
-                "Aplicar cambios",
+                "Aplicar cambios OPEX",
                 "No se pudo preparar el "
                 "resumen de cambios.\n\n"
                 f"{type(exc).__name__}: {exc}",
@@ -585,183 +849,256 @@ class MainWindow(QMainWindow):
 
         dialog = ApplyChangesDialog(
             summary,
+            actor,
             self,
         )
 
         if not dialog.exec():
             return
 
-        self._show_demo_confirmation()
-
-    def _show_demo_confirmation(self):
-        from PySide6.QtWidgets import (
-            QDialog,
-            QDialogButtonBox,
+        self._start_presupuesto_save(
+            actor
         )
 
-        dialog = QDialog(self)
+    def _start_presupuesto_save(
+        self,
+        actor: str,
+    ):
+        if (
+            self._save_thread is not None
+            and self._save_thread.isRunning()
+        ):
+            return
 
-        dialog.setObjectName(
-            "confirmationReceivedDialog"
+        if not self.workspace.has_changes:
+            return
+
+        self._save_in_progress = True
+        self._reload_after_applied_failure = False
+
+        self.pages.setEnabled(
+            False
         )
 
-        dialog.setWindowTitle(
-            "Confirmacion recibida"
+        self.workspace_banner.setText(
+            f"{self.active_module.label}  |  "
+            "Guardando cambios "
+            "en BigQuery..."
         )
 
-        dialog.setFixedWidth(
-            460
+        self._update_apply_button(
+            self.workspace.pending_row_count
         )
 
-        dialog.setStyleSheet(
-            """
-            QDialog#confirmationReceivedDialog {
-                background-color: #FFFFFF;
-                color: #1F2937;
-            }
-
-            QDialog#confirmationReceivedDialog QLabel {
-                background-color: transparent;
-                color: #1F2937;
-            }
-
-            QLabel#confirmationTitle {
-                font-size: 19px;
-                font-weight: 700;
-                color: #1F2937;
-            }
-
-            QLabel#confirmationMessage {
-                font-size: 13px;
-                color: #344054;
-                line-height: 1.4;
-            }
-
-            QLabel#confirmationNotice {
-                background-color: #EEF4FF;
-                color: #3538CD;
-                border: 1px solid #C7D7FE;
-                border-radius: 7px;
-                padding: 11px;
-                font-weight: 600;
-            }
-
-            QDialogButtonBox QPushButton {
-                background-color: #2F7650;
-                color: #FFFFFF;
-                border: 1px solid #2F7650;
-                border-radius: 6px;
-                padding: 8px 22px;
-                min-width: 90px;
-                font-weight: 600;
-            }
-
-            QDialogButtonBox QPushButton:hover {
-                background-color: #285F42;
-            }
-            """
+        self._save_thread = (
+            PresupuestoSaveThread(
+                workspace=self.workspace,
+                actor=actor,
+                parent=self,
+            )
         )
 
-        layout = QVBoxLayout(dialog)
-
-        layout.setContentsMargins(
-            28,
-            24,
-            28,
-            24,
+        self._save_thread.completed.connect(
+            self._on_presupuesto_save_completed
         )
 
-        layout.setSpacing(
-            16
+        self._save_thread.failed.connect(
+            self._on_presupuesto_save_failed
         )
 
-        title = QLabel(
-            "Confirmacion recibida"
+        self._save_thread.finished.connect(
+            self._on_presupuesto_save_finished
         )
 
-        title.setObjectName(
-            "confirmationTitle"
+        self._save_thread.start()
+
+    def _on_presupuesto_save_completed(
+        self,
+        outcome,
+    ):
+        result = (
+            outcome.persistence_result
         )
 
-        title.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
+        if result.status == "APPLIED":
+            self._invalidate_page(
+                self.dashboard_page
+            )
+
+            self._invalidate_page(
+                self.presupuesto_page
+            )
+
+            self._invalidate_page(
+                self.aggregation_page
+            )
+
+            self.dashboard_page.set_workspace_ready()
+            self.presupuesto_page.set_workspace_ready()
+            self.aggregation_page.set_workspace_ready()
+
+            self._update_workspace_banner()
+
+            page = self.pages.currentWidget()
+
+            if hasattr(
+                page,
+                "ensure_loaded",
+            ):
+                page.ensure_loaded()
+
+            show_info(
+                self,
+                "Cambios aplicados",
+                f"Los cambios {self.active_module.label} "
+                "se guardaron correctamente "
+                "en BigQuery.\n\n"
+                f"Filas actualizadas: "
+                f"{result.row_count:,}\n"
+                f"Campos modificados: "
+                f"{result.field_count:,}\n"
+                f"Batch: {result.batch_id}",
+            )
+
+            return
+
+        if result.status == "CONFLICT":
+            conflicts = (
+                result.conflicts
+            )
+
+            preview_lines = []
+
+            for conflict in conflicts[:5]:
+                current = (
+                    conflict.current_version
+                    if conflict.current_version
+                    is not None
+                    else "no encontrada"
+                )
+
+                preview_lines.append(
+                    f"- {conflict.row_id}: "
+                    f"version esperada "
+                    f"{conflict.expected_version}, "
+                    f"actual {current}"
+                )
+
+            preview = "\n".join(
+                preview_lines
+            )
+
+            if len(conflicts) > 5:
+                preview += "\n- ..."
+
+            show_warning(
+                self,
+                "Conflicto de versiones",
+                "No se aplico ningun cambio.\n\n"
+                "Otra sesion modifico una o "
+                "mas filas desde que cargaste "
+                "el presupuesto.\n\n"
+                f"Conflictos: "
+                f"{len(conflicts):,}\n\n"
+                f"{preview}\n\n"
+                "Tus cambios locales se "
+                "mantienen intactos.",
+            )
+
+            self._update_workspace_banner()
+            return
+
+        if result.status == "FAILED":
+            show_error(
+                self,
+                "No se pudieron aplicar los cambios",
+                "BigQuery rechazo o revirtio "
+                "la operacion.\n\n"
+                "No se modifico el Workspace "
+                "local.\n\n"
+                f"Detalle: "
+                f"{result.error_message}",
+            )
+
+            self._update_workspace_banner()
+            return
+
+        show_warning(
+            self,
+            "Resultado no reconocido",
+            "La operacion termino con un "
+            "estado inesperado:\n\n"
+            f"{result.status}",
         )
 
-        layout.addWidget(
-            title
+    def _on_presupuesto_save_failed(
+        self,
+        failure,
+    ):
+        if failure.was_applied:
+            self._reload_after_applied_failure = True
+
+            self.workspace_banner.setText(
+                f"{self.active_module.label}  |  "
+                "Cambios guardados en BigQuery  |  "
+                "Recarga pendiente"
+            )
+
+            show_warning(
+                self,
+                "Cambios guardados, recarga pendiente",
+                "Los cambios SI fueron aplicados "
+                "en BigQuery, pero fallo la "
+                "recarga del Workspace.\n\n"
+                "No vuelvas a aplicar los mismos "
+                "cambios.\n\n"
+                "La aplicacion intentara recargar "
+                "el presupuesto nuevamente.",
+            )
+
+            return
+
+        show_error(
+            self,
+            "Error al guardar cambios",
+            "No se pudo confirmar el guardado "
+            "de los cambios.\n\n"
+            "Tus cambios locales se mantienen "
+            "intactos.\n\n"
+            f"Detalle: {failure.message}",
         )
 
-        message = QLabel(
-            "La confirmacion fue aceptada "
-            "correctamente."
-        )
+        self._update_workspace_banner()
 
-        message.setObjectName(
-            "confirmationMessage"
-        )
+    def _on_presupuesto_save_finished(
+        self,
+    ):
+        if self._save_thread is not None:
+            self._save_thread.deleteLater()
+            self._save_thread = None
 
-        message.setWordWrap(
+        self._save_in_progress = False
+
+        if self._reload_after_applied_failure:
+            self._reload_after_applied_failure = False
+
+            self._start_workspace_load()
+            return
+
+        self.pages.setEnabled(
             True
         )
 
-        message.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
-
-        layout.addWidget(
-            message
-        )
-
-        notice = QLabel(
-            "Esta funcionalidad todavia se "
-            "encuentra en modo demostracion.\n\n"
-            "NO se realizo ningun cambio "
-            "en BigQuery."
-        )
-
-        notice.setObjectName(
-            "confirmationNotice"
-        )
-
-        notice.setWordWrap(
-            True
-        )
-
-        notice.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
-
-        layout.addWidget(
-            notice
-        )
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-        )
-
-        ok_button = buttons.button(
-            QDialogButtonBox.StandardButton.Ok
-        )
-
-        ok_button.setText(
-            "Entendido"
-        )
-
-        buttons.accepted.connect(
-            dialog.accept
-        )
-
-        layout.addWidget(
-            buttons,
-            alignment=Qt.AlignmentFlag.AlignCenter,
-        )
-
-        dialog.exec()
+        self._update_workspace_banner()
 
     def _on_workspace_failed(
         self,
         message: str,
     ):
+        self.pages.setEnabled(
+            False
+        )
+
         self.workspace_banner.setText(
             "ERROR AL CARGAR PRESUPUESTO  |  "
             + message

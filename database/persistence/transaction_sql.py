@@ -1,4 +1,4 @@
-﻿from database.persistence.contract import (
+from database.persistence.contract import (
     EDITABLE_COLUMNS,
     EDITABLE_VALUE_TYPES,
 )
@@ -28,44 +28,28 @@ def _required_table_id(
     return text
 
 
-def _audit_select(
+def _audit_struct(
     *,
-    main_table_id,
-    staging_table_id,
     column,
     value_type,
 ):
     return f"""
-        SELECT
-            GENERATE_UUID() AS audit_id,
-            @batch_id AS batch_id,
-            target.row_id AS row_id,
-            '{column}' AS column_name,
-            '{value_type}' AS value_type,
-            CAST(
+            STRUCT(
+                '{column}' AS column_name,
+                '{value_type}' AS value_type,
+                CAST(
+                    target.`{column}`
+                    AS STRING
+                ) AS before_value,
+                CAST(
+                    stage.`{column}`
+                    AS STRING
+                ) AS after_value,
                 target.`{column}`
-                AS STRING
-            ) AS before_value,
-            CAST(
+                    IS DISTINCT FROM
                 stage.`{column}`
-                AS STRING
-            ) AS after_value,
-            target.version
-                AS version_before,
-            target.version + 1
-                AS version_after,
-            @actor AS actor,
-            CURRENT_TIMESTAMP()
-                AS changed_at
-        FROM `{main_table_id}` AS target
-        INNER JOIN `{staging_table_id}` AS stage
-            ON target.row_id = stage.row_id
-            AND target.version = stage.expected_version
-        WHERE
-            stage.batch_id = @batch_id
-            AND target.`{column}`
-                IS DISTINCT FROM
-                stage.`{column}`
+                    AS changed
+            )
     """.strip()
 
 
@@ -96,13 +80,11 @@ def build_apply_staged_batch_sql(
         "staging_table_id",
     )
 
-    audit_selects = []
+    audit_structs = []
 
     for column in EDITABLE_COLUMNS:
-        audit_selects.append(
-            _audit_select(
-                main_table_id=main_table,
-                staging_table_id=staging_table,
+        audit_structs.append(
+            _audit_struct(
                 column=column,
                 value_type=(
                     EDITABLE_VALUE_TYPES[
@@ -112,10 +94,9 @@ def build_apply_staged_batch_sql(
             )
         )
 
-    audit_union = (
-        "\n\n        UNION ALL\n\n"
-        .join(
-            audit_selects
+    audit_array = (
+        ",\n\n            ".join(
+            audit_structs
         )
     )
 
@@ -149,8 +130,10 @@ def build_apply_staged_batch_sql(
 DECLARE v_batch_row_count INT64;
 DECLARE v_batch_field_count INT64;
 DECLARE v_staging_row_count INT64 DEFAULT 0;
+DECLARE v_staging_distinct_count INT64 DEFAULT 0;
 DECLARE v_conflict_count INT64 DEFAULT 0;
 DECLARE v_audit_row_count INT64 DEFAULT 0;
+DECLARE v_updated_row_count INT64 DEFAULT 0;
 
 BEGIN
 
@@ -158,107 +141,174 @@ BEGIN
 
     SET (
         v_batch_row_count,
-        v_batch_field_count
+        v_batch_field_count,
+        v_staging_row_count,
+        v_staging_distinct_count,
+        v_conflict_count
     ) = (
+
         SELECT AS STRUCT
-            IF(
-                COUNT(*) = 1,
-                ANY_VALUE(row_count),
-                NULL
-            ),
-            IF(
-                COUNT(*) = 1,
-                ANY_VALUE(field_count),
-                NULL
-            )
-        FROM `{batch_table}`
-        WHERE
-            batch_id = @batch_id
-            AND status = 'PENDING'
+            batch_info.row_count,
+            batch_info.field_count,
+            staging_info.row_count,
+            staging_info.distinct_row_count,
+            conflict_info.conflict_count
+
+        FROM (
+
+            SELECT
+                IF(
+                    COUNT(*) = 1,
+                    ANY_VALUE(row_count),
+                    NULL
+                ) AS row_count,
+
+                IF(
+                    COUNT(*) = 1,
+                    ANY_VALUE(field_count),
+                    NULL
+                ) AS field_count
+
+            FROM `{batch_table}`
+
+            WHERE
+                batch_id = @batch_id
+                AND status = 'PENDING'
+
+        ) AS batch_info
+
+        CROSS JOIN (
+
+            SELECT
+                COUNT(*) AS row_count,
+                COUNT(DISTINCT row_id)
+                    AS distinct_row_count
+
+            FROM `{staging_table}`
+
+            WHERE
+                batch_id = @batch_id
+
+        ) AS staging_info
+
+        CROSS JOIN (
+
+            SELECT
+                COUNT(*) AS conflict_count
+
+            FROM `{staging_table}` AS stage
+
+            LEFT JOIN `{main_table}` AS target
+                ON target.row_id = stage.row_id
+
+            WHERE
+                stage.batch_id = @batch_id
+                AND (
+                    target.row_id IS NULL
+                    OR target.version
+                        != stage.expected_version
+                )
+
+        ) AS conflict_info
     );
 
-    ASSERT
-        v_batch_row_count IS NOT NULL
-    AS
-        'Batch must exist exactly once and be PENDING.';
+    IF v_batch_row_count IS NULL THEN
+        RAISE USING MESSAGE =
+            'Batch must exist exactly once and be PENDING.';
+    END IF;
 
-    ASSERT
-        v_batch_field_count IS NOT NULL
-        AND v_batch_field_count > 0
-    AS
-        'Batch field_count must be greater than zero.';
+    IF (
+        v_batch_field_count IS NULL
+        OR v_batch_field_count <= 0
+    ) THEN
+        RAISE USING MESSAGE =
+            'Batch field_count must be greater than zero.';
+    END IF;
 
-    SET v_staging_row_count = (
-        SELECT COUNT(*)
-        FROM `{staging_table}`
-        WHERE batch_id = @batch_id
-    );
+    IF (
+        v_staging_row_count
+        != v_batch_row_count
+    ) THEN
+        RAISE USING MESSAGE =
+            'Staging row count does not match batch row_count.';
+    END IF;
 
-    ASSERT
-        v_staging_row_count = v_batch_row_count
-    AS
-        'Staging row count does not match batch row_count.';
-
-    ASSERT (
-        SELECT
-            COUNT(*) = COUNT(DISTINCT row_id)
-        FROM `{staging_table}`
-        WHERE batch_id = @batch_id
-    )
-    AS
-        'Staging contains duplicate row_id values.';
-
-    CREATE TEMP TABLE persistence_conflicts AS
-    SELECT
-        stage.row_id,
-        stage.expected_version,
-        target.version AS current_version
-    FROM `{staging_table}` AS stage
-    LEFT JOIN `{main_table}` AS target
-        ON target.row_id = stage.row_id
-    WHERE
-        stage.batch_id = @batch_id
-        AND (
-            target.row_id IS NULL
-            OR target.version
-                != stage.expected_version
-        );
-
-    SET v_conflict_count = (
-        SELECT COUNT(*)
-        FROM persistence_conflicts
-    );
+    IF (
+        v_staging_distinct_count
+        != v_staging_row_count
+    ) THEN
+        RAISE USING MESSAGE =
+            'Staging contains duplicate row_id values.';
+    END IF;
 
     IF v_conflict_count > 0 THEN
 
+        CREATE TEMP TABLE
+            persistence_conflicts
+        AS
+
+        SELECT
+            stage.row_id,
+            stage.expected_version,
+            target.version
+                AS current_version
+
+        FROM `{staging_table}` AS stage
+
+        LEFT JOIN `{main_table}` AS target
+            ON target.row_id
+                = stage.row_id
+
+        WHERE
+            stage.batch_id = @batch_id
+            AND (
+                target.row_id IS NULL
+                OR target.version
+                    != stage.expected_version
+            );
+
         UPDATE `{batch_table}`
+
         SET
             status = 'CONFLICT',
-            completed_at = CURRENT_TIMESTAMP(),
+            completed_at =
+                CURRENT_TIMESTAMP(),
             error_message = FORMAT(
                 'Optimistic concurrency conflict in %d row(s).',
                 v_conflict_count
             )
+
         WHERE
             batch_id = @batch_id
             AND status = 'PENDING';
 
+        IF @@row_count != 1 THEN
+            RAISE USING MESSAGE =
+                'Conflict batch status update failed.';
+        END IF;
+
         DELETE FROM `{staging_table}`
-        WHERE batch_id = @batch_id;
+        WHERE
+            batch_id = @batch_id;
 
         COMMIT TRANSACTION;
 
         SELECT
             'CONFLICT' AS status,
-            v_batch_row_count AS row_count,
-            v_batch_field_count AS field_count,
+            v_batch_row_count
+                AS row_count,
+            v_batch_field_count
+                AS field_count,
             row_id,
             expected_version,
             current_version,
             CAST(NULL AS STRING)
                 AS error_message
+
         FROM persistence_conflicts
-        ORDER BY row_id;
+
+        ORDER BY
+            row_id;
 
     ELSE
 
@@ -276,30 +326,67 @@ BEGIN
             changed_at
         )
 
-        {audit_union};
+        SELECT
+            GENERATE_UUID()
+                AS audit_id,
+            @batch_id
+                AS batch_id,
+            target.row_id,
+            change.column_name,
+            change.value_type,
+            change.before_value,
+            change.after_value,
+            target.version
+                AS version_before,
+            target.version + 1
+                AS version_after,
+            @actor
+                AS actor,
+            CURRENT_TIMESTAMP()
+                AS changed_at
 
-        SET v_audit_row_count = (
-            SELECT COUNT(*)
-            FROM `{audit_table}`
-            WHERE batch_id = @batch_id
-        );
+        FROM `{main_table}` AS target
 
-        ASSERT
+        INNER JOIN `{staging_table}` AS stage
+            ON target.row_id
+                = stage.row_id
+            AND target.version
+                = stage.expected_version
+
+        CROSS JOIN UNNEST([
+            {audit_array}
+        ]) AS change
+
+        WHERE
+            stage.batch_id = @batch_id
+            AND change.changed;
+
+        SET v_audit_row_count =
+            @@row_count;
+
+        IF (
             v_audit_row_count
-                = v_batch_field_count
-        AS
-            'Audit row count does not match batch field_count.';
+            != v_batch_field_count
+        ) THEN
+            RAISE USING MESSAGE =
+                'Audit row count does not match batch field_count.';
+        END IF;
 
         MERGE `{main_table}` AS target
 
         USING (
+
             SELECT *
             FROM `{staging_table}`
-            WHERE batch_id = @batch_id
+
+            WHERE
+                batch_id = @batch_id
+
         ) AS stage
 
         ON
-            target.row_id = stage.row_id
+            target.row_id
+                = stage.row_id
             AND target.version
                 = stage.expected_version
 
@@ -307,24 +394,47 @@ BEGIN
             UPDATE SET
                 {merge_set};
 
+        SET v_updated_row_count =
+            @@row_count;
+
+        IF (
+            v_updated_row_count
+            != v_batch_row_count
+        ) THEN
+            RAISE USING MESSAGE =
+                'Updated row count does not match batch row_count.';
+        END IF;
+
         UPDATE `{batch_table}`
+
         SET
             status = 'APPLIED',
-            completed_at = CURRENT_TIMESTAMP(),
+            completed_at =
+                CURRENT_TIMESTAMP(),
             error_message = NULL
+
         WHERE
             batch_id = @batch_id
             AND status = 'PENDING';
 
+        IF @@row_count != 1 THEN
+            RAISE USING MESSAGE =
+                'Applied batch status update failed.';
+        END IF;
+
         DELETE FROM `{staging_table}`
-        WHERE batch_id = @batch_id;
+
+        WHERE
+            batch_id = @batch_id;
 
         COMMIT TRANSACTION;
 
         SELECT
             'APPLIED' AS status,
-            v_batch_row_count AS row_count,
-            v_batch_field_count AS field_count,
+            v_batch_row_count
+                AS row_count,
+            v_batch_field_count
+                AS field_count,
             CAST(NULL AS STRING)
                 AS row_id,
             CAST(NULL AS INT64)
@@ -342,20 +452,26 @@ EXCEPTION WHEN ERROR THEN
 
     SELECT
         'FAILED' AS status,
+
         COALESCE(
             v_batch_row_count,
             0
         ) AS row_count,
+
         COALESCE(
             v_batch_field_count,
             0
         ) AS field_count,
+
         CAST(NULL AS STRING)
             AS row_id,
+
         CAST(NULL AS INT64)
             AS expected_version,
+
         CAST(NULL AS INT64)
             AS current_version,
+
         @@error.message
             AS error_message;
 

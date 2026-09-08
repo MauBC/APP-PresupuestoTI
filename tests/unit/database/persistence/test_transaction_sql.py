@@ -55,9 +55,13 @@ def test_transaction_boundaries_exist():
 def test_conflict_detection_uses_row_id_and_version():
     sql = build_sql()
 
+    normalized = " ".join(
+        sql.split()
+    )
+
     assert (
         "target.row_id = stage.row_id"
-        in sql
+        in normalized
     )
 
     assert (
@@ -107,9 +111,15 @@ def test_staging_count_is_validated():
 def test_duplicate_staging_row_ids_are_rejected():
     sql = build_sql()
 
+    normalized = " ".join(
+        sql.split()
+    )
+
     assert (
-        "COUNT(DISTINCT row_id)"
-        in sql
+        "COUNT( DISTINCT row_id )"
+        in normalized
+        or "COUNT(DISTINCT row_id)"
+        in normalized
     )
 
     assert (
@@ -346,4 +356,5 @@ def test_merge_left_side_is_not_target_qualified():
         "target.version + 1"
         in sql
     )
+
 
