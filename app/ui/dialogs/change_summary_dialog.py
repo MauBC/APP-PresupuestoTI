@@ -465,6 +465,10 @@ class ChangeSummaryDialog(QDialog):
                     item,
                 )
 
+        table.setSortingEnabled(
+            True
+        )
+
         header = (
             table.horizontalHeader()
         )
@@ -676,6 +680,10 @@ class ChangeSummaryDialog(QDialog):
                     item,
                 )
 
+        self.detail_table.setSortingEnabled(
+            True
+        )
+
         header = (
             self.detail_table
             .horizontalHeader()
@@ -742,7 +750,7 @@ class ChangeSummaryDialog(QDialog):
         )
 
         table.setSortingEnabled(
-            True
+            False
         )
 
         table.verticalHeader().setVisible(

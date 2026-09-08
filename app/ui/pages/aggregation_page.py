@@ -19,6 +19,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services.dimension_allocation_service import (
+    DimensionAllocationService,
+)
 from app.services.presupuesto_change_summary_service import (
     PresupuestoChangeSummaryService,
 )
@@ -31,6 +34,9 @@ from app.ui.dialogs.change_summary_dialog import (
 )
 from app.ui.dialogs.group_edit_dialog import (
     GroupEditDialog,
+)
+from app.ui.dialogs.dimension_allocation_dialog import (
+    DimensionAllocationDialog,
 )
 from app.ui.models.result_table_model import (
     ResultTableModel,
@@ -65,6 +71,12 @@ class AggregationPage(QWidget):
 
         self._change_summary_service = (
             PresupuestoChangeSummaryService(
+                workspace
+            )
+        )
+
+        self._dimension_allocation_service = (
+            DimensionAllocationService(
                 workspace
             )
         )
@@ -192,6 +204,50 @@ class AggregationPage(QWidget):
 
         layout.addLayout(
             group_layout
+        )
+
+        distribution_layout = (
+            QHBoxLayout()
+        )
+
+        distribution_layout.addWidget(
+            QLabel(
+                "Distribucion avanzada:"
+            )
+        )
+
+        self.distribute_ceco_button = (
+            QPushButton(
+                "Distribuir por CECO"
+            )
+        )
+
+        self.distribute_country_button = (
+            QPushButton(
+                "Distribuir por pais"
+            )
+        )
+
+        self.distribute_ceco_button.setEnabled(
+            False
+        )
+
+        self.distribute_country_button.setEnabled(
+            False
+        )
+
+        distribution_layout.addWidget(
+            self.distribute_ceco_button
+        )
+
+        distribution_layout.addWidget(
+            self.distribute_country_button
+        )
+
+        distribution_layout.addStretch()
+
+        layout.addLayout(
+            distribution_layout
         )
 
         search_layout = QHBoxLayout()
@@ -462,6 +518,24 @@ class AggregationPage(QWidget):
             self.load_grouping
         )
 
+        self.distribute_ceco_button.clicked.connect(
+            lambda:
+                self._show_dimension_distribution(
+                    self._workspace
+                    .module_config
+                    .ceco_column
+                )
+        )
+
+        self.distribute_country_button.clicked.connect(
+            lambda:
+                self._show_dimension_distribution(
+                    self._workspace
+                    .module_config
+                    .country_column
+                )
+        )
+
         self.table.doubleClicked.connect(
             self._edit_group_cell
         )
@@ -494,6 +568,7 @@ class AggregationPage(QWidget):
 
     def set_workspace_ready(self):
         self._workspace_ready = True
+        self._update_distribution_controls()
 
         self.group_button.setEnabled(
             True
@@ -510,6 +585,7 @@ class AggregationPage(QWidget):
         message: str,
     ):
         self._workspace_ready = False
+        self._update_distribution_controls()
 
         self.group_button.setEnabled(
             False
@@ -823,6 +899,189 @@ class AggregationPage(QWidget):
                 return index
 
         return None
+
+    def _update_distribution_controls(
+        self,
+    ):
+        config = (
+            self._workspace
+            .module_config
+        )
+
+        self.distribute_ceco_button.setEnabled(
+            bool(
+                self._workspace_ready
+                and
+                config.ceco_column
+                and
+                config.capabilities
+                .ceco_distribution
+            )
+        )
+
+        self.distribute_country_button.setEnabled(
+            bool(
+                self._workspace_ready
+                and
+                config.country_column
+                and
+                config.capabilities
+                .country_distribution
+            )
+        )
+
+    def _dimension_scope(
+        self,
+        dimension,
+    ):
+        if self._current_result is None:
+            return (), ()
+
+        current = (
+            self.table.currentIndex()
+        )
+
+        if not current.isValid():
+            return (), ()
+
+        source_index = (
+            self.proxy_model
+            .mapToSource(
+                current
+            )
+        )
+
+        row = self.model.row_dict(
+            source_index.row()
+        )
+
+        columns = []
+        values = []
+
+        for column in (
+            self._current_result
+            .group_columns
+        ):
+            if column == dimension:
+                continue
+
+            columns.append(
+                column
+            )
+
+            values.append(
+                row.get(
+                    column
+                )
+            )
+
+        return (
+            tuple(columns),
+            tuple(values),
+        )
+
+    def _show_dimension_distribution(
+        self,
+        dimension,
+    ):
+        if not dimension:
+            return
+
+        if not self._workspace_ready:
+            return
+
+        (
+            scope_columns,
+            scope_values,
+        ) = self._dimension_scope(
+            dimension
+        )
+
+        config = (
+            self._workspace
+            .module_config
+        )
+
+        if dimension == config.ceco_column:
+            label = "CECO"
+
+        elif (
+            dimension
+            == config.country_column
+        ):
+            label = "Pais"
+
+        else:
+            label = (
+                dimension
+                .replace("_", " ")
+                .title()
+            )
+
+        try:
+            dialog = (
+                DimensionAllocationDialog(
+                    service=(
+                        self._dimension_allocation_service
+                    ),
+                    dimension=dimension,
+                    dimension_label=label,
+                    scope_columns=(
+                        scope_columns
+                    ),
+                    scope_values=(
+                        scope_values
+                    ),
+                    parent=self,
+                )
+            )
+
+        except Exception as exc:
+            self._show_edit_error(
+                exc
+            )
+            return
+
+        if not dialog.exec():
+            return
+
+        try:
+            preview = (
+                self._dimension_allocation_service
+                .apply(
+                    dimension=dimension,
+                    percentages=(
+                        dialog.percentages()
+                    ),
+                    scope_columns=(
+                        scope_columns
+                    ),
+                    scope_values=(
+                        scope_values
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            self._show_edit_error(
+                exc
+            )
+            return
+
+        self.workspace_changed.emit()
+
+        self.load_grouping()
+
+        self.status_label.setText(
+            "Distribucion por "
+            f"{label} aplicada localmente: "
+            f"{preview.row_count:,} registros | "
+            f"{preview.dimension_count:,} "
+            "grupos | "
+            f"US$ "
+            f"{preview.current_total:,.2f}. "
+            "BigQuery no ha sido modificado."
+        )
 
     def _edit_group_cell(
         self,

@@ -1,4 +1,4 @@
-﻿from copy import deepcopy
+from copy import deepcopy
 from dataclasses import dataclass
 from decimal import (
     Decimal,
@@ -12,6 +12,10 @@ from app.config.presupuesto_app_config import (
 from app.services.presupuesto_workspace import (
     SESSION_ROW_ID,
     PresupuestoWorkspace,
+)
+from app.services.proportional_allocation_service import (
+    ProportionalAllocationError,
+    ProportionalAllocationService,
 )
 
 
@@ -419,97 +423,19 @@ class PresupuestoGroupEditService:
         values,
         target,
     ):
-        if not values:
-            if target == ZERO:
-                return {}
+        try:
+            return (
+                ProportionalAllocationService
+                .allocate(
+                    values,
+                    target,
+                )
+            )
 
+        except ProportionalAllocationError as exc:
             raise PresupuestoGroupEditError(
-                "No existen importes disponibles "
-                "para realizar la distribucion."
-            )
-
-        current_total = sum(
-            (
-                amount
-                for _, amount in values
-            ),
-            ZERO,
-        )
-
-        if (
-            current_total == ZERO
-            and
-            target > ZERO
-        ):
-            raise PresupuestoGroupEditError(
-                "No existe una distribucion "
-                "previa para repartir el nuevo "
-                "presupuesto."
-            )
-
-        if target == ZERO:
-            return {
-                key: ZERO
-                for key, _ in values
-            }
-
-        factor = (
-            target / current_total
-        )
-
-        result = {}
-
-        for key, amount in values:
-            result[key] = (
-                amount * factor
-            ).quantize(
-                CENT,
-                rounding=ROUND_HALF_UP,
-            )
-
-        allocated_total = sum(
-            result.values(),
-            ZERO,
-        )
-
-        residual = (
-            target - allocated_total
-        ).quantize(
-            CENT,
-            rounding=ROUND_HALF_UP,
-        )
-
-        if residual != ZERO:
-            residual_key = max(
-                values,
-                key=lambda item: abs(
-                    item[1]
-                ),
-            )[0]
-
-            result[residual_key] = (
-                result[residual_key]
-                + residual
-            ).quantize(
-                CENT,
-                rounding=ROUND_HALF_UP,
-            )
-
-        final_total = sum(
-            result.values(),
-            ZERO,
-        ).quantize(
-            CENT,
-            rounding=ROUND_HALF_UP,
-        )
-
-        if final_total != target:
-            raise PresupuestoGroupEditError(
-                "No fue posible ajustar la "
-                "distribucion al total objetivo."
-            )
-
-        return result
+                str(exc)
+            ) from exc
 
     def _validate_group(
         self,

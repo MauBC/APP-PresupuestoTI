@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -51,6 +51,7 @@ class BudgetModuleConfig:
 
     country_column: str | None = None
     budgeter_column: str | None = None
+    ceco_column: str | None = None
 
     change_detail_columns: tuple[
         str,
