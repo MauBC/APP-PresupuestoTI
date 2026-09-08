@@ -1,4 +1,4 @@
-﻿from app.config.budget_module_config import (
+from app.config.budget_module_config import (
     BudgetModule,
     BudgetModuleCapabilities,
     BudgetModuleConfig,
@@ -40,11 +40,12 @@ OPEX_MODULE_CONFIG = (
             )
         ),
         change_detail_columns=(
+            "presupuestador",
+            "pais",
+            "compania",
             "proveedor",
             "nombre_gasto",
-            "pais",
             "ceco",
-            "presupuestador",
         ),
         configured=True,
     )

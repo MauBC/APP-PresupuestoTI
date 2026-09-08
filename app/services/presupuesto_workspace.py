@@ -473,6 +473,14 @@ class PresupuestoWorkspace:
                 current,
                 column,
                 value,
+                month_columns=(
+                    self._module_config
+                    .month_columns
+                ),
+                annual_column=(
+                    self._module_config
+                    .annual_column
+                ),
             )
         )
 
@@ -500,12 +508,68 @@ class PresupuestoWorkspace:
             .set_annual_total(
                 current,
                 value,
+                month_columns=(
+                    self._module_config
+                    .month_columns
+                ),
+                annual_column=(
+                    self._module_config
+                    .annual_column
+                ),
             )
         )
 
         return self._apply_batch(
             description=(
                 "Editar anio_usd "
+                f"en fila {session_row_id}"
+            ),
+            replacements={
+                session_row_id: updated,
+            },
+        )
+
+    def edit_monthly_distribution(
+        self,
+        session_row_id: int,
+        percentages,
+        *,
+        annual_total=None,
+    ) -> bool:
+        if not (
+            self._module_config
+            .capabilities
+            .monthly_distribution
+        ):
+            raise PresupuestoWorkspaceError(
+                "El modulo activo no permite "
+                "distribucion mensual."
+            )
+
+        current = self._require_row(
+            session_row_id
+        )
+
+        updated = (
+            UsdAllocationService
+            .set_percentage_distribution(
+                current,
+                percentages,
+                total=annual_total,
+                month_columns=(
+                    self._module_config
+                    .month_columns
+                ),
+                annual_column=(
+                    self._module_config
+                    .annual_column
+                ),
+            )
+        )
+
+        return self._apply_batch(
+            description=(
+                "Distribuir presupuesto mensual "
                 f"en fila {session_row_id}"
             ),
             replacements={

@@ -940,6 +940,11 @@ class AggregationPage(QWidget):
         dialog = ChangeSummaryDialog(
             summary,
             self,
+            module_label=(
+                self._workspace
+                .module_config
+                .label
+            ),
         )
 
         dialog.exec()

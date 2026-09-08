@@ -22,6 +22,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services.presupuesto_change_summary_service import (
+    PresupuestoChangeSummaryService,
+)
+from app.ui.dialogs.change_summary_dialog import (
+    ChangeSummaryDialog,
+)
 from app.ui.models.presupuesto_table_model import (
     PresupuestoTableModel,
 )
@@ -44,6 +50,12 @@ class PresupuestoPage(QWidget):
 
         self._analysis_service = (
             analysis_service
+        )
+
+        self._change_summary_service = (
+            PresupuestoChangeSummaryService(
+                workspace
+            )
         )
 
         self._page_index = 0
@@ -594,12 +606,7 @@ class PresupuestoPage(QWidget):
         self.workspace_changed.emit()
 
     def show_pending_changes(self):
-        pending = (
-            self._workspace
-            .get_pending_changes()
-        )
-
-        if not pending:
+        if not self._workspace.has_changes:
             QMessageBox.information(
                 self,
                 "Cambios pendientes",
@@ -607,164 +614,30 @@ class PresupuestoPage(QWidget):
             )
             return
 
-        flattened = []
-
-        for row_change in pending:
-            row = self._workspace.get_row(
-                row_change.session_row_id
+        try:
+            summary = (
+                self._change_summary_service
+                .build()
             )
 
-            gasto = (
-                row.get("nombre_gasto")
-                or ""
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Cambios pendientes",
+                "No se pudo generar "
+                "el resumen de cambios.\n\n"
+                f"{type(exc).__name__}: {exc}",
             )
+            return
 
-            ceco = (
-                row.get("ceco")
-                or ""
-            )
-
-            for change in row_change.changes:
-                flattened.append(
-                    (
-                        row_change.session_row_id,
-                        gasto,
-                        ceco,
-                        change.column,
-                        change.before,
-                        change.after,
-                    )
-                )
-
-        total_changes = len(flattened)
-
-        visible_changes = flattened[
-            :self.MAX_CHANGE_PREVIEW
-        ]
-
-        dialog = QDialog(self)
-
-        dialog.setWindowTitle(
-            "Cambios pendientes"
-        )
-
-        dialog.resize(
-            1050,
-            600,
-        )
-
-        layout = QVBoxLayout(
-            dialog
-        )
-
-        summary = QLabel(
-            f"{self._workspace.pending_row_count:,} "
-            f"filas modificadas | "
-            f"{total_changes:,} campos modificados"
-        )
-
-        summary.setObjectName(
-            "pendingSummary"
-        )
-
-        layout.addWidget(
-            summary
-        )
-
-        if (
-            total_changes
-            > self.MAX_CHANGE_PREVIEW
-        ):
-            warning = QLabel(
-                "Vista limitada a los primeros "
-                f"{self.MAX_CHANGE_PREVIEW:,} cambios."
-            )
-
-            warning.setObjectName(
-                "tableStatus"
-            )
-
-            layout.addWidget(
-                warning
-            )
-
-        table = QTableWidget(
-            len(visible_changes),
-            6,
-        )
-
-        table.setHorizontalHeaderLabels(
-            [
-                "ID SESION",
-                "GASTO",
-                "CECO",
-                "CAMPO",
-                "ANTES",
-                "AHORA",
-            ]
-        )
-
-        table.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
-        )
-
-        table.setAlternatingRowColors(
-            True
-        )
-
-        table.verticalHeader().setVisible(
-            False
-        )
-
-        for row_index, values in enumerate(
-            visible_changes
-        ):
-            for column_index, value in enumerate(
-                values
-            ):
-                item = QTableWidgetItem(
-                    self._format_value(
-                        value
-                    )
-                )
-
-                table.setItem(
-                    row_index,
-                    column_index,
-                    item,
-                )
-
-        table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
-        )
-
-        table.horizontalHeader().setStretchLastSection(
-            True
-        )
-
-        layout.addWidget(
-            table,
-            1,
-        )
-
-        close_button = QPushButton(
-            "Cerrar"
-        )
-
-        close_button.clicked.connect(
-            dialog.accept
-        )
-
-        button_layout = QHBoxLayout()
-
-        button_layout.addStretch()
-
-        button_layout.addWidget(
-            close_button
-        )
-
-        layout.addLayout(
-            button_layout
+        dialog = ChangeSummaryDialog(
+            summary,
+            self,
+            module_label=(
+                self._workspace
+                .module_config
+                .label
+            ),
         )
 
         dialog.exec()
