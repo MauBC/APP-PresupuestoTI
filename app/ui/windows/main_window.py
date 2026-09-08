@@ -851,6 +851,9 @@ class MainWindow(QMainWindow):
             summary,
             actor,
             self,
+            module_label=(
+                self.active_module.label
+            ),
         )
 
         if not dialog.exec():

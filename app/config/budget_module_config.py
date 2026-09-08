@@ -49,6 +49,11 @@ class BudgetModuleConfig:
 
     capabilities: BudgetModuleCapabilities
 
+    change_detail_columns: tuple[
+        str,
+        ...
+    ] = ()
+
     configured: bool = True
 
     @property

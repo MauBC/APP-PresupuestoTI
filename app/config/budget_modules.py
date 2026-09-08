@@ -39,6 +39,13 @@ OPEX_MODULE_CONFIG = (
                 grouped_editing=True,
             )
         ),
+        change_detail_columns=(
+            "proveedor",
+            "nombre_gasto",
+            "pais",
+            "ceco",
+            "presupuestador",
+        ),
         configured=True,
     )
 )
@@ -67,6 +74,7 @@ CAPEX_MODULE_CONFIG = (
                 grouped_editing=True,
             )
         ),
+        change_detail_columns=(),
         configured=False,
     )
 )

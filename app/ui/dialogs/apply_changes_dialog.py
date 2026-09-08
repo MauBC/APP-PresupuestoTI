@@ -1,11 +1,20 @@
 ﻿from decimal import Decimal
 
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+)
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QDialog,
     QDialogButtonBox,
     QFrame,
+    QHeaderView,
     QLabel,
     QLineEdit,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
 )
 
@@ -13,7 +22,393 @@ from PySide6.QtWidgets import (
 ZERO = Decimal("0.00")
 
 
-class ApplyChangesDialog(QDialog):
+class ChangeDetailsDialog(
+    QDialog
+):
+    def __init__(
+        self,
+        summary,
+        module_label: str,
+        parent=None,
+    ):
+        super().__init__(
+            parent
+        )
+
+        self._summary = summary
+        self._module_label = (
+            module_label
+        )
+
+        self.setWindowTitle(
+            "Detalle de cambios "
+            f"{module_label}"
+        )
+
+        self.resize(
+            1180,
+            620,
+        )
+
+        self._setup_ui()
+
+    def _setup_ui(
+        self,
+    ):
+        layout = QVBoxLayout(
+            self
+        )
+
+        layout.setContentsMargins(
+            20,
+            20,
+            20,
+            20,
+        )
+
+        layout.setSpacing(
+            12
+        )
+
+        title = QLabel(
+            "Detalle de cambios "
+            f"{self._module_label}"
+        )
+
+        title.setStyleSheet(
+            "font-size: 19px; "
+            "font-weight: 700;"
+        )
+
+        layout.addWidget(
+            title
+        )
+
+        description = QLabel(
+            "Cada fila muestra un campo "
+            "modificado y el registro "
+            "presupuestal afectado."
+        )
+
+        description.setStyleSheet(
+            "color: #475467;"
+        )
+
+        layout.addWidget(
+            description
+        )
+
+        context_columns = (
+            self._context_columns()
+        )
+
+        headers = [
+            *(
+                label
+                for _, label
+                in context_columns
+            ),
+            "Campo",
+            "Antes",
+            "Despues",
+            "Variacion",
+        ]
+
+        table = QTableWidget(
+            len(
+                self._summary.details
+            ),
+            len(
+                headers
+            ),
+        )
+
+        table.setHorizontalHeaderLabels(
+            headers
+        )
+
+        table.setEditTriggers(
+            QAbstractItemView
+            .EditTrigger
+            .NoEditTriggers
+        )
+
+        table.setSelectionBehavior(
+            QAbstractItemView
+            .SelectionBehavior
+            .SelectRows
+        )
+
+        table.setAlternatingRowColors(
+            True
+        )
+
+        table.verticalHeader().setVisible(
+            False
+        )
+
+        for row_index, detail in enumerate(
+            self._summary.details
+        ):
+            context_map = (
+                detail.context_map
+            )
+
+            column_index = 0
+
+            for (
+                context_column,
+                _,
+            ) in context_columns:
+                table.setItem(
+                    row_index,
+                    column_index,
+                    QTableWidgetItem(
+                        context_map.get(
+                            context_column,
+                            "(Sin valor)",
+                        )
+                    ),
+                )
+
+                column_index += 1
+
+            table.setItem(
+                row_index,
+                column_index,
+                QTableWidgetItem(
+                    self._field_label(
+                        detail.column
+                    )
+                ),
+            )
+
+            column_index += 1
+
+            table.setItem(
+                row_index,
+                column_index,
+                QTableWidgetItem(
+                    self._format_value(
+                        detail.before
+                    )
+                ),
+            )
+
+            column_index += 1
+
+            table.setItem(
+                row_index,
+                column_index,
+                QTableWidgetItem(
+                    self._format_value(
+                        detail.after
+                    )
+                ),
+            )
+
+            column_index += 1
+
+            variation_item = (
+                QTableWidgetItem(
+                    self._format_difference(
+                        detail.difference
+                    )
+                )
+            )
+
+            self._style_variation_item(
+                variation_item,
+                detail.difference,
+            )
+
+            table.setItem(
+                row_index,
+                column_index,
+                variation_item,
+            )
+
+        header = (
+            table.horizontalHeader()
+        )
+
+        header.setSectionResizeMode(
+            QHeaderView
+            .ResizeMode
+            .ResizeToContents
+        )
+
+        header.setStretchLastSection(
+            True
+        )
+
+        layout.addWidget(
+            table,
+            1,
+        )
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox
+            .StandardButton
+            .Close
+        )
+
+        close_button = (
+            buttons.button(
+                QDialogButtonBox
+                .StandardButton
+                .Close
+            )
+        )
+
+        close_button.setText(
+            "Cerrar"
+        )
+
+        buttons.rejected.connect(
+            self.reject
+        )
+
+        layout.addWidget(
+            buttons
+        )
+
+    def _context_columns(
+        self,
+    ):
+        result = []
+        seen = set()
+
+        for detail in (
+            self._summary.details
+        ):
+            for context in (
+                detail.context
+            ):
+                if (
+                    context.column
+                    in seen
+                ):
+                    continue
+
+                seen.add(
+                    context.column
+                )
+
+                result.append(
+                    (
+                        context.column,
+                        context.label,
+                    )
+                )
+
+        return tuple(
+            result
+        )
+
+    @staticmethod
+    def _field_label(
+        column,
+    ):
+        labels = {
+            "habilitado": "Estado",
+            "anio_usd": "Total anual USD",
+        }
+
+        if column in labels:
+            return labels[
+                column
+            ]
+
+        return (
+            column
+            .replace("_usd", "")
+            .replace("_", " ")
+            .title()
+        )
+
+    @staticmethod
+    def _format_value(
+        value,
+    ):
+        if value is None:
+            return ""
+
+        if isinstance(
+            value,
+            bool,
+        ):
+            return (
+                "Habilitado"
+                if value
+                else "Deshabilitado"
+            )
+
+        if isinstance(
+            value,
+            Decimal,
+        ):
+            return (
+                f"US$ {value:,.2f}"
+            )
+
+        return str(
+            value
+        )
+
+    @staticmethod
+    def _format_difference(
+        value,
+    ):
+        if value is None:
+            return "-"
+
+        if value > ZERO:
+            return (
+                f"+US$ {value:,.2f}"
+            )
+
+        if value < ZERO:
+            return (
+                f"-US$ "
+                f"{abs(value):,.2f}"
+            )
+
+        return "US$ 0.00"
+
+    @staticmethod
+    def _style_variation_item(
+        item,
+        value,
+    ):
+        if value is None:
+            return
+
+        if value > ZERO:
+            color = QColor(
+                "#B42318"
+            )
+
+        elif value < ZERO:
+            color = QColor(
+                "#067647"
+            )
+
+        else:
+            color = QColor(
+                "#475467"
+            )
+
+        item.setForeground(
+            QBrush(
+                color
+            )
+        )
+
+
+class ApplyChangesDialog(
+    QDialog
+):
     CONFIRMATION_TEXT = "CONFIRMAR"
 
     def __init__(
@@ -21,18 +416,26 @@ class ApplyChangesDialog(QDialog):
         summary,
         actor: str,
         parent=None,
+        *,
+        module_label: str = "OPEX",
     ):
-        super().__init__(parent)
+        super().__init__(
+            parent
+        )
 
         self._summary = summary
         self._actor = actor
+        self._module_label = (
+            module_label
+        )
 
         self.setObjectName(
             "applyChangesDialog"
         )
 
         self.setWindowTitle(
-            "Aplicar cambios OPEX"
+            "Aplicar cambios "
+            f"{module_label}"
         )
 
         self.setMinimumWidth(
@@ -42,7 +445,9 @@ class ApplyChangesDialog(QDialog):
         self._apply_style()
         self._setup_ui()
 
-    def _apply_style(self):
+    def _apply_style(
+        self,
+    ):
         self.setStyleSheet(
             """
             QDialog#applyChangesDialog {
@@ -92,13 +497,19 @@ class ApplyChangesDialog(QDialog):
                 border: 2px solid #2F7650;
             }
 
-            QDialogButtonBox QPushButton {
+            QDialogButtonBox QPushButton,
+            QPushButton#detailButton {
                 background-color: #F2F4F7;
                 color: #1F2937;
                 border: 1px solid #D0D5DD;
                 border-radius: 6px;
                 padding: 8px 15px;
                 min-width: 120px;
+            }
+
+            QPushButton#detailButton:hover {
+                border-color: #2F7650;
+                color: #2F7650;
             }
 
             QPushButton#confirmApplyButton {
@@ -120,8 +531,12 @@ class ApplyChangesDialog(QDialog):
             """
         )
 
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
+    def _setup_ui(
+        self,
+    ):
+        layout = QVBoxLayout(
+            self
+        )
 
         layout.setContentsMargins(
             26,
@@ -130,10 +545,13 @@ class ApplyChangesDialog(QDialog):
             24,
         )
 
-        layout.setSpacing(15)
+        layout.setSpacing(
+            15
+        )
 
         title = QLabel(
-            "Aplicar cambios OPEX"
+            "Aplicar cambios "
+            f"{self._module_label}"
         )
 
         title.setStyleSheet(
@@ -260,6 +678,29 @@ class ApplyChangesDialog(QDialog):
             summary_box
         )
 
+        self.detail_button = QPushButton(
+            "Ver detalle "
+            f"({len(self._summary.details):,})"
+        )
+
+        self.detail_button.setObjectName(
+            "detailButton"
+        )
+
+        self.detail_button.setEnabled(
+            bool(
+                self._summary.details
+            )
+        )
+
+        self.detail_button.clicked.connect(
+            self._show_details
+        )
+
+        layout.addWidget(
+            self.detail_button
+        )
+
         persistence = QLabel(
             "Los cambios se validaran antes de "
             "guardarse. Si otra sesion modifico "
@@ -358,6 +799,17 @@ class ApplyChangesDialog(QDialog):
         layout.addWidget(
             self.buttons
         )
+
+    def _show_details(
+        self,
+    ):
+        dialog = ChangeDetailsDialog(
+            self._summary,
+            self._module_label,
+            self,
+        )
+
+        dialog.exec()
 
     def _validate_confirmation(
         self,
