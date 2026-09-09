@@ -360,4 +360,3 @@ def test_large_total_difference_is_error():
         for issue
         in result.errors
     )
-
