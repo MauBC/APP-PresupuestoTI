@@ -1,4 +1,4 @@
-﻿from datetime import (
+from datetime import (
     datetime,
     timezone,
 )
@@ -14,8 +14,32 @@ from app.config.presupuesto_app_config import (
     USD_COLUMNS,
 )
 from app.config.settings import settings
+from app.models.budget_history import (
+    BudgetHistoryBatch,
+)
+from app.repositories.presupuesto_repository import (
+    PresupuestoRepository,
+)
 from app.services.bigquery_service import (
     BigQueryService,
+)
+from app.services.presupuesto_history_service import (
+    PresupuestoHistoryService,
+)
+from app.services.presupuesto_persistence_service import (
+    PresupuestoPersistenceService,
+)
+from app.services.presupuesto_reversal_coordinator import (
+    PresupuestoReversalCoordinator,
+)
+from app.services.presupuesto_reversal_service import (
+    PresupuestoReversalService,
+)
+from app.services.presupuesto_workspace import (
+    PresupuestoWorkspace,
+)
+from app.services.presupuesto_workspace_loader import (
+    PresupuestoWorkspaceLoader,
 )
 from database.persistence.bigquery_repository import (
     BigQueryPersistenceRepository,
@@ -38,6 +62,9 @@ pytestmark = pytest.mark.integration
 
 
 ACTOR = "integration-transaction-test"
+REVERSAL_ACTOR = (
+    "integration-reversal-test"
+)
 
 
 def table_id(
@@ -350,7 +377,9 @@ def read_batch_status(
             row_count,
             field_count,
             completed_at,
-            error_message
+            error_message,
+            budget_module,
+            reverted_batch_id
         FROM `{batch_table}`
         WHERE batch_id = @batch_id
     """
@@ -415,6 +444,15 @@ def cleanup(
     row_id,
     batch_ids,
 ):
+    clean_batch_ids = tuple(
+        dict.fromkeys(
+            str(batch_id).strip()
+            for batch_id
+            in batch_ids
+            if str(batch_id).strip()
+        )
+    )
+
     staging_table = table_id(
         settings.BIGQUERY_STAGING_TABLE
     )
@@ -431,42 +469,47 @@ def cleanup(
         settings.BIGQUERY_TABLE
     )
 
-    for batch_id in batch_ids:
-        parameter = [
-            bigquery.ScalarQueryParameter(
-                "batch_id",
-                "STRING",
-                batch_id,
-            )
-        ]
+    parameters = [
+        bigquery.ArrayQueryParameter(
+            "batch_ids",
+            "STRING",
+            list(clean_batch_ids),
+        ),
+        bigquery.ScalarQueryParameter(
+            "row_id",
+            "STRING",
+            row_id,
+        ),
+    ]
 
-        for table in (
-            staging_table,
-            audit_table,
-            batch_table,
-        ):
-            run_query(
-                client,
-                f"""
-                    DELETE FROM `{table}`
-                    WHERE batch_id = @batch_id
-                """,
-                parameter,
-            )
+    sql = f"""
+        DELETE FROM `{staging_table}`
+        WHERE
+            batch_id IN UNNEST(
+                @batch_ids
+            );
+
+        DELETE FROM `{audit_table}`
+        WHERE
+            batch_id IN UNNEST(
+                @batch_ids
+            );
+
+        DELETE FROM `{batch_table}`
+        WHERE
+            batch_id IN UNNEST(
+                @batch_ids
+            );
+
+        DELETE FROM `{main_table}`
+        WHERE
+            row_id = @row_id;
+    """
 
     run_query(
         client,
-        f"""
-            DELETE FROM `{main_table}`
-            WHERE row_id = @row_id
-        """,
-        [
-            bigquery.ScalarQueryParameter(
-                "row_id",
-                "STRING",
-                row_id,
-            )
-        ],
+        sql,
+        parameters,
     )
 
 
@@ -1166,4 +1209,832 @@ def test_real_transaction_rolls_back_on_audit_mismatch():
             batch_ids=(
                 batch_id,
             ),
+        )
+
+def test_real_reversal_applied_end_to_end():
+    service = BigQueryService()
+
+    token = uuid4().hex
+
+    row_id = (
+        "integration-reversal-row-"
+        + token
+    )
+
+    source_batch_id = (
+        "integration-reversal-source-"
+        + token
+    )
+
+    reversal_batch_id = (
+        "integration-reversal-applied-"
+        + token
+    )
+
+    batch_ids = (
+        source_batch_id,
+        reversal_batch_id,
+    )
+
+    try:
+        #
+        # 1. Synthetic row:
+        # 100 USD / version 1.
+        #
+        insert_synthetic_main_row(
+            service.client,
+            row_id=row_id,
+        )
+
+        workspace = (
+            PresupuestoWorkspace()
+        )
+
+        (
+            read_repository,
+            persistence_repository,
+            _,
+            _,
+            _,
+            coordinator,
+        ) = build_reversal_stack(
+            service,
+            workspace=workspace,
+        )
+
+        #
+        # 2. Original batch:
+        # 100 -> 125
+        # v1 -> v2
+        #
+        source_batch = build_batch(
+            batch_id=(
+                source_batch_id
+            ),
+            row_id=row_id,
+            expected_version=1,
+            before_amount="100.00",
+            after_amount="125.00",
+        )
+
+        source_result = (
+            apply_real_batch(
+                persistence_repository,
+                source_batch,
+            )
+        )
+
+        assert source_result.is_applied
+
+        after_source = read_main_row(
+            service.client,
+            row_id=row_id,
+        )
+
+        assert (
+            after_source[
+                "version"
+            ]
+            == 2
+        )
+
+        assert (
+            after_source[
+                "enero_usd"
+            ]
+            == Decimal(
+                "125.00"
+            )
+        )
+
+        assert (
+            after_source[
+                "anio_usd"
+            ]
+            == Decimal(
+                "125.00"
+            )
+        )
+
+        source_status = (
+            read_batch_status(
+                service.client,
+                batch_id=(
+                    source_batch_id
+                ),
+            )
+        )
+
+        assert (
+            source_status[
+                "status"
+            ]
+            == "APPLIED"
+        )
+
+        assert (
+            source_status[
+                "budget_module"
+            ]
+            == "OPEX"
+        )
+
+        assert (
+            source_status[
+                "reverted_batch_id"
+            ]
+            is None
+        )
+
+        source_history = (
+            make_history_batch(
+                batch=source_batch,
+                stored_status=(
+                    source_status
+                ),
+            )
+        )
+
+        #
+        # 3. Workspace loads the
+        # post-source state: v2 / 125.
+        #
+        current_rows = (
+            read_repository
+            .get_rows_by_ids(
+                (
+                    row_id,
+                )
+            )
+        )
+
+        assert len(
+            current_rows
+        ) == 1
+
+        workspace.load(
+            current_rows
+        )
+
+        assert not workspace.has_changes
+
+        #
+        # 4. Full reversal:
+        # 125 -> 100
+        # v2 -> v3
+        #
+        outcome = (
+            coordinator
+            .revert_and_reload(
+                source_history,
+                actor=(
+                    REVERSAL_ACTOR
+                ),
+                batch_id_factory=lambda: (
+                    reversal_batch_id
+                ),
+            )
+        )
+
+        assert outcome.is_applied
+        assert outcome.was_reloaded
+
+        assert (
+            outcome.proposal
+            .source_batch_id
+            == source_batch_id
+        )
+
+        assert (
+            outcome.proposal
+            .batch
+            .reverted_batch_id
+            == source_batch_id
+        )
+
+        #
+        # 5. Main row restored,
+        # but version moves forward.
+        #
+        restored = read_main_row(
+            service.client,
+            row_id=row_id,
+        )
+
+        assert (
+            restored[
+                "version"
+            ]
+            == 3
+        )
+
+        assert (
+            restored[
+                "enero_usd"
+            ]
+            == Decimal(
+                "100.00"
+            )
+        )
+
+        assert (
+            restored[
+                "anio_usd"
+            ]
+            == Decimal(
+                "100.00"
+            )
+        )
+
+        assert (
+            restored[
+                "updated_by"
+            ]
+            == REVERSAL_ACTOR
+        )
+
+        #
+        # 6. Reversal batch metadata.
+        #
+        reversal_status = (
+            read_batch_status(
+                service.client,
+                batch_id=(
+                    reversal_batch_id
+                ),
+            )
+        )
+
+        assert (
+            reversal_status[
+                "status"
+            ]
+            == "APPLIED"
+        )
+
+        assert (
+            reversal_status[
+                "row_count"
+            ]
+            == 1
+        )
+
+        assert (
+            reversal_status[
+                "field_count"
+            ]
+            == 2
+        )
+
+        assert (
+            reversal_status[
+                "budget_module"
+            ]
+            == "OPEX"
+        )
+
+        assert (
+            reversal_status[
+                "reverted_batch_id"
+            ]
+            == source_batch_id
+        )
+
+        #
+        # 7. New immutable audit:
+        # 125 -> 100, v2 -> v3.
+        #
+        reversal_audit = read_audit(
+            service.client,
+            batch_id=(
+                reversal_batch_id
+            ),
+        )
+
+        assert len(
+            reversal_audit
+        ) == 2
+
+        assert {
+            item[
+                "column_name"
+            ]
+            for item
+            in reversal_audit
+        } == {
+            "enero_usd",
+            "anio_usd",
+        }
+
+        for item in (
+            reversal_audit
+        ):
+            assert (
+                Decimal(
+                    item[
+                        "before_value"
+                    ]
+                )
+                == Decimal(
+                    "125.00"
+                )
+            )
+
+            assert (
+                Decimal(
+                    item[
+                        "after_value"
+                    ]
+                )
+                == Decimal(
+                    "100.00"
+                )
+            )
+
+            assert (
+                item[
+                    "version_before"
+                ]
+                == 2
+            )
+
+            assert (
+                item[
+                    "version_after"
+                ]
+                == 3
+            )
+
+            assert (
+                item["actor"]
+                == REVERSAL_ACTOR
+            )
+
+        #
+        # Original audit remains.
+        #
+        source_audit = read_audit(
+            service.client,
+            batch_id=(
+                source_batch_id
+            ),
+        )
+
+        assert len(
+            source_audit
+        ) == 2
+
+        for item in source_audit:
+            assert (
+                Decimal(
+                    item[
+                        "before_value"
+                    ]
+                )
+                == Decimal(
+                    "100.00"
+                )
+            )
+
+            assert (
+                Decimal(
+                    item[
+                        "after_value"
+                    ]
+                )
+                == Decimal(
+                    "125.00"
+                )
+            )
+
+            assert (
+                item[
+                    "version_before"
+                ]
+                == 1
+            )
+
+            assert (
+                item[
+                    "version_after"
+                ]
+                == 2
+            )
+
+        #
+        # 8. Staging is cleaned.
+        #
+        assert (
+            persistence_repository
+            .count_staging_rows(
+                reversal_batch_id
+            )
+            == 0
+        )
+
+        #
+        # 9. Workspace was refreshed,
+        # not left at v2.
+        #
+        workspace_rows = tuple(
+            workspace.iter_rows()
+        )
+
+        assert len(
+            workspace_rows
+        ) == 1
+
+        workspace_row = (
+            workspace_rows[0]
+        )
+
+        assert (
+            workspace_row[
+                "version"
+            ]
+            == 3
+        )
+
+        assert (
+            workspace_row[
+                "enero_usd"
+            ]
+            == Decimal(
+                "100.00"
+            )
+        )
+
+        assert (
+            workspace_row[
+                "anio_usd"
+            ]
+            == Decimal(
+                "100.00"
+            )
+        )
+
+        assert not workspace.has_changes
+
+    finally:
+        cleanup(
+            service.client,
+            row_id=row_id,
+            batch_ids=batch_ids,
+        )
+
+
+def test_real_reversal_transaction_blocks_race():
+    service = BigQueryService()
+
+    token = uuid4().hex
+
+    row_id = (
+        "integration-reversal-race-row-"
+        + token
+    )
+
+    source_batch_id = (
+        "integration-reversal-race-source-"
+        + token
+    )
+
+    intervening_batch_id = (
+        "integration-reversal-race-newer-"
+        + token
+    )
+
+    reversal_batch_id = (
+        "integration-reversal-race-revert-"
+        + token
+    )
+
+    batch_ids = (
+        source_batch_id,
+        intervening_batch_id,
+        reversal_batch_id,
+    )
+
+    try:
+        #
+        # Initial: 100 / v1.
+        #
+        insert_synthetic_main_row(
+            service.client,
+            row_id=row_id,
+        )
+
+        workspace = (
+            PresupuestoWorkspace()
+        )
+
+        (
+            read_repository,
+            persistence_repository,
+            history_service,
+            persistence_service,
+            _,
+            _,
+        ) = build_reversal_stack(
+            service,
+            workspace=workspace,
+        )
+
+        #
+        # Source:
+        # 100 -> 125
+        # v1 -> v2.
+        #
+        source_batch = build_batch(
+            batch_id=(
+                source_batch_id
+            ),
+            row_id=row_id,
+            expected_version=1,
+            before_amount="100.00",
+            after_amount="125.00",
+        )
+
+        source_result = (
+            apply_real_batch(
+                persistence_repository,
+                source_batch,
+            )
+        )
+
+        assert source_result.is_applied
+
+        source_status = (
+            read_batch_status(
+                service.client,
+                batch_id=(
+                    source_batch_id
+                ),
+            )
+        )
+
+        source_history = (
+            make_history_batch(
+                batch=source_batch,
+                stored_status=(
+                    source_status
+                ),
+            )
+        )
+
+        #
+        # Build a valid reversal
+        # while current version is 2.
+        #
+        detail = (
+            history_service
+            .get_batch_detail(
+                source_history
+            )
+        )
+
+        current_rows = (
+            read_repository
+            .get_rows_by_ids(
+                detail.row_ids
+            )
+        )
+
+        workspace.load(
+            current_rows
+        )
+
+        proposal = (
+            PresupuestoReversalService
+            .build_proposal(
+                detail,
+                current_rows,
+                actor=(
+                    REVERSAL_ACTOR
+                ),
+                app_version=(
+                    settings.APP_VERSION
+                ),
+                batch_id_factory=lambda: (
+                    reversal_batch_id
+                ),
+                expected_module=(
+                    "OPEX"
+                ),
+            )
+        )
+
+        assert (
+            proposal.batch.rows[
+                0
+            ].expected_version
+            == 2
+        )
+
+        #
+        # Simulate another user saving
+        # AFTER proposal creation.
+        #
+        intervening_batch = (
+            build_batch(
+                batch_id=(
+                    intervening_batch_id
+                ),
+                row_id=row_id,
+                expected_version=2,
+                before_amount="125.00",
+                after_amount="150.00",
+            )
+        )
+
+        intervening_result = (
+            apply_real_batch(
+                persistence_repository,
+                intervening_batch,
+            )
+        )
+
+        assert (
+            intervening_result.is_applied
+        )
+
+        after_intervening = (
+            read_main_row(
+                service.client,
+                row_id=row_id,
+            )
+        )
+
+        assert (
+            after_intervening[
+                "version"
+            ]
+            == 3
+        )
+
+        assert (
+            after_intervening[
+                "enero_usd"
+            ]
+            == Decimal(
+                "150.00"
+            )
+        )
+
+        #
+        # The prepared reversal still
+        # expects v2. Transaction must
+        # reject it at BigQuery level.
+        #
+        reversal_result = (
+            persistence_service
+            .persist_batch(
+                proposal.batch
+            )
+        )
+
+        assert (
+            reversal_result.status
+            == "CONFLICT"
+        )
+
+        assert (
+            reversal_result.has_conflicts
+        )
+
+        assert len(
+            reversal_result.conflicts
+        ) == 1
+
+        conflict = (
+            reversal_result
+            .conflicts[0]
+        )
+
+        assert (
+            conflict.row_id
+            == row_id
+        )
+
+        assert (
+            conflict.expected_version
+            == 2
+        )
+
+        assert (
+            conflict.current_version
+            == 3
+        )
+
+        #
+        # v3 / 150 remains untouched.
+        #
+        final_row = read_main_row(
+            service.client,
+            row_id=row_id,
+        )
+
+        assert (
+            final_row[
+                "version"
+            ]
+            == 3
+        )
+
+        assert (
+            final_row[
+                "enero_usd"
+            ]
+            == Decimal(
+                "150.00"
+            )
+        )
+
+        assert (
+            final_row[
+                "anio_usd"
+            ]
+            == Decimal(
+                "150.00"
+            )
+        )
+
+        #
+        # Reversal attempt is traceable
+        # but did not produce audit.
+        #
+        reversal_status = (
+            read_batch_status(
+                service.client,
+                batch_id=(
+                    reversal_batch_id
+                ),
+            )
+        )
+
+        assert (
+            reversal_status[
+                "status"
+            ]
+            == "CONFLICT"
+        )
+
+        assert (
+            reversal_status[
+                "budget_module"
+            ]
+            == "OPEX"
+        )
+
+        assert (
+            reversal_status[
+                "reverted_batch_id"
+            ]
+            == source_batch_id
+        )
+
+        assert (
+            read_audit(
+                service.client,
+                batch_id=(
+                    reversal_batch_id
+                ),
+            )
+            == []
+        )
+
+        assert (
+            persistence_repository
+            .count_staging_rows(
+                reversal_batch_id
+            )
+            == 0
+        )
+
+        #
+        # Both successful operations
+        # preserve their own audits.
+        #
+        assert len(
+            read_audit(
+                service.client,
+                batch_id=(
+                    source_batch_id
+                ),
+            )
+        ) == 2
+
+        assert len(
+            read_audit(
+                service.client,
+                batch_id=(
+                    intervening_batch_id
+                ),
+            )
+        ) == 2
+
+    finally:
+        cleanup(
+            service.client,
+            row_id=row_id,
+            batch_ids=batch_ids,
         )
