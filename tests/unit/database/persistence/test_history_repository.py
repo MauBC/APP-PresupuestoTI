@@ -335,3 +335,225 @@ def test_invalid_pagination_is_rejected(
         )
 
     assert client.calls == []
+
+def test_get_batch_audit_reads_complete_detail():
+    client = FakeClient(
+        [
+            {
+                "audit_id": "audit-001",
+                "batch_id": "batch-001",
+                "row_id": "row-001",
+                "column_name": "enero_usd",
+                "value_type": "NUMERIC",
+                "before_value": "100.00",
+                "after_value": "150.00",
+                "version_before": 5,
+                "version_after": 6,
+                "actor": "RANSA\\usuario",
+                "changed_at": CREATED_AT,
+            },
+            {
+                "audit_id": "audit-002",
+                "batch_id": "batch-001",
+                "row_id": "row-001",
+                "column_name": "anio_usd",
+                "value_type": "NUMERIC",
+                "before_value": "1200.00",
+                "after_value": "1250.00",
+                "version_before": 5,
+                "version_after": 6,
+                "actor": "RANSA\\usuario",
+                "changed_at": CREATED_AT,
+            },
+        ]
+    )
+
+    result = (
+        repository(client)
+        .get_batch_audit(
+            "batch-001"
+        )
+    )
+
+    assert len(result) == 2
+
+    january = result[1]
+
+    columns = {
+        item["column_name"]
+        for item in result
+    }
+
+    assert columns == {
+        "enero_usd",
+        "anio_usd",
+    }
+
+    first = next(
+        item
+        for item in result
+        if (
+            item["column_name"]
+            == "enero_usd"
+        )
+    )
+
+    assert (
+        first["audit_id"]
+        == "audit-001"
+    )
+
+    assert (
+        first["batch_id"]
+        == "batch-001"
+    )
+
+    assert (
+        first["row_id"]
+        == "row-001"
+    )
+
+    assert (
+        first["before_value"]
+        == "100.00"
+    )
+
+    assert (
+        first["after_value"]
+        == "150.00"
+    )
+
+    assert (
+        first["version_before"]
+        == 5
+    )
+
+    assert (
+        first["version_after"]
+        == 6
+    )
+
+    assert (
+        first["actor"]
+        == "RANSA\\usuario"
+    )
+
+    assert len(
+        client.calls
+    ) == 1
+
+    call = client.calls[0]
+
+    assert (
+        "INNER JOIN"
+        in call["sql"]
+    )
+
+    assert (
+        "ORDER BY"
+        in call["sql"]
+    )
+
+    params = parameter_map(
+        call["job_config"]
+    )
+
+    assert (
+        params["batch_id"]
+        == "batch-001"
+    )
+
+    assert (
+        params["budget_module"]
+        == "OPEX"
+    )
+
+    assert (
+        call["location"]
+        == "US"
+    )
+
+    assert client.job.result_called
+
+
+def test_get_batch_audit_uses_active_module():
+    client = FakeClient(
+        [
+            {
+                "audit_id": "audit-capex",
+                "batch_id": "capex-001",
+                "row_id": "capex-row",
+                "column_name": "enero_usd",
+                "value_type": "NUMERIC",
+                "before_value": "500.00",
+                "after_value": "600.00",
+                "version_before": 1,
+                "version_after": 2,
+                "actor": "RANSA\\usuario",
+                "changed_at": CREATED_AT,
+            }
+        ]
+    )
+
+    result = (
+        repository(
+            client,
+            module_config=(
+                CAPEX_MODULE_CONFIG
+            ),
+        )
+        .get_batch_audit(
+            "capex-001"
+        )
+    )
+
+    assert len(result) == 1
+
+    params = parameter_map(
+        client.calls[0][
+            "job_config"
+        ]
+    )
+
+    assert (
+        params["budget_module"]
+        == "CAPEX"
+    )
+
+
+def test_get_batch_audit_empty_result_is_valid():
+    client = FakeClient(
+        []
+    )
+
+    result = (
+        repository(client)
+        .get_batch_audit(
+            "batch-without-audit"
+        )
+    )
+
+    assert result == ()
+
+    assert len(
+        client.calls
+    ) == 1
+
+
+def test_get_batch_audit_rejects_empty_batch_id():
+    client = FakeClient()
+
+    with pytest.raises(
+        BigQueryPersistenceError,
+        match="batch_id",
+    ):
+        repository(
+            client
+        ).get_batch_audit(
+            "   "
+        )
+
+    assert (
+        client.calls
+        == []
+    )

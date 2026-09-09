@@ -436,6 +436,178 @@ class BigQueryPersistenceRepository:
             result
         )
 
+    def get_batch_audit(
+        self,
+        batch_id: str,
+    ) -> tuple[
+        dict,
+        ...
+    ]:
+        batch_id_value = (
+            self._required_text(
+                batch_id,
+                "batch_id",
+            )
+        )
+
+        module_value = (
+            self._module_config
+            .module
+            .value
+        )
+
+        sql = f"""
+            SELECT
+                audit.audit_id,
+                audit.batch_id,
+                audit.row_id,
+                audit.column_name,
+                audit.value_type,
+                audit.before_value,
+                audit.after_value,
+                audit.version_before,
+                audit.version_after,
+                audit.actor,
+                audit.changed_at
+
+            FROM `{self.audit_table_id}` AS audit
+
+            INNER JOIN `{self.batch_table_id}` AS batch
+                ON
+                    batch.batch_id
+                    = audit.batch_id
+
+            WHERE
+                audit.batch_id
+                = @batch_id
+
+                AND COALESCE(
+                    batch.`{BUDGET_MODULE_COLUMN}`,
+                    'OPEX'
+                ) = @budget_module
+
+            ORDER BY
+                audit.changed_at ASC,
+                audit.row_id ASC,
+                audit.column_name ASC,
+                audit.audit_id ASC
+        """
+
+        job_config = (
+            bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter(
+                        "batch_id",
+                        "STRING",
+                        batch_id_value,
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "budget_module",
+                        "STRING",
+                        module_value,
+                    ),
+                ]
+            )
+        )
+
+        rows = (
+            self._client.query(
+                sql,
+                job_config=job_config,
+                location=self._location,
+            )
+            .result()
+        )
+
+        result = []
+
+        for row in rows:
+            version_before = (
+                self._row_value(
+                    row,
+                    "version_before",
+                )
+            )
+
+            version_after = (
+                self._row_value(
+                    row,
+                    "version_after",
+                )
+            )
+
+            result.append(
+                {
+                    "audit_id":
+                        self._row_value(
+                            row,
+                            "audit_id",
+                        ),
+                    "batch_id":
+                        self._row_value(
+                            row,
+                            "batch_id",
+                        ),
+                    "row_id":
+                        self._row_value(
+                            row,
+                            "row_id",
+                        ),
+                    "column_name":
+                        self._row_value(
+                            row,
+                            "column_name",
+                        ),
+                    "value_type":
+                        self._row_value(
+                            row,
+                            "value_type",
+                        ),
+                    "before_value":
+                        self._row_value(
+                            row,
+                            "before_value",
+                        ),
+                    "after_value":
+                        self._row_value(
+                            row,
+                            "after_value",
+                        ),
+                    "version_before":
+                        (
+                            int(
+                                version_before
+                            )
+                            if version_before
+                            is not None
+                            else None
+                        ),
+                    "version_after":
+                        (
+                            int(
+                                version_after
+                            )
+                            if version_after
+                            is not None
+                            else None
+                        ),
+                    "actor":
+                        self._row_value(
+                            row,
+                            "actor",
+                        ),
+                    "changed_at":
+                        self._row_value(
+                            row,
+                            "changed_at",
+                        ),
+                }
+            )
+
+        return tuple(
+            result
+        )
+
     def clear_staging(
         self,
         batch_id: str,
