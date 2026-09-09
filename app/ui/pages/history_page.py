@@ -1,6 +1,9 @@
 from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import (
+    Qt,
+    Signal,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -85,7 +88,67 @@ def format_history_status(
     )
 
 
+def can_revert_history_batch(
+    batch,
+    batches=(),
+) -> bool:
+    if batch is None:
+        return False
+
+    status = str(
+        getattr(
+            batch,
+            "status",
+            "",
+        )
+        or ""
+    ).strip().upper()
+
+    if status != "APPLIED":
+        return False
+
+    if (
+        getattr(
+            batch,
+            "reverted_batch_id",
+            None,
+        )
+        is not None
+    ):
+        return False
+
+    applied_reverted_sources = {
+        item.reverted_batch_id
+        for item in batches
+        if (
+            str(
+                getattr(
+                    item,
+                    "status",
+                    "",
+                )
+                or ""
+            ).strip().upper()
+            == "APPLIED"
+            and getattr(
+                item,
+                "reverted_batch_id",
+                None,
+            )
+        )
+    }
+
+    return (
+        batch.batch_id
+        not in applied_reverted_sources
+    )
+
+
 class HistoryPage(QWidget):
+    reversal_requested = Signal(
+        object
+    )
+
     def __init__(
         self,
         *,
@@ -204,6 +267,25 @@ class HistoryPage(QWidget):
             False
         )
 
+        self.reversal_button = (
+            QPushButton(
+                "Revertir"
+            )
+        )
+
+        self.reversal_button.setObjectName(
+            "dangerButton"
+        )
+
+        self.reversal_button.setEnabled(
+            False
+        )
+
+        self.reversal_button.setToolTip(
+            "Crea un nuevo batch que restaura "
+            "los valores anteriores."
+        )
+
         self.refresh_button = (
             QPushButton(
                 "Actualizar historial"
@@ -231,6 +313,10 @@ class HistoryPage(QWidget):
 
         toolbar.addWidget(
             self.detail_button
+        )
+
+        toolbar.addWidget(
+            self.reversal_button
         )
 
         toolbar.addWidget(
@@ -398,6 +484,10 @@ class HistoryPage(QWidget):
             self._open_selected_detail
         )
 
+        self.reversal_button.clicked.connect(
+            self._request_selected_reversal
+        )
+
     def ensure_loaded(
         self,
     ):
@@ -481,6 +571,10 @@ class HistoryPage(QWidget):
             False
         )
 
+        self.reversal_button.setEnabled(
+            False
+        )
+
         self._loaded_once = True
 
         module_label = (
@@ -521,6 +615,8 @@ class HistoryPage(QWidget):
         if self._worker is not None:
             self._worker.deleteLater()
             self._worker = None
+
+        self._update_detail_button()
 
     def _populate_table(
         self,
@@ -636,21 +732,95 @@ class HistoryPage(QWidget):
     def _update_detail_button(
         self,
     ):
-        enabled = (
+        batch = (
             self.selected_batch()
-            is not None
         )
 
-        if (
+        detail_enabled = (
+            batch is not None
+        )
+
+        detail_busy = (
             self._detail_worker
             is not None
             and self._detail_worker
             .isRunning()
-        ):
-            enabled = False
+        )
+
+        if detail_busy:
+            detail_enabled = False
 
         self.detail_button.setEnabled(
-            enabled
+            detail_enabled
+        )
+
+        reversal_enabled = (
+            can_revert_history_batch(
+                batch,
+                self._batches,
+            )
+        )
+
+        if detail_busy:
+            reversal_enabled = False
+
+        self.reversal_button.setEnabled(
+            reversal_enabled
+        )
+
+        if batch is None:
+            tooltip = (
+                "Selecciona un batch aplicado."
+            )
+
+        elif (
+            str(batch.status)
+            .strip()
+            .upper()
+            != "APPLIED"
+        ):
+            tooltip = (
+                "Solo los batches APPLIED "
+                "pueden revertirse."
+            )
+
+        elif batch.reverted_batch_id:
+            tooltip = (
+                "Este batch ya corresponde "
+                "a una reversi?n."
+            )
+
+        elif not reversal_enabled:
+            tooltip = (
+                "Este batch ya tiene una "
+                "reversi?n aplicada."
+            )
+
+        else:
+            tooltip = (
+                "Crea un nuevo batch que "
+                "restaura los valores anteriores."
+            )
+
+        self.reversal_button.setToolTip(
+            tooltip
+        )
+
+    def _request_selected_reversal(
+        self,
+    ):
+        batch = (
+            self.selected_batch()
+        )
+
+        if not can_revert_history_batch(
+            batch,
+            self._batches,
+        ):
+            return
+
+        self.reversal_requested.emit(
+            batch
         )
 
     def _open_selected_detail(

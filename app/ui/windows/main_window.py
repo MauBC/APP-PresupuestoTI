@@ -42,6 +42,9 @@ from app.ui.dialogs.app_message_box import (
 from app.ui.dialogs.apply_changes_dialog import (
     ApplyChangesDialog,
 )
+from app.ui.dialogs.reversal_confirm_dialog import (
+    ReversalConfirmDialog,
+)
 from app.ui.pages.aggregation_page import (
     AggregationPage,
 )
@@ -53,6 +56,9 @@ from app.ui.pages.history_page import (
 )
 from app.ui.pages.presupuesto_page import (
     PresupuestoPage,
+)
+from app.ui.workers.presupuesto_reversal import (
+    PresupuestoReversalThread,
 )
 from app.ui.workers.presupuesto_save import (
     PresupuestoSaveThread,
@@ -101,9 +107,13 @@ class MainWindow(QMainWindow):
 
         self._workspace_loader = None
         self._save_thread = None
+        self._reversal_thread = None
 
         self._save_in_progress = False
+        self._reversal_in_progress = False
+
         self._reload_after_applied_failure = False
+        self._reversal_reload_after_applied_failure = False
 
         self._initial_load_seconds = None
 
@@ -195,6 +205,10 @@ class MainWindow(QMainWindow):
                     self.active_module
                 )
             )
+        )
+
+        self.history_page.reversal_requested.connect(
+            self._request_history_reversal
         )
 
         self.presupuesto_page.workspace_changed.connect(
@@ -531,6 +545,13 @@ class MainWindow(QMainWindow):
         self,
         module: BudgetModule,
     ):
+        if (
+            self._save_in_progress
+            or self._reversal_in_progress
+        ):
+            self._sync_module_selector()
+            return
+
         config = (
             get_budget_module_config(
                 module
@@ -796,13 +817,21 @@ class MainWindow(QMainWindow):
         self,
         pending_rows: int,
     ):
-        if self._save_in_progress:
+        if (
+            self._save_in_progress
+            or self._reversal_in_progress
+        ):
             self.apply_changes_button.setEnabled(
                 False
             )
 
+            if self._save_in_progress:
+                text = "Guardando cambios..."
+            else:
+                text = "Revirtiendo cambios..."
+
             self.apply_changes_button.setText(
-                "Guardando cambios..."
+                text
             )
 
             return
@@ -888,6 +917,370 @@ class MainWindow(QMainWindow):
         self._start_presupuesto_save(
             actor
         )
+
+    def _request_history_reversal(
+        self,
+        batch,
+    ):
+        if (
+            self._save_in_progress
+            or self._reversal_in_progress
+        ):
+            return
+
+        if not self.workspace.is_loaded:
+            show_info(
+                self,
+                "Revertir cambios",
+                "El presupuesto todav?a "
+                "no se encuentra cargado.",
+            )
+            return
+
+        if self.workspace.has_changes:
+            show_warning(
+                self,
+                "Cambios locales pendientes",
+                "No se puede revertir un batch "
+                "mientras existan cambios locales "
+                "sin aplicar.\n\n"
+                "Aplica o descarta esos cambios "
+                "antes de continuar.",
+            )
+            return
+
+        if (
+            str(batch.status)
+            .strip()
+            .upper()
+            != "APPLIED"
+        ):
+            show_warning(
+                self,
+                "Batch no reversible",
+                "Solo pueden revertirse "
+                "operaciones con estado APPLIED.",
+            )
+            return
+
+        if batch.reverted_batch_id:
+            show_warning(
+                self,
+                "Batch de reversi?n",
+                "La operaci?n seleccionada ya "
+                "corresponde a una reversi?n.",
+            )
+            return
+
+        try:
+            actor = resolve_current_actor()
+
+        except CurrentActorError as exc:
+            show_warning(
+                self,
+                "Usuario no identificado",
+                str(exc),
+            )
+            return
+
+        dialog = ReversalConfirmDialog(
+            batch,
+            self,
+        )
+
+        if not dialog.exec():
+            return
+
+        self._start_history_reversal(
+            batch,
+            actor,
+        )
+
+    def _set_navigation_enabled(
+        self,
+        enabled: bool,
+    ):
+        for group_name in (
+            "button_group",
+            "module_button_group",
+        ):
+            group = getattr(
+                self,
+                group_name,
+                None,
+            )
+
+            if group is None:
+                continue
+
+            for button in group.buttons():
+                button.setEnabled(
+                    enabled
+                )
+
+    def _start_history_reversal(
+        self,
+        batch,
+        actor: str,
+    ):
+        if (
+            self._reversal_thread
+            is not None
+            and self._reversal_thread
+            .isRunning()
+        ):
+            return
+
+        if (
+            self._save_in_progress
+            or self.workspace.has_changes
+        ):
+            return
+
+        self._reversal_in_progress = True
+
+        self._reversal_reload_after_applied_failure = (
+            False
+        )
+
+        self.pages.setEnabled(
+            False
+        )
+
+        self._set_navigation_enabled(
+            False
+        )
+
+        self.workspace_banner.setText(
+            f"{self.active_module.label}  |  "
+            "Revirtiendo batch en BigQuery..."
+        )
+
+        self._update_apply_button(
+            self.workspace.pending_row_count
+        )
+
+        self._reversal_thread = (
+            PresupuestoReversalThread(
+                workspace=self.workspace,
+                batch=batch,
+                actor=actor,
+                parent=self,
+            )
+        )
+
+        self._reversal_thread.completed.connect(
+            self._on_history_reversal_completed
+        )
+
+        self._reversal_thread.failed.connect(
+            self._on_history_reversal_failed
+        )
+
+        self._reversal_thread.finished.connect(
+            self._on_history_reversal_finished
+        )
+
+        self._reversal_thread.start()
+
+    def _on_history_reversal_completed(
+        self,
+        outcome,
+    ):
+        result = (
+            outcome.persistence_result
+        )
+
+        self._invalidate_page(
+            self.history_page
+        )
+
+        if result.status == "APPLIED":
+            self._invalidate_page(
+                self.dashboard_page
+            )
+
+            self._invalidate_page(
+                self.presupuesto_page
+            )
+
+            self._invalidate_page(
+                self.aggregation_page
+            )
+
+            self.dashboard_page.set_workspace_ready()
+            self.presupuesto_page.set_workspace_ready()
+            self.aggregation_page.set_workspace_ready()
+
+            self._update_workspace_banner()
+
+            show_info(
+                self,
+                "Reversi?n aplicada",
+                "La reversi?n se aplic? "
+                "correctamente en BigQuery.\n\n"
+                f"Batch original: "
+                f"{outcome.source_batch.batch_id}\n"
+                f"Nuevo batch: "
+                f"{result.batch_id}\n"
+                f"Filas revertidas: "
+                f"{result.row_count:,}\n"
+                f"Campos revertidos: "
+                f"{result.field_count:,}",
+            )
+
+            return
+
+        if result.status == "CONFLICT":
+            conflicts = (
+                result.conflicts
+            )
+
+            preview_lines = []
+
+            for conflict in conflicts[:5]:
+                current = (
+                    conflict.current_version
+                    if conflict.current_version
+                    is not None
+                    else "no encontrada"
+                )
+
+                preview_lines.append(
+                    f"- {conflict.row_id}: "
+                    f"esperada "
+                    f"{conflict.expected_version}, "
+                    f"actual {current}"
+                )
+
+            preview = "\n".join(
+                preview_lines
+            )
+
+            if len(conflicts) > 5:
+                preview += "\n- ..."
+
+            show_warning(
+                self,
+                "Reversi?n bloqueada",
+                "No se revirti? ning?n dato.\n\n"
+                "Una o m?s filas fueron "
+                "modificadas despu?s del batch "
+                "seleccionado.\n\n"
+                f"Conflictos: "
+                f"{len(conflicts):,}\n\n"
+                f"{preview}",
+            )
+
+            self._update_workspace_banner()
+            return
+
+        if result.status == "FAILED":
+            show_error(
+                self,
+                "No se pudo revertir",
+                "BigQuery rechaz? o revirti? "
+                "la operaci?n.\n\n"
+                "Los datos vigentes no fueron "
+                "reemplazados por la reversi?n.\n\n"
+                f"Detalle: "
+                f"{result.error_message}",
+            )
+
+            self._update_workspace_banner()
+            return
+
+        show_warning(
+            self,
+            "Resultado no reconocido",
+            "La reversi?n termin? con un "
+            "estado inesperado:\n\n"
+            f"{result.status}",
+        )
+
+    def _on_history_reversal_failed(
+        self,
+        failure,
+    ):
+        self._invalidate_page(
+            self.history_page
+        )
+
+        if failure.was_applied:
+            self._reversal_reload_after_applied_failure = (
+                True
+            )
+
+            self.workspace_banner.setText(
+                f"{self.active_module.label}  |  "
+                "Reversi?n aplicada en BigQuery  |  "
+                "Recarga pendiente"
+            )
+
+            show_warning(
+                self,
+                "Reversi?n aplicada, recarga pendiente",
+                "La reversi?n SI fue aplicada "
+                "en BigQuery, pero fall? la "
+                "recarga del Workspace.\n\n"
+                "No vuelvas a revertir el mismo "
+                "batch.\n\n"
+                "La aplicaci?n intentar? recargar "
+                "el presupuesto nuevamente.\n\n"
+                f"Batch nuevo: "
+                f"{failure.batch_id}",
+            )
+
+            return
+
+        show_error(
+            self,
+            "Error al revertir",
+            "No se pudo completar la "
+            "reversi?n.\n\n"
+            f"Detalle: {failure.message}",
+        )
+
+        self._update_workspace_banner()
+
+    def _on_history_reversal_finished(
+        self,
+    ):
+        if self._reversal_thread is not None:
+            self._reversal_thread.deleteLater()
+            self._reversal_thread = None
+
+        self._reversal_in_progress = False
+
+        self._set_navigation_enabled(
+            True
+        )
+
+        if (
+            self._reversal_reload_after_applied_failure
+        ):
+            self._reversal_reload_after_applied_failure = (
+                False
+            )
+
+            self._start_workspace_load()
+            return
+
+        self.pages.setEnabled(
+            True
+        )
+
+        self._update_workspace_banner()
+
+        page = (
+            self.pages.currentWidget()
+        )
+
+        if hasattr(
+            page,
+            "ensure_loaded",
+        ):
+            page.ensure_loaded()
 
     def _start_presupuesto_save(
         self,
