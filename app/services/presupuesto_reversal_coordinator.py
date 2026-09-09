@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from time import perf_counter
 from typing import Callable
@@ -194,6 +194,8 @@ class PresupuestoReversalCoordinator:
                 "BudgetHistoryBatch."
             )
 
+        self._ensure_persistence_enabled()
+
         total_started = (
             perf_counter()
         )
@@ -367,6 +369,35 @@ class PresupuestoReversalCoordinator:
                 reload_result
             ),
         )
+
+    def _ensure_persistence_enabled(
+        self,
+    ) -> None:
+        module_config = (
+            self._workspace
+            .module_config
+        )
+
+        capabilities = getattr(
+            module_config,
+            "capabilities",
+            None,
+        )
+
+        persistence_enabled = getattr(
+            capabilities,
+            "persistence",
+            True,
+        )
+
+        if not persistence_enabled:
+            raise (
+                PresupuestoReversalCoordinatorError(
+                    "El modulo activo no permite "
+                    "operaciones de persistencia "
+                    "ni reversion."
+                )
+            )
 
     def _ensure_workspace_clean(
         self,

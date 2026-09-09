@@ -189,6 +189,27 @@ class HistoryPage(QWidget):
 
         self._setup_ui()
 
+    @property
+    def is_busy(
+        self,
+    ) -> bool:
+        worker_busy = (
+            self._worker is not None
+            and self._worker.isRunning()
+        )
+
+        detail_busy = (
+            self._detail_worker
+            is not None
+            and self._detail_worker
+            .isRunning()
+        )
+
+        return bool(
+            worker_busy
+            or detail_busy
+        )
+
     def _setup_ui(
         self,
     ):

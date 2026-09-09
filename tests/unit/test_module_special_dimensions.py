@@ -25,17 +25,17 @@ def test_opex_declares_budgeter_dimension():
     )
 
 
-def test_capex_does_not_inherit_opex_dimensions():
+def test_capex_declares_its_own_dimensions():
     assert (
         CAPEX_MODULE_CONFIG
         .country_column
-        is None
+        == "pais"
     )
 
     assert (
         CAPEX_MODULE_CONFIG
         .budgeter_column
-        is None
+        == "responsable"
     )
 
 
@@ -47,9 +47,15 @@ def test_opex_declares_ceco_dimension():
     )
 
 
-def test_capex_does_not_inherit_ceco_dimension():
+def test_capex_declares_codigo_ceco_dimension():
     assert (
         CAPEX_MODULE_CONFIG
         .ceco_column
-        is None
+        == "codigo_ceco"
+    )
+
+    assert not (
+        CAPEX_MODULE_CONFIG
+        .capabilities
+        .ceco_distribution
     )

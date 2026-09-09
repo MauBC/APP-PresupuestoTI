@@ -109,6 +109,28 @@ CAPEX_DIMENSION_COLUMNS = tuple(
 )
 
 
+CAPEX_GROUPABLE_COLUMNS = (
+    "vicepresidencia",
+    "pais",
+    "sociedad",
+    "responsable",
+    "gerente_aprobador",
+    "nombre_inversion",
+    "tipo_activo",
+    "tipo_capex",
+    "clasificacion_inversion",
+    "filtro_ti",
+    "codigo_cebe",
+    "gyp",
+    "codigo_ceco",
+    "desc_cebe",
+    "sede_cg",
+    "u_productiva_cg",
+    "seg_rs",
+    "moneda_facturacion",
+)
+
+
 CAPEX_RAW_TO_INTERNAL = {
     "Tipo":
         "tipo",

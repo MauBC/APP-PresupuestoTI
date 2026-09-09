@@ -5,6 +5,7 @@ from app.config.budget_module_config import (
 )
 from app.config.capex_schema import (
     CAPEX_DIMENSION_COLUMNS,
+    CAPEX_GROUPABLE_COLUMNS,
     CAPEX_USD_MONTH_COLUMNS,
     CAPEX_USD_TOTAL_COLUMN,
 )
@@ -70,7 +71,9 @@ CAPEX_MODULE_CONFIG = (
         dimension_columns=(
             CAPEX_DIMENSION_COLUMNS
         ),
-        groupable_columns=(),
+        groupable_columns=(
+            CAPEX_GROUPABLE_COLUMNS
+        ),
         month_columns=(
             CAPEX_USD_MONTH_COLUMNS
         ),
@@ -83,13 +86,22 @@ CAPEX_MODULE_CONFIG = (
                 ceco_distribution=False,
                 country_distribution=False,
                 grouped_editing=True,
+                persistence=False,
             )
         ),
-        country_column=None,
-        budgeter_column=None,
-        ceco_column=None,
-        change_detail_columns=(),
-        configured=False,
+        country_column="pais",
+        budgeter_column="responsable",
+        ceco_column="codigo_ceco",
+        change_detail_columns=(
+            "responsable",
+            "pais",
+            "sociedad",
+            "nombre_inversion",
+            "tipo_capex",
+            "codigo_cebe",
+            "codigo_ceco",
+        ),
+        configured=True,
     )
 )
 

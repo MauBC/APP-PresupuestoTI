@@ -43,6 +43,36 @@ class DashboardPage(QWidget):
 
         layout.setSpacing(18)
 
+        module_config = (
+            self._analysis_service
+            .module_config
+        )
+
+        module_label = (
+            module_config.label
+        )
+
+        if (
+            module_config.budgeter_column
+            == "responsable"
+        ):
+            budgeter_card_title = (
+                "Responsables"
+            )
+
+            budgeter_section_title = (
+                "Presupuesto por responsable"
+            )
+
+        else:
+            budgeter_card_title = (
+                "Presupuestadores"
+            )
+
+            budgeter_section_title = (
+                "Presupuesto por presupuestador"
+            )
+
         top_layout = QHBoxLayout()
 
         title_container = QVBoxLayout()
@@ -56,8 +86,9 @@ class DashboardPage(QWidget):
         )
 
         subtitle = QLabel(
-            "Resumen del presupuesto "
-            "de la simulacion local en USD."
+            f"Resumen del presupuesto "
+            f"{module_label} de la "
+            "simulacion local en USD."
         )
 
         subtitle.setObjectName(
@@ -124,7 +155,7 @@ class DashboardPage(QWidget):
             self.budgeters_value,
             budgeters_card,
         ) = self._create_card(
-            "Presupuestadores",
+            budgeter_card_title,
             "personas",
         )
 
@@ -169,7 +200,7 @@ class DashboardPage(QWidget):
         budgeter_container = QVBoxLayout()
 
         budgeter_title = QLabel(
-            "Presupuesto por presupuestador"
+            budgeter_section_title
         )
 
         budgeter_title.setObjectName(
@@ -413,10 +444,46 @@ class DashboardPage(QWidget):
             ),
         )
 
+        budgeter_column = (
+            self._analysis_service
+            .module_config
+            .budgeter_column
+            or "presupuestador"
+        )
+
+        if (
+            budgeter_column
+            == "responsable"
+        ):
+            budgeter_rows = tuple(
+                {
+                    "responsable":
+                        row.get(
+                            "presupuestador"
+                        ),
+                    "registros":
+                        row.get(
+                            "registros"
+                        ),
+                    "total_usd":
+                        row.get(
+                            "total_usd"
+                        ),
+                }
+                for row in (
+                    result.by_budgeter
+                )
+            )
+
+        else:
+            budgeter_rows = (
+                result.by_budgeter
+            )
+
         self.budgeter_model.set_data(
-            result.by_budgeter,
+            budgeter_rows,
             (
-                "presupuestador",
+                budgeter_column,
                 "registros",
                 "total_usd",
             ),

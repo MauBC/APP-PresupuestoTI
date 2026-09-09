@@ -1,4 +1,4 @@
-﻿from datetime import (
+from datetime import (
     datetime,
     timezone,
 )
@@ -508,6 +508,46 @@ def test_module_mismatch_is_blocked():
         coordinator.revert_and_reload(
             make_batch(
                 module="OPEX"
+            ),
+            actor="usuario",
+        )
+
+    assert history.calls == []
+    assert reader.calls == []
+    assert reversal.calls == []
+    assert persistence.calls == []
+    assert loader.calls == []
+
+
+def test_persistence_disabled_blocks_reversal():
+    workspace = FakeWorkspace(
+        module="CAPEX"
+    )
+
+    workspace.module_config.capabilities = (
+        SimpleNamespace(
+            persistence=False
+        )
+    )
+
+    (
+        coordinator,
+        history,
+        reader,
+        reversal,
+        persistence,
+        loader,
+    ) = make_coordinator(
+        workspace=workspace
+    )
+
+    with pytest.raises(
+        PresupuestoReversalCoordinatorError,
+        match="persistencia",
+    ):
+        coordinator.revert_and_reload(
+            make_batch(
+                module="CAPEX"
             ),
             actor="usuario",
         )

@@ -40,6 +40,12 @@ class PresupuestoWorkspaceAnalysisService:
             *self._config.amount_columns,
         )
 
+    @property
+    def module_config(
+        self,
+    ):
+        return self._config
+
     @staticmethod
     def _decimal(value) -> Decimal:
         if value is None:
@@ -266,17 +272,43 @@ class PresupuestoWorkspaceAnalysisService:
 
             total_usd += amount
 
+            country_column = (
+                self._config
+                .country_column
+            )
+
+            budgeter_column = (
+                self._config
+                .budgeter_column
+            )
+
             country = (
                 self._text(
-                    row.get("pais")
+                    row.get(
+                        country_column
+                    )
                 )
+                if country_column
+                else ""
+            )
+
+            country = (
+                country
                 or "(Sin pais)"
             )
 
             budgeter = (
                 self._text(
-                    row.get("presupuestador")
+                    row.get(
+                        budgeter_column
+                    )
                 )
+                if budgeter_column
+                else ""
+            )
+
+            budgeter = (
+                budgeter
                 or "(Sin presupuestador)"
             )
 

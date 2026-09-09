@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from app.config.budget_module_config import (
     BudgetModule,
@@ -51,7 +51,7 @@ def test_capex_capabilities_are_restricted():
         == BudgetModule.CAPEX
     )
 
-    assert not config.configured
+    assert config.configured
 
     assert (
         config.capabilities
@@ -66,6 +66,11 @@ def test_capex_capabilities_are_restricted():
     assert not (
         config.capabilities
         .country_distribution
+    )
+
+    assert not (
+        config.capabilities
+        .persistence
     )
 
 

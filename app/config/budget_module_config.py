@@ -19,6 +19,7 @@ class BudgetModuleCapabilities:
     ceco_distribution: bool = False
     country_distribution: bool = False
     grouped_editing: bool = True
+    persistence: bool = True
 
 
 @dataclass(

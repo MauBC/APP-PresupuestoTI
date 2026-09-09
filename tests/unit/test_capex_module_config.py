@@ -1,8 +1,9 @@
-﻿import pytest
+import pytest
 
 from app.config.capex_schema import (
     CAPEX_AMOUNT_COLUMNS,
     CAPEX_DIMENSION_COLUMNS,
+    CAPEX_GROUPABLE_COLUMNS,
     CAPEX_USD_MONTH_COLUMNS,
     CAPEX_USD_TOTAL_COLUMN,
 )
@@ -40,6 +41,18 @@ def test_capex_dimensions_exclude_amounts():
     )
 
 
+def test_capex_groupable_columns_are_dimensions():
+    assert (
+        CAPEX_GROUPABLE_COLUMNS
+    )
+
+    assert set(
+        CAPEX_GROUPABLE_COLUMNS
+    ).issubset(
+        CAPEX_DIMENSION_COLUMNS
+    )
+
+
 def test_capex_module_uses_real_schema():
     assert (
         CAPEX_MODULE_CONFIG.module
@@ -57,6 +70,11 @@ def test_capex_module_uses_real_schema():
     )
 
     assert (
+        CAPEX_MODULE_CONFIG.groupable_columns
+        == CAPEX_GROUPABLE_COLUMNS
+    )
+
+    assert (
         CAPEX_MODULE_CONFIG.month_columns
         == CAPEX_USD_MONTH_COLUMNS
     )
@@ -66,9 +84,48 @@ def test_capex_module_uses_real_schema():
         == CAPEX_USD_TOTAL_COLUMN
     )
 
+    assert (
+        CAPEX_MODULE_CONFIG.country_column
+        == "pais"
+    )
 
-def test_capex_gui_remains_disabled():
+    assert (
+        CAPEX_MODULE_CONFIG.budgeter_column
+        == "responsable"
+    )
+
+    assert (
+        CAPEX_MODULE_CONFIG.ceco_column
+        == "codigo_ceco"
+    )
+
+
+def test_capex_gui_is_enabled():
     assert (
         CAPEX_MODULE_CONFIG.configured
+        is True
+    )
+
+
+def test_capex_persistence_remains_disabled():
+    assert (
+        CAPEX_MODULE_CONFIG
+        .capabilities
+        .persistence
         is False
+    )
+
+
+def test_capex_expected_grouping_dimensions():
+    assert {
+        "pais",
+        "responsable",
+        "gerente_aprobador",
+        "nombre_inversion",
+        "sociedad",
+        "tipo_capex",
+        "codigo_cebe",
+        "codigo_ceco",
+    }.issubset(
+        CAPEX_GROUPABLE_COLUMNS
     )

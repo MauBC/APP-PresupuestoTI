@@ -175,6 +175,29 @@ class MainWindow(QMainWindow):
 
         self.pages = QStackedWidget()
 
+        self._build_module_pages()
+
+        content_layout.addWidget(
+            self.workspace_banner
+        )
+
+        content_layout.addWidget(
+            self.pages,
+            1,
+        )
+
+        main_layout.addWidget(
+            sidebar
+        )
+
+        main_layout.addWidget(
+            content_widget,
+            1,
+        )
+
+    def _build_module_pages(
+        self,
+    ):
         self.dashboard_page = (
             DashboardPage(
                 self.analysis_service
@@ -235,23 +258,60 @@ class MainWindow(QMainWindow):
             self.history_page
         )
 
-        content_layout.addWidget(
-            self.workspace_banner
+    def _replace_module_context(
+        self,
+        config,
+    ):
+        page_index = (
+            self.pages.currentIndex()
         )
 
-        content_layout.addWidget(
-            self.pages,
-            1,
+        self.active_module = config
+
+        self.workspace = (
+            PresupuestoWorkspace(
+                self.active_module
+            )
         )
 
-        main_layout.addWidget(
-            sidebar
+        self.analysis_service = (
+            PresupuestoWorkspaceAnalysisService(
+                self.workspace
+            )
         )
 
-        main_layout.addWidget(
-            content_widget,
-            1,
+        self.change_summary_service = (
+            PresupuestoChangeSummaryService(
+                self.workspace
+            )
         )
+
+        self._initial_load_seconds = None
+
+        while self.pages.count():
+            page = self.pages.widget(
+                0
+            )
+
+            self.pages.removeWidget(
+                page
+            )
+
+            page.deleteLater()
+
+        self._build_module_pages()
+
+        if (
+            0 <= page_index
+            < self.pages.count()
+        ):
+            self.pages.setCurrentIndex(
+                page_index
+            )
+
+        self._sync_module_selector()
+
+        self._start_workspace_load()
 
     def _create_sidebar(self):
         sidebar = QFrame()
@@ -552,6 +612,36 @@ class MainWindow(QMainWindow):
             self._sync_module_selector()
             return
 
+        if (
+            self._workspace_loader
+            is not None
+            and self._workspace_loader
+            .isRunning()
+        ):
+            self._sync_module_selector()
+            return
+
+        history_page = getattr(
+            self,
+            "history_page",
+            None,
+        )
+
+        if (
+            history_page is not None
+            and history_page.is_busy
+        ):
+            show_info(
+                self,
+                "Operacion en curso",
+                "Espera a que termine "
+                "la consulta del historial "
+                "antes de cambiar de modulo.",
+            )
+
+            self._sync_module_selector()
+            return
+
         config = (
             get_budget_module_config(
                 module
@@ -596,8 +686,9 @@ class MainWindow(QMainWindow):
             self._sync_module_selector()
             return
 
-        self.active_module = config
-        self._sync_module_selector()
+        self._replace_module_context(
+            config
+        )
 
     def _sync_module_selector(
         self,
@@ -670,6 +761,10 @@ class MainWindow(QMainWindow):
             False
         )
 
+        self._set_navigation_enabled(
+            False
+        )
+
         self._update_apply_button(
             0
         )
@@ -710,6 +805,10 @@ class MainWindow(QMainWindow):
         )
 
         self.pages.setEnabled(
+            True
+        )
+
+        self._set_navigation_enabled(
             True
         )
 
@@ -836,6 +935,38 @@ class MainWindow(QMainWindow):
 
             return
 
+        if not (
+            self.active_module
+            .capabilities
+            .persistence
+        ):
+            self.apply_changes_button.setEnabled(
+                False
+            )
+
+            if pending_rows > 0:
+                self.apply_changes_button.setText(
+                    "Aplicar cambios "
+                    f"({pending_rows:,})"
+                )
+            else:
+                self.apply_changes_button.setText(
+                    "Aplicar cambios"
+                )
+
+            self.apply_changes_button.setToolTip(
+                "El guardado CAPEX permanece "
+                "deshabilitado durante la "
+                "validacion del modulo."
+            )
+
+            return
+
+        self.apply_changes_button.setToolTip(
+            "Confirma los cambios pendientes "
+            "antes de enviarlos a BigQuery."
+        )
+
         has_changes = (
             pending_rows > 0
         )
@@ -856,6 +987,25 @@ class MainWindow(QMainWindow):
 
     def _show_apply_changes_dialog(self):
         if self._save_in_progress:
+            return
+
+        if not (
+            self.active_module
+            .capabilities
+            .persistence
+        ):
+            show_info(
+                self,
+                f"Aplicar cambios "
+                f"{self.active_module.label}",
+                "El guardado de CAPEX "
+                "todavia se encuentra "
+                "deshabilitado durante "
+                "la validacion del modulo.\n\n"
+                "Puedes realizar simulaciones "
+                "locales y descartarlas.",
+            )
+
             return
 
         if not self.workspace.is_loaded:
@@ -926,6 +1076,23 @@ class MainWindow(QMainWindow):
             self._save_in_progress
             or self._reversal_in_progress
         ):
+            return
+
+        if not (
+            self.active_module
+            .capabilities
+            .persistence
+        ):
+            show_info(
+                self,
+                "Revertir cambios "
+                f"{self.active_module.label}",
+                "La reversion de CAPEX "
+                "permanece deshabilitada "
+                "durante la validacion "
+                "del modulo.",
+            )
+
             return
 
         if not self.workspace.is_loaded:
@@ -1527,6 +1694,10 @@ class MainWindow(QMainWindow):
     ):
         self.pages.setEnabled(
             False
+        )
+
+        self._set_navigation_enabled(
+            True
         )
 
         self.workspace_banner.setText(
