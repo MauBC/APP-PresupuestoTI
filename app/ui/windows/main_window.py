@@ -48,6 +48,9 @@ from app.ui.pages.aggregation_page import (
 from app.ui.pages.dashboard_page import (
     DashboardPage,
 )
+from app.ui.pages.history_page import (
+    HistoryPage,
+)
 from app.ui.pages.presupuesto_page import (
     PresupuestoPage,
 )
@@ -186,6 +189,14 @@ class MainWindow(QMainWindow):
             )
         )
 
+        self.history_page = (
+            HistoryPage(
+                module_config=(
+                    self.active_module
+                )
+            )
+        )
+
         self.presupuesto_page.workspace_changed.connect(
             self._on_workspace_changed
         )
@@ -204,6 +215,10 @@ class MainWindow(QMainWindow):
 
         self.pages.addWidget(
             self.aggregation_page
+        )
+
+        self.pages.addWidget(
+            self.history_page
         )
 
         content_layout.addWidget(
@@ -307,6 +322,13 @@ class MainWindow(QMainWindow):
             )
         )
 
+        history_button = (
+            self._create_nav_button(
+                "Historial",
+                3,
+            )
+        )
+
         layout.addWidget(
             dashboard_button
         )
@@ -317,6 +339,10 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(
             aggregation_button
+        )
+
+        layout.addWidget(
+            history_button
         )
 
         layout.addStretch()
@@ -923,6 +949,10 @@ class MainWindow(QMainWindow):
             outcome.persistence_result
         )
 
+        self._invalidate_page(
+            self.history_page
+        )
+
         if result.status == "APPLIED":
             self._invalidate_page(
                 self.dashboard_page
@@ -1040,6 +1070,10 @@ class MainWindow(QMainWindow):
     ):
         if failure.was_applied:
             self._reload_after_applied_failure = True
+
+            self._invalidate_page(
+                self.history_page
+            )
 
             self.workspace_banner.setText(
                 f"{self.active_module.label}  |  "
