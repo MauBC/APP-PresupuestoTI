@@ -102,6 +102,13 @@ CAPEX_BUSINESS_COLUMNS = (
 )
 
 
+CAPEX_DIMENSION_COLUMNS = tuple(
+    column
+    for column in CAPEX_BUSINESS_COLUMNS
+    if column not in CAPEX_AMOUNT_COLUMNS
+)
+
+
 CAPEX_RAW_TO_INTERNAL = {
     "Tipo":
         "tipo",

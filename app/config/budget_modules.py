@@ -3,6 +3,11 @@ from app.config.budget_module_config import (
     BudgetModuleCapabilities,
     BudgetModuleConfig,
 )
+from app.config.capex_schema import (
+    CAPEX_DIMENSION_COLUMNS,
+    CAPEX_USD_MONTH_COLUMNS,
+    CAPEX_USD_TOTAL_COLUMN,
+)
 from app.config.presupuesto_app_config import (
     DIMENSION_COLUMNS,
     GROUPABLE_COLUMNS,
@@ -62,13 +67,15 @@ CAPEX_MODULE_CONFIG = (
         main_table=(
             settings.BIGQUERY_CAPEX_TABLE
         ),
-        dimension_columns=(),
+        dimension_columns=(
+            CAPEX_DIMENSION_COLUMNS
+        ),
         groupable_columns=(),
         month_columns=(
-            USD_MONTH_COLUMNS
+            CAPEX_USD_MONTH_COLUMNS
         ),
         annual_column=(
-            USD_TOTAL_COLUMN
+            CAPEX_USD_TOTAL_COLUMN
         ),
         capabilities=(
             BudgetModuleCapabilities(
