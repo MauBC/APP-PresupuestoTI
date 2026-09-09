@@ -15,6 +15,9 @@ from database.persistence.bigquery_contract import (
     build_staging_schema,
 )
 from database.persistence.contract import (
+    APPLIED_STATUS,
+    BATCH_STATUSES,
+    BUDGET_MODULE_COLUMN,
     PENDING_STATUS,
     STAGING_COLUMNS,
 )
@@ -155,7 +158,8 @@ class BigQueryPersistenceRepository:
                 row_count,
                 field_count,
                 app_version,
-                error_message
+                error_message,
+                budget_module
             )
 
             SELECT
@@ -167,7 +171,8 @@ class BigQueryPersistenceRepository:
                 @row_count,
                 @field_count,
                 @app_version,
-                NULL
+                NULL,
+                @budget_module
 
             FROM (
                 SELECT 1
@@ -218,6 +223,11 @@ class BigQueryPersistenceRepository:
                         "STRING",
                         batch.app_version,
                     ),
+                    bigquery.ScalarQueryParameter(
+                        "budget_module",
+                        "STRING",
+                        self._module_config.module.value,
+                    ),
                 ]
             )
         )
@@ -234,6 +244,196 @@ class BigQueryPersistenceRepository:
             job,
             "num_dml_affected_rows",
             None,
+        )
+
+    def list_batches(
+        self,
+        *,
+        status: str | None = APPLIED_STATUS,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[
+        dict,
+        ...
+    ]:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or limit < 1
+            or limit > 500
+        ):
+            raise BigQueryPersistenceError(
+                "limit debe ser un entero "
+                "entre 1 y 500."
+            )
+
+        if (
+            isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or offset < 0
+        ):
+            raise BigQueryPersistenceError(
+                "offset debe ser un entero "
+                "mayor o igual a 0."
+            )
+
+        status_value = None
+
+        if status is not None:
+            status_value = str(
+                status
+            ).strip().upper()
+
+            if (
+                status_value
+                not in BATCH_STATUSES
+            ):
+                raise BigQueryPersistenceError(
+                    "Estado de batch "
+                    "no reconocido: "
+                    f"{status}"
+                )
+
+        module_value = (
+            self._module_config
+            .module
+            .value
+        )
+
+        sql = f"""
+            SELECT
+                batch_id,
+                status,
+                actor,
+                created_at,
+                completed_at,
+                row_count,
+                field_count,
+                app_version,
+                error_message,
+                COALESCE(
+                    `{BUDGET_MODULE_COLUMN}`,
+                    'OPEX'
+                ) AS budget_module
+            FROM `{self.batch_table_id}`
+            WHERE
+                COALESCE(
+                    `{BUDGET_MODULE_COLUMN}`,
+                    'OPEX'
+                ) = @budget_module
+                AND (
+                    @status IS NULL
+                    OR status = @status
+                )
+            ORDER BY
+                created_at DESC,
+                batch_id DESC
+            LIMIT @limit
+            OFFSET @offset
+        """
+
+        job_config = (
+            bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter(
+                        "budget_module",
+                        "STRING",
+                        module_value,
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "status",
+                        "STRING",
+                        status_value,
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "limit",
+                        "INT64",
+                        limit,
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "offset",
+                        "INT64",
+                        offset,
+                    ),
+                ]
+            )
+        )
+
+        rows = (
+            self._client.query(
+                sql,
+                job_config=job_config,
+                location=self._location,
+            )
+            .result()
+        )
+
+        result = []
+
+        for row in rows:
+            result.append(
+                {
+                    "batch_id":
+                        self._row_value(
+                            row,
+                            "batch_id",
+                        ),
+                    "status":
+                        self._row_value(
+                            row,
+                            "status",
+                        ),
+                    "actor":
+                        self._row_value(
+                            row,
+                            "actor",
+                        ),
+                    "created_at":
+                        self._row_value(
+                            row,
+                            "created_at",
+                        ),
+                    "completed_at":
+                        self._row_value(
+                            row,
+                            "completed_at",
+                        ),
+                    "row_count":
+                        int(
+                            self._row_value(
+                                row,
+                                "row_count",
+                            )
+                            or 0
+                        ),
+                    "field_count":
+                        int(
+                            self._row_value(
+                                row,
+                                "field_count",
+                            )
+                            or 0
+                        ),
+                    "app_version":
+                        self._row_value(
+                            row,
+                            "app_version",
+                        ),
+                    "error_message":
+                        self._row_value(
+                            row,
+                            "error_message",
+                        ),
+                    "budget_module":
+                        self._row_value(
+                            row,
+                            "budget_module",
+                        ),
+                }
+            )
+
+        return tuple(
+            result
         )
 
     def clear_staging(

@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
@@ -62,6 +62,7 @@ def test_batch_contract():
         "field_count",
         "app_version",
         "error_message",
+        "budget_module",
     )
 
     assert set(
@@ -70,12 +71,20 @@ def test_batch_contract():
         "completed_at",
         "app_version",
         "error_message",
+        "budget_module",
     }
 
     assert set(
         BATCH_TYPES
     ) == set(
         BATCH_COLUMNS
+    )
+
+    assert (
+        BATCH_TYPES[
+            "budget_module"
+        ]
+        == "STRING"
     )
 
 

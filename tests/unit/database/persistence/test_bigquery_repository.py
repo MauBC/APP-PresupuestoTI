@@ -1,4 +1,4 @@
-﻿from datetime import (
+from datetime import (
     datetime,
     timezone,
 )
@@ -345,6 +345,11 @@ def test_insert_pending_batch_uses_parameters():
     assert (
         params["status"]
         == "PENDING"
+    )
+
+    assert (
+        params["budget_module"]
+        == "OPEX"
     )
 
     assert (

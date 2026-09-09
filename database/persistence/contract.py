@@ -1,4 +1,4 @@
-﻿from app.config.presupuesto_app_config import (
+from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
     USD_COLUMNS,
 )
@@ -32,6 +32,11 @@ EDITABLE_VALUE_TYPES = {
 }
 
 
+BUDGET_MODULE_COLUMN = (
+    "budget_module"
+)
+
+
 BATCH_COLUMNS = (
     "batch_id",
     "status",
@@ -42,6 +47,7 @@ BATCH_COLUMNS = (
     "field_count",
     "app_version",
     "error_message",
+    BUDGET_MODULE_COLUMN,
 )
 
 
@@ -55,6 +61,7 @@ BATCH_TYPES = {
     "field_count": "INTEGER",
     "app_version": "STRING",
     "error_message": "STRING",
+    BUDGET_MODULE_COLUMN: "STRING",
 }
 
 
@@ -62,6 +69,7 @@ BATCH_NULLABLE_COLUMNS = (
     "completed_at",
     "app_version",
     "error_message",
+    BUDGET_MODULE_COLUMN,
 )
 
 

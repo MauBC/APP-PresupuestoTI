@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from database.persistence.bigquery_contract import (
     build_audit_schema,
@@ -28,7 +28,7 @@ def test_batch_bigquery_schema():
 
     assert len(
         schema
-    ) == 9
+    ) == 10
 
     fields = schema_map(
         schema
@@ -57,6 +57,13 @@ def test_batch_bigquery_schema():
 
     assert fields[
         "error_message"
+    ] == (
+        "STRING",
+        "NULLABLE",
+    )
+
+    assert fields[
+        "budget_module"
     ] == (
         "STRING",
         "NULLABLE",
