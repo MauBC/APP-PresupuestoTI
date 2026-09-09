@@ -787,13 +787,13 @@ class HistoryPage(QWidget):
         elif batch.reverted_batch_id:
             tooltip = (
                 "Este batch ya corresponde "
-                "a una reversi?n."
+                "a una reversi\u00f3n."
             )
 
         elif not reversal_enabled:
             tooltip = (
                 "Este batch ya tiene una "
-                "reversi?n aplicada."
+                "reversi\u00f3n aplicada."
             )
 
         else:

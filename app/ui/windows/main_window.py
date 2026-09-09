@@ -1163,7 +1163,7 @@ class MainWindow(QMainWindow):
             show_warning(
                 self,
                 "Reversi\u00f3n bloqueada",
-                "No se revirti\u00f3 ning?n dato.\n\n"
+                "No se revirti\u00f3 ning\u00fan dato.\n\n"
                 "Una o m\u00e1s filas fueron "
                 "modificadas despu\u00e9s del batch "
                 "seleccionado.\n\n"
@@ -1179,7 +1179,7 @@ class MainWindow(QMainWindow):
             show_error(
                 self,
                 "No se pudo revertir",
-                "BigQuery rechaz? o revirti\u00f3 "
+                "BigQuery rechaz\u00f3 o revirti\u00f3 "
                 "la operaci\u00f3n.\n\n"
                 "Los datos vigentes no fueron "
                 "reemplazados por la reversi\u00f3n.\n\n"
@@ -1225,7 +1225,7 @@ class MainWindow(QMainWindow):
                 "recarga del Workspace.\n\n"
                 "No vuelvas a revertir el mismo "
                 "batch.\n\n"
-                "La aplicaci\u00f3n intentar? recargar "
+                "La aplicaci\u00f3n intentar\u00e1 recargar "
                 "el presupuesto nuevamente.\n\n"
                 f"Batch nuevo: "
                 f"{failure.batch_id}",
