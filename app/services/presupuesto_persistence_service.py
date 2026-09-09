@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from time import perf_counter
 
 from app.config.settings import settings
@@ -8,6 +8,7 @@ from database.persistence.batch_builder import (
     generate_batch_id,
 )
 from database.persistence.models import (
+    PersistenceBatch,
     PersistenceResult,
 )
 from database.persistence.staging_builder import (
@@ -63,10 +64,6 @@ class PresupuestoPersistenceService:
         timestamp: datetime | None = None,
         batch_id_factory=generate_batch_id,
     ) -> PersistenceResult:
-        total_started = (
-            perf_counter()
-        )
-
         preparation_started = (
             perf_counter()
         )
@@ -84,15 +81,7 @@ class PresupuestoPersistenceService:
                 ),
             )
 
-            staging = build_staging_rows(
-                batch,
-                timestamp=batch.created_at,
-            )
-
-        except (
-            PersistenceBuildError,
-            StagingBuildError,
-        ) as exc:
+        except PersistenceBuildError as exc:
             _print_timing(
                 "Preparacion ERROR",
                 preparation_started,
@@ -107,6 +96,56 @@ class PresupuestoPersistenceService:
         _print_timing(
             "Preparacion",
             preparation_started,
+        )
+
+        return self.persist_batch(
+            batch
+        )
+
+    def persist_batch(
+        self,
+        batch: PersistenceBatch,
+    ) -> PersistenceResult:
+        if not isinstance(
+            batch,
+            PersistenceBatch,
+        ):
+            raise (
+                PresupuestoPersistenceServiceError(
+                    "batch debe ser "
+                    "PersistenceBatch."
+                )
+            )
+
+        total_started = (
+            perf_counter()
+        )
+
+        staging_build_started = (
+            perf_counter()
+        )
+
+        try:
+            staging = build_staging_rows(
+                batch,
+                timestamp=batch.created_at,
+            )
+
+        except StagingBuildError as exc:
+            _print_timing(
+                "Staging build ERROR",
+                staging_build_started,
+            )
+
+            raise (
+                PresupuestoPersistenceServiceError(
+                    str(exc)
+                )
+            ) from exc
+
+        _print_timing(
+            "Staging build",
+            staging_build_started,
         )
 
         pending_started = (
@@ -127,8 +166,7 @@ class PresupuestoPersistenceService:
             raise (
                 PresupuestoPersistenceServiceError(
                     "No se pudo registrar "
-                    "el batch de cambios. "
-                    "No se modifico el Workspace."
+                    "el batch de cambios."
                 )
             ) from exc
 
@@ -160,9 +198,7 @@ class PresupuestoPersistenceService:
             raise (
                 PresupuestoPersistenceServiceError(
                     "No se pudo preparar "
-                    "el staging del batch. "
-                    "El Workspace conserva "
-                    "todos sus cambios."
+                    "el staging del batch."
                 )
             ) from exc
 
@@ -194,9 +230,7 @@ class PresupuestoPersistenceService:
                 PresupuestoPersistenceServiceError(
                     "No se pudo confirmar "
                     "el resultado final de "
-                    "la persistencia. "
-                    "El Workspace conserva "
-                    "todos sus cambios."
+                    "la persistencia."
                 )
             ) from exc
 

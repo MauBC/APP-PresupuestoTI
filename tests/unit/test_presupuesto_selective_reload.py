@@ -1,4 +1,4 @@
-﻿from decimal import Decimal
+from decimal import Decimal
 
 import pytest
 
@@ -190,3 +190,210 @@ def test_missing_persisted_row_is_rejected():
         loader.reload_pending_rows()
 
     assert workspace.has_changes
+
+def test_reload_explicit_rows_updates_clean_workspace():
+    workspace = (
+        PresupuestoWorkspace()
+    )
+
+    workspace.load(
+        (
+            make_row("r1"),
+            make_row("r2"),
+        )
+    )
+
+    assert not workspace.has_changes
+
+    repository = FakeRepository(
+        (
+            make_row(
+                "r1",
+                version=3,
+                enero="15.00",
+            ),
+            make_row("r2"),
+        )
+    )
+
+    loader = (
+        PresupuestoWorkspaceLoader(
+            repository,
+            workspace,
+        )
+    )
+
+    result = loader.reload_rows_by_ids(
+        ("r1",)
+    )
+
+    assert (
+        repository.requested_ids
+        == ("r1",)
+    )
+
+    assert result.row_count == 1
+
+    refreshed = (
+        workspace.get_row(
+            0
+        )
+    )
+
+    assert (
+        refreshed["version"]
+        == 3
+    )
+
+    assert (
+        refreshed["enero_usd"]
+        == Decimal("15.00")
+    )
+
+    untouched = (
+        workspace.get_row(
+            1
+        )
+    )
+
+    assert (
+        untouched["version"]
+        == 1
+    )
+
+    assert not workspace.has_changes
+    assert workspace.history_count == 0
+
+
+def test_reload_explicit_rows_rejects_local_pending_changes():
+    workspace = (
+        PresupuestoWorkspace()
+    )
+
+    workspace.load(
+        (
+            make_row("r1"),
+        )
+    )
+
+    workspace.edit_month(
+        0,
+        "enero_usd",
+        Decimal("20.00"),
+    )
+
+    repository = FakeRepository(
+        (
+            make_row(
+                "r1",
+                version=2,
+                enero="10.00",
+            ),
+        )
+    )
+
+    loader = (
+        PresupuestoWorkspaceLoader(
+            repository,
+            workspace,
+        )
+    )
+
+    with pytest.raises(
+        PresupuestoWorkspaceError,
+        match="cambios pendientes",
+    ):
+        loader.reload_rows_by_ids(
+            ("r1",)
+        )
+
+    assert workspace.has_changes
+
+    assert (
+        workspace.get_row(
+            0
+        )["enero_usd"]
+        == Decimal("20.00")
+    )
+
+
+def test_reload_explicit_rows_requires_all_requested_rows():
+    workspace = (
+        PresupuestoWorkspace()
+    )
+
+    workspace.load(
+        (
+            make_row("r1"),
+            make_row("r2"),
+        )
+    )
+
+    repository = FakeRepository(
+        (
+            make_row("r1"),
+        )
+    )
+
+    loader = (
+        PresupuestoWorkspaceLoader(
+            repository,
+            workspace,
+        )
+    )
+
+    with pytest.raises(
+        PresupuestoWorkspaceError,
+        match="todas las filas solicitadas",
+    ):
+        loader.reload_rows_by_ids(
+            (
+                "r1",
+                "r2",
+            )
+        )
+
+    assert not workspace.has_changes
+
+
+def test_refresh_persisted_rows_rejects_unrequested_row():
+    workspace = (
+        PresupuestoWorkspace()
+    )
+
+    workspace.load(
+        (
+            make_row("r1"),
+            make_row("r2"),
+        )
+    )
+
+    with pytest.raises(
+        PresupuestoWorkspaceError,
+        match="no fue solicitada",
+    ):
+        workspace.refresh_persisted_rows(
+            (
+                make_row(
+                    "r2",
+                    version=2,
+                ),
+            ),
+            expected_row_ids=(
+                "r1",
+            ),
+        )
+
+    assert (
+        workspace.get_row(
+            0
+        )["version"]
+        == 1
+    )
+
+    assert (
+        workspace.get_row(
+            1
+        )["version"]
+        == 1
+    )

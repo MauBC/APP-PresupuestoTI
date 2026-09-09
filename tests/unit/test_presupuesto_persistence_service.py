@@ -1,4 +1,5 @@
-﻿from datetime import (
+from dataclasses import replace
+from datetime import (
     datetime,
     timezone,
 )
@@ -15,6 +16,9 @@ from app.services.presupuesto_persistence_service import (
 )
 from app.services.presupuesto_workspace import (
     PresupuestoWorkspace,
+)
+from database.persistence.batch_builder import (
+    build_persistence_batch,
 )
 from database.persistence.models import (
     ConflictDetail,
@@ -654,4 +658,205 @@ def test_result_from_different_batch_is_rejected():
 
     assert workspace.has_changes
 
+def make_prebuilt_reversal_batch(
+    workspace,
+):
+    batch = build_persistence_batch(
+        workspace,
+        actor="PC-TEST\\reversor",
+        app_version="0.5.0",
+        timestamp=FIXED_TIME,
+        batch_id_factory=lambda: (
+            "revert-batch-001"
+        ),
+    )
+
+    return replace(
+        batch,
+        reverted_batch_id=(
+            "source-batch-001"
+        ),
+    )
+
+
+def test_prebuilt_reversal_batch_uses_same_persistence_flow():
+    workspace = (
+        make_workspace()
+    )
+
+    repository = (
+        FakePersistenceRepository(
+            result=PersistenceResult(
+                batch_id=(
+                    "revert-batch-001"
+                ),
+                status="APPLIED",
+                row_count=1,
+                field_count=2,
+            )
+        )
+    )
+
+    service = make_service(
+        workspace,
+        repository,
+    )
+
+    batch = (
+        make_prebuilt_reversal_batch(
+            workspace
+        )
+    )
+
+    result = service.persist_batch(
+        batch
+    )
+
+    assert result.is_applied
+
+    assert [
+        call[0]
+        for call
+        in repository.calls
+    ] == [
+        "insert",
+        "staging",
+        "apply",
+    ]
+
+    inserted = (
+        repository.calls[
+            0
+        ][1]
+    )
+
+    assert inserted is batch
+
+    assert (
+        inserted.reverted_batch_id
+        == "source-batch-001"
+    )
+
+    assert (
+        inserted.batch_id
+        == "revert-batch-001"
+    )
+
+    assert (
+        inserted.actor
+        == "PC-TEST\\reversor"
+    )
+
+    staged = (
+        repository.calls[
+            1
+        ][1]
+    )
+
+    assert len(staged) == 1
+
+    assert (
+        staged[0].batch_id
+        == "revert-batch-001"
+    )
+
+    assert (
+        staged[0].expected_version
+        == batch.rows[
+            0
+        ].expected_version
+    )
+
+    assert (
+        repository.calls[
+            2
+        ]
+        == (
+            "apply",
+            "revert-batch-001",
+            "PC-TEST\\reversor",
+        )
+    )
+
+
+def test_prebuilt_reversal_conflict_is_returned():
+    workspace = (
+        make_workspace()
+    )
+
+    repository = (
+        FakePersistenceRepository(
+            result=PersistenceResult(
+                batch_id=(
+                    "revert-batch-001"
+                ),
+                status="CONFLICT",
+                row_count=1,
+                field_count=2,
+                conflicts=(
+                    ConflictDetail(
+                        row_id="row-001",
+                        expected_version=1,
+                        current_version=2,
+                    ),
+                ),
+            )
+        )
+    )
+
+    service = make_service(
+        workspace,
+        repository,
+    )
+
+    result = service.persist_batch(
+        make_prebuilt_reversal_batch(
+            workspace
+        )
+    )
+
+    assert (
+        result.status
+        == "CONFLICT"
+    )
+
+    assert result.has_conflicts
+
+    assert [
+        call[0]
+        for call
+        in repository.calls
+    ] == [
+        "insert",
+        "staging",
+        "apply",
+    ]
+
+
+def test_persist_batch_rejects_wrong_type():
+    workspace = (
+        make_workspace()
+    )
+
+    repository = (
+        FakePersistenceRepository()
+    )
+
+    service = make_service(
+        workspace,
+        repository,
+    )
+
+    with pytest.raises(
+        PresupuestoPersistenceServiceError,
+        match="PersistenceBatch",
+    ):
+        service.persist_batch(
+            {
+                "batch_id":
+                    "incorrecto"
+            }
+        )
+
+    assert repository.calls == []
 

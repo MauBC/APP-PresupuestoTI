@@ -457,6 +457,216 @@ class PresupuestoWorkspace:
             replacements
         )
 
+    def refresh_persisted_rows(
+        self,
+        rows: Iterable[
+            Mapping[str, Any]
+        ],
+        *,
+        expected_row_ids,
+    ) -> int:
+        self._require_loaded()
+
+        if self._dirty_row_ids:
+            raise PresupuestoWorkspaceError(
+                "No se pueden refrescar filas "
+                "persistidas mientras existen "
+                "cambios pendientes."
+            )
+
+        clean_expected = tuple(
+            dict.fromkeys(
+                str(row_id).strip()
+                for row_id
+                in expected_row_ids
+                if str(row_id).strip()
+            )
+        )
+
+        if not clean_expected:
+            return 0
+
+        expected = set(
+            clean_expected
+        )
+
+        session_by_row_id = {}
+
+        for session_row_id, source in (
+            self._original_rows.items()
+        ):
+            persistent_row_id = str(
+                source.get(
+                    ROW_ID_COLUMN,
+                    "",
+                )
+                or ""
+            ).strip()
+
+            if not persistent_row_id:
+                raise PresupuestoWorkspaceError(
+                    "Una fila del Workspace "
+                    "no contiene row_id."
+                )
+
+            if (
+                persistent_row_id
+                in session_by_row_id
+            ):
+                raise PresupuestoWorkspaceError(
+                    "El Workspace contiene "
+                    "row_id duplicados."
+                )
+
+            session_by_row_id[
+                persistent_row_id
+            ] = session_row_id
+
+        unknown = (
+            expected
+            - set(
+                session_by_row_id
+            )
+        )
+
+        if unknown:
+            raise PresupuestoWorkspaceError(
+                "No se encontraron en el "
+                "Workspace todos los row_id "
+                "solicitados."
+            )
+
+        required_columns = {
+            ROW_ID_COLUMN,
+            VERSION_COLUMN,
+            *self._module_config
+            .amount_columns,
+        }
+
+        replacements = {}
+        received = set()
+
+        for index, source_row in enumerate(
+            rows
+        ):
+            row = deepcopy(
+                dict(source_row)
+            )
+
+            missing_columns = (
+                required_columns
+                - set(row)
+            )
+
+            if missing_columns:
+                raise PresupuestoWorkspaceError(
+                    "La fila persistida "
+                    f"{index} no contiene: "
+                    + ", ".join(
+                        sorted(
+                            missing_columns
+                        )
+                    )
+                )
+
+            persistent_row_id = str(
+                row.get(
+                    ROW_ID_COLUMN,
+                    "",
+                )
+                or ""
+            ).strip()
+
+            if not persistent_row_id:
+                raise PresupuestoWorkspaceError(
+                    "BigQuery devolvio una "
+                    "fila sin row_id."
+                )
+
+            if (
+                persistent_row_id
+                in received
+            ):
+                raise PresupuestoWorkspaceError(
+                    "BigQuery devolvio "
+                    "row_id duplicados."
+                )
+
+            if (
+                persistent_row_id
+                not in expected
+            ):
+                raise PresupuestoWorkspaceError(
+                    "BigQuery devolvio una "
+                    "fila que no fue solicitada."
+                )
+
+            session_row_id = (
+                session_by_row_id.get(
+                    persistent_row_id
+                )
+            )
+
+            if session_row_id is None:
+                raise PresupuestoWorkspaceError(
+                    "No se encontro el row_id "
+                    "persistido en el Workspace."
+                )
+
+            row[
+                HABILITADO_COLUMN
+            ] = self._normalize_enabled(
+                row.get(
+                    HABILITADO_COLUMN,
+                    True,
+                )
+            )
+
+            row[
+                SESSION_ROW_ID
+            ] = session_row_id
+
+            replacements[
+                session_row_id
+            ] = row
+
+            received.add(
+                persistent_row_id
+            )
+
+        missing_rows = (
+            expected
+            - received
+        )
+
+        if missing_rows:
+            raise PresupuestoWorkspaceError(
+                "No se pudieron recargar "
+                "todas las filas solicitadas."
+            )
+
+        for session_row_id, row in (
+            replacements.items()
+        ):
+            self._original_rows[
+                session_row_id
+            ] = deepcopy(
+                row
+            )
+
+            self._working_rows[
+                session_row_id
+            ] = deepcopy(
+                row
+            )
+
+        self._history.clear()
+        self._dirty_row_ids.clear()
+
+        return len(
+            replacements
+        )
+
     def edit_month(
         self,
         session_row_id: int,

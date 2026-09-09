@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 from time import perf_counter
 
 from app.config.presupuesto_app_config import (
@@ -71,6 +71,108 @@ class PresupuestoWorkspaceLoader:
                 workspace_seconds
             ),
             total_seconds=total_seconds,
+        )
+
+    def reload_rows_by_ids(
+        self,
+        row_ids,
+    ) -> WorkspaceLoadResult:
+        total_start = (
+            perf_counter()
+        )
+
+        clean_row_ids = tuple(
+            dict.fromkeys(
+                str(row_id).strip()
+                for row_id
+                in row_ids
+                if str(row_id).strip()
+            )
+        )
+
+        if not clean_row_ids:
+            return WorkspaceLoadResult(
+                row_count=0,
+                fetch_seconds=0.0,
+                workspace_seconds=0.0,
+                total_seconds=(
+                    perf_counter()
+                    - total_start
+                ),
+            )
+
+        fetch_start = (
+            perf_counter()
+        )
+
+        rows = (
+            self._repository
+            .get_rows_by_ids(
+                clean_row_ids
+            )
+        )
+
+        fetch_seconds = (
+            perf_counter()
+            - fetch_start
+        )
+
+        workspace_start = (
+            perf_counter()
+        )
+
+        row_count = (
+            self._workspace
+            .refresh_persisted_rows(
+                rows,
+                expected_row_ids=(
+                    clean_row_ids
+                ),
+            )
+        )
+
+        workspace_seconds = (
+            perf_counter()
+            - workspace_start
+        )
+
+        total_seconds = (
+            perf_counter()
+            - total_start
+        )
+
+        print(
+            "[BUDGET RELOAD] "
+            f"Filas               "
+            f"{row_count:>7,}",
+            flush=True,
+        )
+
+        print(
+            "[BUDGET RELOAD] "
+            f"Fetch               "
+            f"{fetch_seconds:>7.2f} s",
+            flush=True,
+        )
+
+        print(
+            "[BUDGET RELOAD] "
+            f"Workspace           "
+            f"{workspace_seconds:>7.2f} s",
+            flush=True,
+        )
+
+        return WorkspaceLoadResult(
+            row_count=row_count,
+            fetch_seconds=(
+                fetch_seconds
+            ),
+            workspace_seconds=(
+                workspace_seconds
+            ),
+            total_seconds=(
+                total_seconds
+            ),
         )
 
     def reload_pending_rows(
