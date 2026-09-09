@@ -28,7 +28,7 @@ def test_batch_bigquery_schema():
 
     assert len(
         schema
-    ) == 10
+    ) == 11
 
     fields = schema_map(
         schema
@@ -64,6 +64,13 @@ def test_batch_bigquery_schema():
 
     assert fields[
         "budget_module"
+    ] == (
+        "STRING",
+        "NULLABLE",
+    )
+
+    assert fields[
+        "reverted_batch_id"
     ] == (
         "STRING",
         "NULLABLE",

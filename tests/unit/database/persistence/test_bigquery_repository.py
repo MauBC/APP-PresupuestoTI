@@ -353,6 +353,11 @@ def test_insert_pending_batch_uses_parameters():
     )
 
     assert (
+        params["reverted_batch_id"]
+        is None
+    )
+
+    assert (
         params["actor"]
         == "usuario@empresa.com"
     )

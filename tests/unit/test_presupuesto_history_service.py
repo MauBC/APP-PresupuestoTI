@@ -1,4 +1,4 @@
-﻿from datetime import (
+from datetime import (
     datetime,
     timezone,
 )
@@ -60,6 +60,7 @@ def batch_row(
         "app_version": "0.5.0",
         "error_message": None,
         "budget_module": "OPEX",
+        "reverted_batch_id": None,
     }
 
 
@@ -166,6 +167,11 @@ def test_history_batch_from_mapping():
     assert (
         batch.budget_module
         == "OPEX"
+    )
+
+    assert (
+        batch.reverted_batch_id
+        is None
     )
 
 

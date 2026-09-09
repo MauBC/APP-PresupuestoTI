@@ -36,6 +36,10 @@ BUDGET_MODULE_COLUMN = (
     "budget_module"
 )
 
+REVERTED_BATCH_ID_COLUMN = (
+    "reverted_batch_id"
+)
+
 
 BATCH_COLUMNS = (
     "batch_id",
@@ -48,6 +52,7 @@ BATCH_COLUMNS = (
     "app_version",
     "error_message",
     BUDGET_MODULE_COLUMN,
+    REVERTED_BATCH_ID_COLUMN,
 )
 
 
@@ -62,6 +67,7 @@ BATCH_TYPES = {
     "app_version": "STRING",
     "error_message": "STRING",
     BUDGET_MODULE_COLUMN: "STRING",
+    REVERTED_BATCH_ID_COLUMN: "STRING",
 }
 
 
@@ -70,6 +76,7 @@ BATCH_NULLABLE_COLUMNS = (
     "app_version",
     "error_message",
     BUDGET_MODULE_COLUMN,
+    REVERTED_BATCH_ID_COLUMN,
 )
 
 

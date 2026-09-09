@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -71,6 +71,7 @@ class PersistenceBatch:
 
     completed_at: datetime | None = None
     error_message: str | None = None
+    reverted_batch_id: str | None = None
 
     @property
     def row_count(self) -> int:

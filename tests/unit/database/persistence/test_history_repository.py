@@ -127,6 +127,7 @@ def make_history_row(
     batch_id="batch-001",
     status="APPLIED",
     module="OPEX",
+    reverted_batch_id=None,
 ):
     return {
         "batch_id": batch_id,
@@ -139,6 +140,8 @@ def make_history_row(
         "app_version": "0.5.0",
         "error_message": None,
         "budget_module": module,
+        "reverted_batch_id":
+            reverted_batch_id,
     }
 
 
@@ -174,6 +177,11 @@ def test_list_batches_defaults_to_applied_opex():
     assert (
         batch["budget_module"]
         == "OPEX"
+    )
+
+    assert (
+        batch["reverted_batch_id"]
+        is None
     )
 
     assert batch["row_count"] == 3

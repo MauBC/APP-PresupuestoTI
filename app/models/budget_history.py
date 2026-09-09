@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Mapping
 
@@ -47,6 +47,7 @@ class BudgetHistoryBatch:
     app_version: str | None
     error_message: str | None
     budget_module: str
+    reverted_batch_id: str | None = None
 
     def __post_init__(
         self,
@@ -69,6 +70,15 @@ class BudgetHistoryBatch:
         if not self.budget_module.strip():
             raise ValueError(
                 "budget_module no puede estar vacio."
+            )
+
+        if (
+            self.reverted_batch_id is not None
+            and not self.reverted_batch_id.strip()
+        ):
+            raise ValueError(
+                "reverted_batch_id no puede "
+                "estar vacio."
             )
 
         if self.row_count < 0:
@@ -148,6 +158,11 @@ class BudgetHistoryBatch:
                     "budget_module"
                 ),
                 "budget_module",
+            ),
+            reverted_batch_id=_optional_text(
+                data.get(
+                    "reverted_batch_id"
+                )
             ),
         )
 

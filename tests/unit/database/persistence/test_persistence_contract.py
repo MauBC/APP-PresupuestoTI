@@ -63,6 +63,7 @@ def test_batch_contract():
         "app_version",
         "error_message",
         "budget_module",
+        "reverted_batch_id",
     )
 
     assert set(
@@ -72,6 +73,7 @@ def test_batch_contract():
         "app_version",
         "error_message",
         "budget_module",
+        "reverted_batch_id",
     }
 
     assert set(

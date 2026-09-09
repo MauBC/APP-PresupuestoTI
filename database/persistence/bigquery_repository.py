@@ -18,6 +18,7 @@ from database.persistence.contract import (
     APPLIED_STATUS,
     BATCH_STATUSES,
     BUDGET_MODULE_COLUMN,
+    REVERTED_BATCH_ID_COLUMN,
     PENDING_STATUS,
     STAGING_COLUMNS,
 )
@@ -159,7 +160,8 @@ class BigQueryPersistenceRepository:
                 field_count,
                 app_version,
                 error_message,
-                budget_module
+                budget_module,
+                reverted_batch_id
             )
 
             SELECT
@@ -172,7 +174,8 @@ class BigQueryPersistenceRepository:
                 @field_count,
                 @app_version,
                 NULL,
-                @budget_module
+                @budget_module,
+                @reverted_batch_id
 
             FROM (
                 SELECT 1
@@ -227,6 +230,11 @@ class BigQueryPersistenceRepository:
                         "budget_module",
                         "STRING",
                         self._module_config.module.value,
+                    ),
+                    bigquery.ScalarQueryParameter(
+                        "reverted_batch_id",
+                        "STRING",
+                        batch.reverted_batch_id,
                     ),
                 ]
             )
@@ -314,7 +322,9 @@ class BigQueryPersistenceRepository:
                 COALESCE(
                     `{BUDGET_MODULE_COLUMN}`,
                     'OPEX'
-                ) AS budget_module
+                ) AS budget_module,
+                `{REVERTED_BATCH_ID_COLUMN}`
+                    AS reverted_batch_id
             FROM `{self.batch_table_id}`
             WHERE
                 COALESCE(
@@ -428,6 +438,11 @@ class BigQueryPersistenceRepository:
                         self._row_value(
                             row,
                             "budget_module",
+                        ),
+                    "reverted_batch_id":
+                        self._row_value(
+                            row,
+                            "reverted_batch_id",
                         ),
                 }
             )
