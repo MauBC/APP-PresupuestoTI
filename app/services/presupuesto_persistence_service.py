@@ -23,7 +23,8 @@ class PresupuestoPersistenceServiceError(
     pass
 
 
-def _print_timing(
+def _emit_timing(
+    module_label: str,
     label: str,
     started: float,
 ):
@@ -33,7 +34,7 @@ def _print_timing(
     )
 
     print(
-        f"[OPEX SAVE] "
+        f"[{module_label} SAVE] "
         f"{label:<22} "
         f"{elapsed:>7.2f} s",
         flush=True,
@@ -57,6 +58,71 @@ class PresupuestoPersistenceService:
             else app_version
         )
 
+    @property
+    def module_label(
+        self,
+    ) -> str:
+        return str(
+            self._workspace
+            .module_config
+            .label
+        )
+
+    def _print_timing(
+        self,
+        label: str,
+        started: float,
+    ) -> None:
+        _emit_timing(
+            self.module_label,
+            label,
+            started,
+        )
+
+    def _ensure_persistence_allowed(
+        self,
+    ) -> None:
+        workspace_config = (
+            self._workspace
+            .module_config
+        )
+
+        if not (
+            workspace_config
+            .capabilities
+            .persistence
+        ):
+            raise (
+                PresupuestoPersistenceServiceError(
+                    "El modulo "
+                    f"{workspace_config.label} "
+                    "no permite operaciones "
+                    "de persistencia."
+                )
+            )
+
+        repository_config = getattr(
+            self._repository,
+            "module_config",
+            None,
+        )
+
+        if repository_config is None:
+            return
+
+        if (
+            repository_config.module
+            != workspace_config.module
+        ):
+            raise (
+                PresupuestoPersistenceServiceError(
+                    "El modulo del Workspace "
+                    "no coincide con el modulo "
+                    "del repositorio de "
+                    "persistencia."
+                )
+            )
+
     def save_changes(
         self,
         *,
@@ -64,6 +130,8 @@ class PresupuestoPersistenceService:
         timestamp: datetime | None = None,
         batch_id_factory=generate_batch_id,
     ) -> PersistenceResult:
+        self._ensure_persistence_allowed()
+
         preparation_started = (
             perf_counter()
         )
@@ -82,7 +150,7 @@ class PresupuestoPersistenceService:
             )
 
         except PersistenceBuildError as exc:
-            _print_timing(
+            self._print_timing(
                 "Preparacion ERROR",
                 preparation_started,
             )
@@ -93,7 +161,7 @@ class PresupuestoPersistenceService:
                 )
             ) from exc
 
-        _print_timing(
+        self._print_timing(
             "Preparacion",
             preparation_started,
         )
@@ -117,6 +185,8 @@ class PresupuestoPersistenceService:
                 )
             )
 
+        self._ensure_persistence_allowed()
+
         total_started = (
             perf_counter()
         )
@@ -132,7 +202,7 @@ class PresupuestoPersistenceService:
             )
 
         except StagingBuildError as exc:
-            _print_timing(
+            self._print_timing(
                 "Staging build ERROR",
                 staging_build_started,
             )
@@ -143,7 +213,7 @@ class PresupuestoPersistenceService:
                 )
             ) from exc
 
-        _print_timing(
+        self._print_timing(
             "Staging build",
             staging_build_started,
         )
@@ -158,7 +228,7 @@ class PresupuestoPersistenceService:
             )
 
         except Exception as exc:
-            _print_timing(
+            self._print_timing(
                 "Insert PENDING ERROR",
                 pending_started,
             )
@@ -170,7 +240,7 @@ class PresupuestoPersistenceService:
                 )
             ) from exc
 
-        _print_timing(
+        self._print_timing(
             "Insert PENDING",
             pending_started,
         )
@@ -185,7 +255,7 @@ class PresupuestoPersistenceService:
             )
 
         except Exception as exc:
-            _print_timing(
+            self._print_timing(
                 "Carga staging ERROR",
                 staging_started,
             )
@@ -202,7 +272,7 @@ class PresupuestoPersistenceService:
                 )
             ) from exc
 
-        _print_timing(
+        self._print_timing(
             "Carga staging",
             staging_started,
         )
@@ -221,7 +291,7 @@ class PresupuestoPersistenceService:
             )
 
         except Exception as exc:
-            _print_timing(
+            self._print_timing(
                 "Transaccion ERROR",
                 transaction_started,
             )
@@ -234,12 +304,12 @@ class PresupuestoPersistenceService:
                 )
             ) from exc
 
-        _print_timing(
+        self._print_timing(
             "Transaccion",
             transaction_started,
         )
 
-        _print_timing(
+        self._print_timing(
             "Persistencia total",
             total_started,
         )

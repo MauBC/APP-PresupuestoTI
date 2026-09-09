@@ -58,7 +58,8 @@ class PresupuestoReloadAfterApplyError(
         )
 
 
-def _print_timing(
+def _emit_timing(
+    module_label: str,
     label: str,
     started: float,
 ):
@@ -68,7 +69,7 @@ def _print_timing(
     )
 
     print(
-        f"[OPEX SAVE] "
+        f"[{module_label} SAVE] "
         f"{label:<22} "
         f"{elapsed:>7.2f} s",
         flush=True,
@@ -89,6 +90,32 @@ class PresupuestoSaveCoordinator:
 
         self._workspace_loader = (
             workspace_loader
+        )
+
+    @property
+    def module_label(
+        self,
+    ) -> str:
+        value = getattr(
+            self._persistence_service,
+            "module_label",
+            "OPEX",
+        )
+
+        return str(
+            value
+            or "OPEX"
+        )
+
+    def _print_timing(
+        self,
+        label: str,
+        started: float,
+    ) -> None:
+        _emit_timing(
+            self.module_label,
+            label,
+            started,
         )
 
     def save_and_reload(
@@ -119,13 +146,13 @@ class PresupuestoSaveCoordinator:
             )
         )
 
-        _print_timing(
+        self._print_timing(
             "Servicio persistencia",
             persistence_started,
         )
 
         if not result.is_applied:
-            _print_timing(
+            self._print_timing(
                 "TOTAL",
                 total_started,
             )
@@ -157,12 +184,12 @@ class PresupuestoSaveCoordinator:
                 )
 
         except Exception as exc:
-            _print_timing(
+            self._print_timing(
                 "Reload ERROR",
                 reload_started,
             )
 
-            _print_timing(
+            self._print_timing(
                 "TOTAL",
                 total_started,
             )
@@ -173,12 +200,12 @@ class PresupuestoSaveCoordinator:
                 )
             ) from exc
 
-        _print_timing(
+        self._print_timing(
             "Reload selectivo",
             reload_started,
         )
 
-        _print_timing(
+        self._print_timing(
             "TOTAL",
             total_started,
         )

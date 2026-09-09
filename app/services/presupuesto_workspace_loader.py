@@ -264,21 +264,21 @@ class PresupuestoWorkspaceLoader:
         )
 
         print(
-            "[OPEX SAVE] "
+            f"[{self._workspace.module_config.label} SAVE] "
             f"Reload filas          "
             f"{row_count:>7,}",
             flush=True,
         )
 
         print(
-            "[OPEX SAVE] "
+            f"[{self._workspace.module_config.label} SAVE] "
             f"Reload fetch          "
             f"{fetch_seconds:>7.2f} s",
             flush=True,
         )
 
         print(
-            "[OPEX SAVE] "
+            f"[{self._workspace.module_config.label} SAVE] "
             f"Reload workspace      "
             f"{workspace_seconds:>7.2f} s",
             flush=True,
