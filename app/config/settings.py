@@ -32,7 +32,7 @@ class Settings:
 
     BIGQUERY_CAPEX_TABLE = os.getenv(
         "BIGQUERY_CAPEX_TABLE",
-        "capex_2026",
+        "capex_2027",
     )
 
     BIGQUERY_BATCH_TABLE = os.getenv(
