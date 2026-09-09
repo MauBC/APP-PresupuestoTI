@@ -513,6 +513,151 @@ def cleanup(
     )
 
 
+def apply_real_batch(
+    repository,
+    batch,
+):
+    staging = build_staging_rows(
+        batch
+    )
+
+    repository.insert_pending_batch(
+        batch
+    )
+
+    loaded = repository.stage_rows(
+        staging
+    )
+
+    assert loaded == batch.row_count
+
+    return (
+        repository
+        .apply_staged_batch(
+            batch.batch_id,
+            batch.actor,
+        )
+    )
+
+
+def make_history_batch(
+    *,
+    batch,
+    stored_status,
+):
+    return BudgetHistoryBatch(
+        batch_id=batch.batch_id,
+        status=(
+            stored_status[
+                "status"
+            ]
+        ),
+        actor=batch.actor,
+        created_at=batch.created_at,
+        completed_at=(
+            stored_status[
+                "completed_at"
+            ]
+        ),
+        row_count=(
+            stored_status[
+                "row_count"
+            ]
+        ),
+        field_count=(
+            stored_status[
+                "field_count"
+            ]
+        ),
+        app_version=(
+            batch.app_version
+        ),
+        error_message=(
+            stored_status[
+                "error_message"
+            ]
+        ),
+        budget_module=(
+            stored_status[
+                "budget_module"
+            ]
+        ),
+        reverted_batch_id=(
+            stored_status[
+                "reverted_batch_id"
+            ]
+        ),
+    )
+
+
+def build_reversal_stack(
+    service,
+    *,
+    workspace,
+):
+    read_repository = (
+        PresupuestoRepository(
+            service
+        )
+    )
+
+    persistence_repository = (
+        BigQueryPersistenceRepository(
+            service.client
+        )
+    )
+
+    history_service = (
+        PresupuestoHistoryService(
+            persistence_repository
+        )
+    )
+
+    persistence_service = (
+        PresupuestoPersistenceService(
+            workspace,
+            persistence_repository,
+        )
+    )
+
+    workspace_loader = (
+        PresupuestoWorkspaceLoader(
+            read_repository,
+            workspace,
+        )
+    )
+
+    coordinator = (
+        PresupuestoReversalCoordinator(
+            workspace=workspace,
+            history_service=(
+                history_service
+            ),
+            read_repository=(
+                read_repository
+            ),
+            persistence_service=(
+                persistence_service
+            ),
+            workspace_loader=(
+                workspace_loader
+            ),
+            app_version=(
+                settings.APP_VERSION
+            ),
+        )
+    )
+
+    return (
+        read_repository,
+        persistence_repository,
+        history_service,
+        persistence_service,
+        workspace_loader,
+        coordinator,
+    )
+
+
 def test_real_transaction_applied_then_conflict():
     service = BigQueryService()
 
