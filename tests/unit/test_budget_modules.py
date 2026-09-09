@@ -68,7 +68,7 @@ def test_capex_capabilities_are_restricted():
         .country_distribution
     )
 
-    assert not (
+    assert (
         config.capabilities
         .persistence
     )

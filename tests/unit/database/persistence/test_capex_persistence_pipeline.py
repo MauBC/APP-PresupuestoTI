@@ -426,12 +426,26 @@ def make_capex_workspace(
 
 
 def test_capex_service_blocks_persistence_while_disabled():
+    disabled_capabilities = replace(
+        CAPEX_MODULE_CONFIG.capabilities,
+        persistence=False,
+    )
+
+    disabled_capex = replace(
+        CAPEX_MODULE_CONFIG,
+        capabilities=(
+            disabled_capabilities
+        ),
+    )
+
     workspace = (
-        make_capex_workspace()
+        make_capex_workspace(
+            disabled_capex
+        )
     )
 
     repository = GuardRepository(
-        CAPEX_MODULE_CONFIG
+        disabled_capex
     )
 
     service = (

@@ -86,7 +86,7 @@ CAPEX_MODULE_CONFIG = (
                 ceco_distribution=False,
                 country_distribution=False,
                 grouped_editing=True,
-                persistence=False,
+                persistence=True,
             )
         ),
         country_column="pais",

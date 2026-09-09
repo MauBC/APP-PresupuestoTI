@@ -955,7 +955,7 @@ class MainWindow(QMainWindow):
                 )
 
             self.apply_changes_button.setToolTip(
-                "El guardado CAPEX permanece "
+                f"El guardado de {self.active_module.label} permanece "
                 "deshabilitado durante la "
                 "validacion del modulo."
             )
@@ -998,7 +998,7 @@ class MainWindow(QMainWindow):
                 self,
                 f"Aplicar cambios "
                 f"{self.active_module.label}",
-                "El guardado de CAPEX "
+                f"El guardado de {self.active_module.label} "
                 "todavia se encuentra "
                 "deshabilitado durante "
                 "la validacion del modulo.\n\n"
@@ -1045,7 +1045,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             show_warning(
                 self,
-                "Aplicar cambios OPEX",
+                f"Aplicar cambios {self.active_module.label}",
                 "No se pudo preparar el "
                 "resumen de cambios.\n\n"
                 f"{type(exc).__name__}: {exc}",

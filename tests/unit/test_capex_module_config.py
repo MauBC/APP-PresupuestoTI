@@ -107,12 +107,12 @@ def test_capex_gui_is_enabled():
     )
 
 
-def test_capex_persistence_remains_disabled():
+def test_capex_persistence_is_enabled():
     assert (
         CAPEX_MODULE_CONFIG
         .capabilities
         .persistence
-        is False
+        is True
     )
 
 
