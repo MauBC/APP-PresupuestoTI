@@ -932,7 +932,7 @@ class MainWindow(QMainWindow):
             show_info(
                 self,
                 "Revertir cambios",
-                "El presupuesto todav?a "
+                "El presupuesto todav\u00eda "
                 "no se encuentra cargado.",
             )
             return
@@ -966,9 +966,9 @@ class MainWindow(QMainWindow):
         if batch.reverted_batch_id:
             show_warning(
                 self,
-                "Batch de reversi?n",
-                "La operaci?n seleccionada ya "
-                "corresponde a una reversi?n.",
+                "Batch de reversi\u00f3n",
+                "La operaci\u00f3n seleccionada ya "
+                "corresponde a una reversi\u00f3n.",
             )
             return
 
@@ -1116,8 +1116,8 @@ class MainWindow(QMainWindow):
 
             show_info(
                 self,
-                "Reversi?n aplicada",
-                "La reversi?n se aplic? "
+                "Reversi\u00f3n aplicada",
+                "La reversi\u00f3n se aplic\u00f3 "
                 "correctamente en BigQuery.\n\n"
                 f"Batch original: "
                 f"{outcome.source_batch.batch_id}\n"
@@ -1162,10 +1162,10 @@ class MainWindow(QMainWindow):
 
             show_warning(
                 self,
-                "Reversi?n bloqueada",
-                "No se revirti? ning?n dato.\n\n"
-                "Una o m?s filas fueron "
-                "modificadas despu?s del batch "
+                "Reversi\u00f3n bloqueada",
+                "No se revirti\u00f3 ning?n dato.\n\n"
+                "Una o m\u00e1s filas fueron "
+                "modificadas despu\u00e9s del batch "
                 "seleccionado.\n\n"
                 f"Conflictos: "
                 f"{len(conflicts):,}\n\n"
@@ -1179,10 +1179,10 @@ class MainWindow(QMainWindow):
             show_error(
                 self,
                 "No se pudo revertir",
-                "BigQuery rechaz? o revirti? "
-                "la operaci?n.\n\n"
+                "BigQuery rechaz? o revirti\u00f3 "
+                "la operaci\u00f3n.\n\n"
                 "Los datos vigentes no fueron "
-                "reemplazados por la reversi?n.\n\n"
+                "reemplazados por la reversi\u00f3n.\n\n"
                 f"Detalle: "
                 f"{result.error_message}",
             )
@@ -1193,7 +1193,7 @@ class MainWindow(QMainWindow):
         show_warning(
             self,
             "Resultado no reconocido",
-            "La reversi?n termin? con un "
+            "La reversi\u00f3n termin\u00f3 con un "
             "estado inesperado:\n\n"
             f"{result.status}",
         )
@@ -1213,19 +1213,19 @@ class MainWindow(QMainWindow):
 
             self.workspace_banner.setText(
                 f"{self.active_module.label}  |  "
-                "Reversi?n aplicada en BigQuery  |  "
+                "Reversi\u00f3n aplicada en BigQuery  |  "
                 "Recarga pendiente"
             )
 
             show_warning(
                 self,
-                "Reversi?n aplicada, recarga pendiente",
-                "La reversi?n SI fue aplicada "
-                "en BigQuery, pero fall? la "
+                "Reversi\u00f3n aplicada, recarga pendiente",
+                "La reversi\u00f3n SI fue aplicada "
+                "en BigQuery, pero fall\u00f3 la "
                 "recarga del Workspace.\n\n"
                 "No vuelvas a revertir el mismo "
                 "batch.\n\n"
-                "La aplicaci?n intentar? recargar "
+                "La aplicaci\u00f3n intentar? recargar "
                 "el presupuesto nuevamente.\n\n"
                 f"Batch nuevo: "
                 f"{failure.batch_id}",
@@ -1237,7 +1237,7 @@ class MainWindow(QMainWindow):
             self,
             "Error al revertir",
             "No se pudo completar la "
-            "reversi?n.\n\n"
+            "reversi\u00f3n.\n\n"
             f"Detalle: {failure.message}",
         )
 
