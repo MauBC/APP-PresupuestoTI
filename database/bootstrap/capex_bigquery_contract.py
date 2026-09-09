@@ -1,4 +1,4 @@
-﻿from google.cloud import bigquery
+from google.cloud import bigquery
 
 from app.config.capex_schema import (
     CAPEX_EXPECTED_COLUMNS,
@@ -60,6 +60,25 @@ def build_capex_bootstrap_load_config():
     config.write_disposition = (
         bigquery.WriteDisposition
         .WRITE_TRUNCATE
+    )
+
+    return config
+
+
+def build_capex_append_load_config():
+    config = (
+        bigquery.LoadJobConfig()
+    )
+
+    config.schema = list(
+        build_capex_bigquery_schema()
+    )
+
+    config.autodetect = False
+
+    config.write_disposition = (
+        bigquery.WriteDisposition
+        .WRITE_APPEND
     )
 
     return config

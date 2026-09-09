@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from app.config.capex_schema import (
     CAPEX_BUSINESS_COLUMNS,
@@ -9,6 +9,7 @@ from app.config.presupuesto_schema import (
     PERSISTENCE_COLUMNS,
 )
 from database.bootstrap.capex_bigquery_contract import (
+    build_capex_append_load_config,
     build_capex_bigquery_schema,
     build_capex_bootstrap_load_config,
 )
@@ -98,4 +99,27 @@ def test_capex_bootstrap_load_uses_explicit_schema():
     assert (
         config.write_disposition
         == "WRITE_TRUNCATE"
+    )
+
+
+def test_capex_append_load_uses_write_append():
+    config = (
+        build_capex_append_load_config()
+    )
+
+    assert (
+        config.autodetect
+        is False
+    )
+
+    assert (
+        len(
+            config.schema
+        )
+        == 57
+    )
+
+    assert (
+        config.write_disposition
+        == "WRITE_APPEND"
     )
