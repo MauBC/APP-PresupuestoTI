@@ -65,14 +65,14 @@ def is_blank_like(
     return False
 
 
-def _check_excel_error(
+def is_excel_error_token(
     value,
-):
+) -> bool:
     if not isinstance(
         value,
         str,
     ):
-        return
+        return False
 
     token = (
         value
@@ -80,11 +80,30 @@ def _check_excel_error(
         .upper()
     )
 
-    if token in EXCEL_ERROR_TOKENS:
-        raise CapexCleaningError(
-            "La celda contiene un "
-            f"error de Excel: {token}"
-        )
+    return (
+        token
+        in EXCEL_ERROR_TOKENS
+    )
+
+
+def _check_excel_error(
+    value,
+):
+    if not is_excel_error_token(
+        value
+    ):
+        return
+
+    token = (
+        str(value)
+        .strip()
+        .upper()
+    )
+
+    raise CapexCleaningError(
+        "La celda contiene un "
+        f"error de Excel: {token}"
+    )
 
 
 def clean_capex_text(

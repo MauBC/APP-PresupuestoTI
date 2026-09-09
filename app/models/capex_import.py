@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -9,6 +9,7 @@ class CapexIssueSeverity(
 ):
     ERROR = "ERROR"
     WARNING = "WARNING"
+    INFO = "INFO"
 
 
 @dataclass(
@@ -66,6 +67,23 @@ class CapexCleanRowResult:
                 == CapexIssueSeverity.WARNING
             )
         )
+
+    @property
+    def information(
+        self,
+    ) -> tuple[
+        CapexImportIssue,
+        ...
+    ]:
+        return tuple(
+            issue
+            for issue in self.issues
+            if (
+                issue.severity
+                == CapexIssueSeverity.INFO
+            )
+        )
+
 
     @property
     def is_valid(

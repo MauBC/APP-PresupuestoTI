@@ -11,6 +11,7 @@ from app.config.capex_schema import (
     CAPEX_INTERNAL_TO_RAW,
     CAPEX_ML_MONTH_COLUMNS,
     CAPEX_ML_TOTAL_COLUMN,
+    CAPEX_NULLABLE_TEXT_COLUMNS,
     CAPEX_RAW_TO_INTERNAL,
     CAPEX_STRING_COLUMNS,
     CAPEX_USD_MONTH_COLUMNS,
@@ -28,11 +29,16 @@ from app.services.capex_cleaner import (
     clean_capex_integer,
     clean_capex_text,
     is_blank_like,
+    is_excel_error_token,
 )
 
 
 ZERO = Decimal(
     "0.000000000"
+)
+
+TOTAL_NOISE_TOLERANCE = Decimal(
+    "0.000001"
 )
 
 TOTAL_TOLERANCE = Decimal(
@@ -156,6 +162,37 @@ def clean_and_validate_capex_row(
             normalized,
             column,
         )
+
+        if (
+            column
+            in CAPEX_NULLABLE_TEXT_COLUMNS
+            and is_excel_error_token(
+                value
+            )
+        ):
+            cleaned[column] = None
+
+            issues.append(
+                _issue(
+                    row_number=row_number,
+                    column=column,
+                    code=(
+                        "NULLABLE_TEXT_NORMALIZED"
+                    ),
+                    message=(
+                        "El error de Excel fue "
+                        "normalizado a NULL porque "
+                        "la columna permite valores "
+                        "vac?os."
+                    ),
+                    severity=(
+                        CapexIssueSeverity.INFO
+                    ),
+                    raw_value=value,
+                )
+            )
+
+            continue
 
         try:
             cleaned[column] = (
@@ -460,6 +497,12 @@ def _validate_total(
         parsed_total
         - calculated
     )
+
+    if (
+        difference
+        <= TOTAL_NOISE_TOLERANCE
+    ):
+        return
 
     if (
         difference

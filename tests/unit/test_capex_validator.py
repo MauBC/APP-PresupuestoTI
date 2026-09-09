@@ -360,3 +360,102 @@ def test_large_total_difference_is_error():
         for issue
         in result.errors
     )
+
+def test_nullable_excel_error_becomes_null():
+    row = make_row()
+
+    row["Codigo CECO"] = (
+        "#N/A"
+    )
+
+    row["Desc_CeBe"] = (
+        "#N/A"
+    )
+
+    result = (
+        clean_and_validate_capex_row(
+            row,
+            row_number=9,
+        )
+    )
+
+    assert result.is_valid
+
+    assert (
+        result.row[
+            "codigo_ceco"
+        ]
+        is None
+    )
+
+    assert (
+        result.row[
+            "desc_cebe"
+        ]
+        is None
+    )
+
+    assert sum(
+        issue.code
+        == "NULLABLE_TEXT_NORMALIZED"
+        for issue
+        in result.information
+    ) == 2
+
+
+def test_excel_error_in_required_text_is_error():
+    row = make_row()
+
+    row["Sociedad"] = (
+        "#N/A"
+    )
+
+    result = (
+        clean_and_validate_capex_row(
+            row,
+            row_number=9,
+        )
+    )
+
+    assert not result.is_valid
+
+    assert any(
+        issue.code
+        == "INVALID_TEXT"
+        and issue.column
+        == "sociedad"
+        for issue
+        in result.errors
+    )
+
+
+def test_numeric_noise_does_not_create_warning():
+    row = make_row()
+
+    row["01 USD"] = (
+        "33.333333333"
+    )
+
+    row["02 USD"] = (
+        "66.666666668"
+    )
+
+    row["TOTAL USD"] = (
+        "100.000000000"
+    )
+
+    result = (
+        clean_and_validate_capex_row(
+            row,
+            row_number=9,
+        )
+    )
+
+    assert result.is_valid
+
+    assert not any(
+        issue.code
+        == "TOTAL_ROUNDING_DIFFERENCE"
+        for issue
+        in result.warnings
+    )

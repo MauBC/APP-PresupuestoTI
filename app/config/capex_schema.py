@@ -1,4 +1,4 @@
-﻿from app.config.presupuesto_app_config import (
+from app.config.presupuesto_app_config import (
     MONTHS,
 )
 from app.config.presupuesto_schema import (
@@ -265,4 +265,17 @@ CAPEX_FREE_TEXT_COLUMNS = (
 CAPEX_CODE_COLUMNS = (
     "codigo_cebe",
     "codigo_ceco",
+)
+
+
+CAPEX_NULLABLE_TEXT_COLUMNS = (
+    "clasificacion_inversion",
+    "codigo_cebe",
+    "gyp",
+    "codigo_ceco",
+    "desc_cebe",
+    "sede_cg",
+    "u_productiva_cg",
+    "seg_rs",
+    "observacion_comentario",
 )
