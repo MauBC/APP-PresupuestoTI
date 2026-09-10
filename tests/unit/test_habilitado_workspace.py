@@ -254,3 +254,190 @@ def test_page_still_contains_disabled_rows():
         ]
         is False
     )
+
+
+def test_page_filters_enabled_rows():
+    workspace = PresupuestoWorkspace()
+
+    workspace.load(
+        [
+            make_row(
+                gasto="Activo",
+                enabled=True,
+            ),
+            make_row(
+                gasto="Inactivo",
+                enabled=False,
+            ),
+        ]
+    )
+
+    service = (
+        PresupuestoWorkspaceAnalysisService(
+            workspace
+        )
+    )
+
+    result = service.get_page(
+        page_index=0,
+        page_size=100,
+        enabled_filter="enabled",
+    )
+
+    assert result.total_rows == 1
+    assert len(result.rows) == 1
+
+    assert (
+        result.rows[0][
+            "nombre_gasto"
+        ]
+        == "Activo"
+    )
+
+
+def test_page_filters_disabled_rows():
+    workspace = PresupuestoWorkspace()
+
+    workspace.load(
+        [
+            make_row(
+                gasto="Activo",
+                enabled=True,
+            ),
+            make_row(
+                gasto="Inactivo",
+                enabled=False,
+            ),
+        ]
+    )
+
+    service = (
+        PresupuestoWorkspaceAnalysisService(
+            workspace
+        )
+    )
+
+    result = service.get_page(
+        page_index=0,
+        page_size=100,
+        enabled_filter="disabled",
+    )
+
+    assert result.total_rows == 1
+    assert len(result.rows) == 1
+
+    assert (
+        result.rows[0][
+            "nombre_gasto"
+        ]
+        == "Inactivo"
+    )
+
+
+def test_page_filter_happens_before_pagination():
+    workspace = PresupuestoWorkspace()
+
+    workspace.load(
+        [
+            make_row(
+                gasto="A",
+                enabled=False,
+            ),
+            make_row(
+                gasto="B",
+                enabled=True,
+            ),
+            make_row(
+                gasto="C",
+                enabled=False,
+            ),
+            make_row(
+                gasto="D",
+                enabled=True,
+            ),
+            make_row(
+                gasto="E",
+                enabled=True,
+            ),
+        ]
+    )
+
+    service = (
+        PresupuestoWorkspaceAnalysisService(
+            workspace
+        )
+    )
+
+    result = service.get_page(
+        page_index=1,
+        page_size=2,
+        enabled_filter="enabled",
+    )
+
+    assert result.total_rows == 3
+    assert len(result.rows) == 1
+
+    assert (
+        result.rows[0][
+            "nombre_gasto"
+        ]
+        == "E"
+    )
+
+
+def test_page_default_keeps_all_rows():
+    workspace = PresupuestoWorkspace()
+
+    workspace.load(
+        [
+            make_row(
+                gasto="Activo",
+                enabled=True,
+            ),
+            make_row(
+                gasto="Inactivo",
+                enabled=False,
+            ),
+        ]
+    )
+
+    service = (
+        PresupuestoWorkspaceAnalysisService(
+            workspace
+        )
+    )
+
+    result = service.get_page(
+        page_index=0,
+        page_size=100,
+    )
+
+    assert result.total_rows == 2
+
+
+def test_invalid_enabled_filter_is_rejected():
+    workspace = PresupuestoWorkspace()
+
+    workspace.load(
+        [
+            make_row(
+                gasto="A",
+            )
+        ]
+    )
+
+    service = (
+        PresupuestoWorkspaceAnalysisService(
+            workspace
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="enabled_filter",
+    ):
+        service.get_page(
+            page_index=0,
+            page_size=100,
+            enabled_filter="incorrecto",
+        )

@@ -77,6 +77,7 @@ class PresupuestoWorkspaceAnalysisService:
         *,
         page_index: int,
         page_size: int,
+        enabled_filter: str = "all",
     ) -> PageResult:
         if page_index < 0:
             raise ValueError(
@@ -93,35 +94,92 @@ class PresupuestoWorkspaceAnalysisService:
                 "page_size no puede superar 1000."
             )
 
-        start = page_index * page_size
-        end = start + page_size
+        filter_value = str(
+            enabled_filter
+        ).strip().lower()
+
+        valid_filters = {
+            "all",
+            "enabled",
+            "disabled",
+        }
+
+        if filter_value not in valid_filters:
+            raise ValueError(
+                "enabled_filter no valido: "
+                f"{enabled_filter}"
+            )
+
+        start = (
+            page_index
+            * page_size
+        )
+
+        end = (
+            start
+            + page_size
+        )
 
         selected_rows = []
+        matched_rows = 0
 
-        for index, row in enumerate(
+        for row in (
             self._workspace.iter_rows()
         ):
-            if index < start:
+            enabled = (
+                self._is_enabled(
+                    row
+                )
+            )
+
+            if (
+                filter_value == "enabled"
+                and not enabled
+            ):
                 continue
 
-            if index >= end:
-                break
+            if (
+                filter_value == "disabled"
+                and enabled
+            ):
+                continue
+
+            current_position = (
+                matched_rows
+            )
+
+            matched_rows += 1
+
+            if (
+                current_position < start
+                or
+                current_position >= end
+            ):
+                continue
 
             item = {
-                column: row.get(column)
-                for column in self._app_columns
+                column:
+                    row.get(column)
+                for column
+                in self._app_columns
             }
 
-            item[SESSION_ROW_ID] = row[
+            item[
+                SESSION_ROW_ID
+            ] = row[
                 SESSION_ROW_ID
             ]
 
-            selected_rows.append(item)
+            selected_rows.append(
+                item
+            )
 
         return PageResult(
-            rows=tuple(selected_rows),
+            rows=tuple(
+                selected_rows
+            ),
             columns=self._app_columns,
-            total_rows=self._workspace.row_count,
+            total_rows=matched_rows,
             page_index=page_index,
             page_size=page_size,
         )

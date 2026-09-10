@@ -209,17 +209,6 @@ class PresupuestoTableModel(
 
             return value
 
-        if (
-            role
-            == Qt.ItemDataRole.CheckStateRole
-            and column == HABILITADO_COLUMN
-        ):
-            return (
-                Qt.CheckState.Checked
-                if enabled
-                else Qt.CheckState.Unchecked
-            )
-
         if role == Qt.ItemDataRole.UserRole:
             if isinstance(
                 value,
@@ -277,9 +266,9 @@ class PresupuestoTableModel(
         if role == Qt.ItemDataRole.ToolTipRole:
             if column == HABILITADO_COLUMN:
                 return (
-                    "Desmarcar excluye el gasto de "
-                    "Dashboard y Agrupaciones sin "
-                    "eliminar sus importes."
+                    "Estado informativo. Usa el boton "
+                    "Deshabilitar/Reactivar fila para "
+                    "cambiarlo de forma controlada."
                 )
 
             if column in self._month_columns:
@@ -314,11 +303,6 @@ class PresupuestoTableModel(
             Qt.ItemFlag.ItemIsEnabled
             | Qt.ItemFlag.ItemIsSelectable
         )
-
-        if column == HABILITADO_COLUMN:
-            flags |= (
-                Qt.ItemFlag.ItemIsUserCheckable
-            )
 
         if column in self._amount_columns:
             flags |= (
@@ -360,26 +344,6 @@ class PresupuestoTableModel(
             changed = False
 
             if (
-                column == HABILITADO_COLUMN
-                and
-                role
-                == Qt.ItemDataRole.CheckStateRole
-            ):
-                enabled = value in (
-                    Qt.CheckState.Checked,
-                    Qt.CheckState.Checked.value,
-                    True,
-                )
-
-                changed = (
-                    self._workspace
-                    .set_enabled(
-                        row_id,
-                        enabled,
-                    )
-                )
-
-            elif (
                 column in self._amount_columns
                 and
                 role

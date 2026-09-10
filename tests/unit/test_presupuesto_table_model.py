@@ -186,7 +186,7 @@ def test_annual_edit_redistributes_months():
     )
 
 
-def test_habilitado_can_be_toggled():
+def test_habilitado_is_read_only_in_table():
     workspace, model = build_model()
 
     index = model.index(
@@ -197,21 +197,29 @@ def test_habilitado_can_be_toggled():
         ),
     )
 
+    flags = model.flags(
+        index
+    )
+
+    assert not (
+        flags
+        & Qt.ItemFlag.ItemIsUserCheckable
+    )
+
     changed = model.setData(
         index,
         Qt.CheckState.Unchecked,
         Qt.ItemDataRole.CheckStateRole,
     )
 
-    assert changed is True
+    assert changed is False
 
     assert (
         workspace.get_row(0)[
             HABILITADO_COLUMN
         ]
-        is False
+        is True
     )
-
 
 def test_negative_amount_is_rejected():
     workspace, model = build_model()

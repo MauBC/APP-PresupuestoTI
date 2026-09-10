@@ -246,3 +246,29 @@ QHeaderView::section:vertical {
     font-size: 10px;
     font-weight: 600;
 }
+
+
+QPushButton#warningButton {
+    background-color: #FFF4E5;
+    color: #92400E;
+    border: 1px solid #E5A04B;
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-weight: 700;
+}
+
+QPushButton#warningButton:hover {
+    background-color: #FDE9CC;
+    border-color: #D98A2B;
+}
+
+QPushButton#warningButton:pressed {
+    background-color: #F8D9AE;
+    border-color: #D98A2B;
+}
+
+QPushButton#warningButton:disabled {
+    background-color: #F2F4F7;
+    color: #98A2B3;
+    border-color: #D0D5DD;
+}

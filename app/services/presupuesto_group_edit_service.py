@@ -241,6 +241,163 @@ class PresupuestoGroupEditService:
 
         return preview
 
+    def get_group_row_ids(
+        self,
+        *,
+        group_columns,
+        group_values,
+        enabled=None,
+    ) -> tuple[int, ...]:
+        columns = tuple(
+            group_columns
+        )
+
+        values = tuple(
+            group_values
+        )
+
+        self._validate_group(
+            columns,
+            values,
+        )
+
+        if (
+            enabled is not None
+            and
+            not isinstance(
+                enabled,
+                bool,
+            )
+        ):
+            raise PresupuestoGroupEditError(
+                "enabled debe ser bool o None."
+            )
+
+        result = []
+
+        for row in (
+            self._workspace.iter_rows()
+        ):
+            matches = all(
+                row.get(column) == value
+                for column, value
+                in zip(
+                    columns,
+                    values,
+                )
+            )
+
+            if not matches:
+                continue
+
+            row_enabled = bool(
+                row.get(
+                    HABILITADO_COLUMN,
+                    True,
+                )
+            )
+
+            if (
+                enabled is not None
+                and
+                row_enabled != enabled
+            ):
+                continue
+
+            result.append(
+                row[
+                    SESSION_ROW_ID
+                ]
+            )
+
+        return tuple(
+            result
+        )
+
+    def set_group_enabled(
+        self,
+        *,
+        group_columns,
+        group_values,
+        enabled: bool,
+    ) -> int:
+        if not isinstance(
+            enabled,
+            bool,
+        ):
+            raise PresupuestoGroupEditError(
+                "enabled debe ser bool."
+            )
+
+        columns = tuple(
+            group_columns
+        )
+
+        values = tuple(
+            group_values
+        )
+
+        row_ids = (
+            self.get_group_row_ids(
+                group_columns=columns,
+                group_values=values,
+                enabled=not enabled,
+            )
+        )
+
+        if not row_ids:
+            return 0
+
+        replacements = {}
+
+        for row_id in row_ids:
+            updated = deepcopy(
+                self._workspace.get_row(
+                    row_id
+                )
+            )
+
+            updated[
+                HABILITADO_COLUMN
+            ] = enabled
+
+            replacements[
+                row_id
+            ] = updated
+
+        action = (
+            "Reactivar agrupacion"
+            if enabled
+            else "Deshabilitar agrupacion"
+        )
+
+        description = (
+            action
+            + " | "
+            + " / ".join(
+                f"{column}={value}"
+                for column, value
+                in zip(
+                    columns,
+                    values,
+                )
+            )
+        )
+
+        changed = (
+            self._workspace.apply_batch(
+                description=description,
+                replacements=replacements,
+            )
+        )
+
+        if not changed:
+            return 0
+
+        return len(
+            row_ids
+        )
+
     def _find_rows(
         self,
         columns,

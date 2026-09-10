@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QTableView,
     QTableWidget,
@@ -24,6 +23,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config.presupuesto_app_config import (
+    HABILITADO_COLUMN,
+)
 from app.services.current_actor_service import (
     CurrentActorError,
     resolve_current_actor,
@@ -33,6 +35,10 @@ from app.services.new_budget_row_service import (
 )
 from app.services.presupuesto_change_summary_service import (
     PresupuestoChangeSummaryService,
+)
+from app.ui.dialogs.app_message_box import (
+    AppMessageBox,
+    ask_confirmation,
 )
 from app.ui.dialogs.budget_excel_import_dialog import (
     BudgetExcelImportDialog,
@@ -155,6 +161,31 @@ class PresupuestoPage(QWidget):
             "250"
         )
 
+        self.enabled_filter_combo = QComboBox()
+
+        self.enabled_filter_combo.addItem(
+            "Activos",
+            "enabled",
+        )
+
+        self.enabled_filter_combo.addItem(
+            "Todos",
+            "all",
+        )
+
+        self.enabled_filter_combo.addItem(
+            "Deshabilitados",
+            "disabled",
+        )
+
+        self.enabled_filter_combo.setMinimumWidth(
+            145
+        )
+
+        self.enabled_filter_combo.setEnabled(
+            False
+        )
+
         self.refresh_button = QPushButton(
             "Actualizar vista"
         )
@@ -193,6 +224,20 @@ class PresupuestoPage(QWidget):
             False
         )
 
+        self.enabled_action_button = QPushButton(
+            "Deshabilitar fila"
+        )
+
+        self.enabled_action_button.setEnabled(
+            False
+        )
+
+        self.enabled_action_button.setToolTip(
+            "Deshabilita o reactiva la fila "
+            "seleccionada sin eliminar "
+            "sus importes."
+        )
+
         toolbar.addWidget(
             self.search_input,
             1,
@@ -207,6 +252,14 @@ class PresupuestoPage(QWidget):
         )
 
         toolbar.addWidget(
+            QLabel("Estado:")
+        )
+
+        toolbar.addWidget(
+            self.enabled_filter_combo
+        )
+
+        toolbar.addWidget(
             self.new_row_button
         )
 
@@ -216,6 +269,10 @@ class PresupuestoPage(QWidget):
 
         toolbar.addWidget(
             self.distribute_months_button
+        )
+
+        toolbar.addWidget(
+            self.enabled_action_button
         )
 
         toolbar.addWidget(
@@ -321,7 +378,7 @@ class PresupuestoPage(QWidget):
         )
 
         self.table.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
+            QAbstractItemView.SelectionMode.SingleSelection
         )
 
         self.table.setEditTriggers(
@@ -455,6 +512,14 @@ class PresupuestoPage(QWidget):
             self._page_size_changed
         )
 
+        self.enabled_filter_combo.currentIndexChanged.connect(
+            self._enabled_filter_changed
+        )
+
+        self.enabled_action_button.clicked.connect(
+            self.toggle_selected_enabled
+        )
+
         self.model.workspace_changed.connect(
             self._on_model_workspace_changed
         )
@@ -483,6 +548,7 @@ class PresupuestoPage(QWidget):
         self._update_change_controls()
 
     @property
+
     def is_busy(
         self,
     ) -> bool:
@@ -514,6 +580,10 @@ class PresupuestoPage(QWidget):
             True
         )
 
+        self.enabled_filter_combo.setEnabled(
+            True
+        )
+
         self._update_new_row_button()
         self._update_import_excel_button()
 
@@ -525,6 +595,8 @@ class PresupuestoPage(QWidget):
         self._update_change_controls()
         self._update_distribution_button()
 
+        self._update_enabled_action_button()
+
     def set_workspace_error(
         self,
         message: str,
@@ -532,6 +604,14 @@ class PresupuestoPage(QWidget):
         self._workspace_ready = False
 
         self.refresh_button.setEnabled(
+            False
+        )
+
+        self.enabled_filter_combo.setEnabled(
+            False
+        )
+
+        self.enabled_action_button.setEnabled(
             False
         )
 
@@ -636,6 +716,9 @@ class PresupuestoPage(QWidget):
                 .get_page(
                     page_index=page_index,
                     page_size=self._page_size,
+                    enabled_filter=(
+                        self._enabled_filter_value()
+                    ),
                 )
             )
 
@@ -667,6 +750,7 @@ class PresupuestoPage(QWidget):
         self._update_navigation()
         self._update_change_controls()
         self._update_distribution_button()
+        self._update_enabled_action_button()
 
     def _on_model_workspace_changed(
         self,
@@ -689,7 +773,7 @@ class PresupuestoPage(QWidget):
             + message
         )
 
-        QMessageBox.warning(
+        AppMessageBox.warning(
             self,
             "Cambio no valido",
             message,
@@ -720,22 +804,22 @@ class PresupuestoPage(QWidget):
         if not self._workspace.has_changes:
             return
 
-        result = QMessageBox.question(
+        result = AppMessageBox.question(
             self,
             "Descartar cambios",
             "Se descartaran todos los "
             "cambios realizados durante "
             "esta simulacion.\n\n"
             "¿Desea continuar?",
-            QMessageBox.StandardButton.Yes
+            AppMessageBox.StandardButton.Yes
             |
-            QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            AppMessageBox.StandardButton.No,
+            AppMessageBox.StandardButton.No,
         )
 
         if (
             result
-            != QMessageBox.StandardButton.Yes
+            != AppMessageBox.StandardButton.Yes
         ):
             return
 
@@ -757,6 +841,316 @@ class PresupuestoPage(QWidget):
         *_,
     ):
         self._update_distribution_button()
+        self._update_enabled_action_button()
+
+    def _enabled_filter_value(
+        self,
+    ) -> str:
+        value = (
+            self.enabled_filter_combo
+            .currentData()
+        )
+
+        return str(
+            value
+            or "enabled"
+        )
+
+    def _enabled_filter_changed(
+        self,
+        *_,
+    ):
+        if not (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+            and
+            self._loaded_once
+        ):
+            return
+
+        self._load_page(
+            0
+        )
+
+    def _selected_session_row_id(
+        self,
+    ):
+        proxy_index = (
+            self.table.currentIndex()
+        )
+
+        if not proxy_index.isValid():
+            return None
+
+        source_index = (
+            self.proxy_model.mapToSource(
+                proxy_index
+            )
+        )
+
+        if not source_index.isValid():
+            return None
+
+        return (
+            self.model.session_row_id(
+                source_index.row()
+            )
+        )
+
+    def _selected_row_label(
+        self,
+        row,
+        session_row_id,
+    ) -> str:
+        candidate_columns = (
+            "nombre_inversion",
+            "nombre_gasto",
+            "proyecto",
+            "proveedor",
+            "row_id",
+        )
+
+        for column in candidate_columns:
+            value = row.get(
+                column
+            )
+
+            if value is None:
+                continue
+
+            label = str(
+                value
+            ).strip()
+
+            if label:
+                return label
+
+        return (
+            f"Fila {session_row_id + 1}"
+        )
+
+    def _update_enabled_action_button(
+        self,
+    ):
+        session_row_id = (
+            self._selected_session_row_id()
+        )
+
+        can_use = (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+            and
+            not self.is_busy
+            and
+            session_row_id
+            is not None
+        )
+
+        if not can_use:
+            self.enabled_action_button.setEnabled(
+                False
+            )
+
+            self.enabled_action_button.setText(
+                "Deshabilitar fila"
+            )
+
+            return
+
+        try:
+            row = (
+                self._workspace.get_row(
+                    session_row_id
+                )
+            )
+
+        except Exception:
+            self.enabled_action_button.setEnabled(
+                False
+            )
+            return
+
+        enabled = bool(
+            row.get(
+                HABILITADO_COLUMN,
+                True,
+            )
+        )
+
+        self.enabled_action_button.setEnabled(
+            True
+        )
+
+        if enabled:
+            self.enabled_action_button.setText(
+                "Deshabilitar fila"
+            )
+
+            self.enabled_action_button.setToolTip(
+                "La fila dejara de participar "
+                "en Dashboard y Agrupaciones. "
+                "Sus importes se conservaran."
+            )
+
+        else:
+            self.enabled_action_button.setText(
+                "Reactivar fila"
+            )
+
+            self.enabled_action_button.setToolTip(
+                "La fila volvera a participar "
+                "en Dashboard y Agrupaciones "
+                "con sus importes conservados."
+            )
+
+    def toggle_selected_enabled(
+        self,
+    ):
+        session_row_id = (
+            self._selected_session_row_id()
+        )
+
+        if session_row_id is None:
+            AppMessageBox.information(
+                self,
+                "Estado de fila",
+                "Selecciona primero una fila "
+                "del presupuesto.",
+            )
+            return
+
+        try:
+            row = (
+                self._workspace.get_row(
+                    session_row_id
+                )
+            )
+
+        except Exception as exc:
+            AppMessageBox.warning(
+                self,
+                "Estado de fila",
+                "No se pudo obtener la fila "
+                "seleccionada.\n\n"
+                f"{type(exc).__name__}: {exc}",
+            )
+            return
+
+        currently_enabled = bool(
+            row.get(
+                HABILITADO_COLUMN,
+                True,
+            )
+        )
+
+        new_enabled = (
+            not currently_enabled
+        )
+
+        action = (
+            "reactivar"
+            if new_enabled
+            else "deshabilitar"
+        )
+
+        title = (
+            "Reactivar fila"
+            if new_enabled
+            else "Deshabilitar fila"
+        )
+
+        label = (
+            self._selected_row_label(
+                row,
+                session_row_id,
+            )
+        )
+
+        if new_enabled:
+            explanation = (
+                "La fila volvera a participar "
+                "en Dashboard y Agrupaciones "
+                "con sus importes conservados."
+            )
+
+        else:
+            explanation = (
+                "La fila dejara de participar "
+                "en Dashboard y Agrupaciones, "
+                "pero sus importes NO se "
+                "eliminaran."
+            )
+
+        confirmed = ask_confirmation(
+            self,
+            title,
+            f"Fila seleccionada:\n"
+            f"{label}\n\n"
+            f"{explanation}\n\n"
+            "El cambio permanecera local "
+            "hasta usar Aplicar cambios.",
+            confirm_text=(
+                "Reactivar"
+                if new_enabled
+                else "Deshabilitar"
+            ),
+        )
+
+        if not confirmed:
+            return
+
+        try:
+            changed = (
+                self._workspace.set_enabled(
+                    session_row_id,
+                    new_enabled,
+                )
+            )
+
+        except Exception as exc:
+            AppMessageBox.warning(
+                self,
+                title,
+                "No se pudo cambiar el "
+                "estado de la fila.\n\n"
+                f"{type(exc).__name__}: {exc}",
+            )
+            return
+
+        if not changed:
+            return
+
+        self.workspace_changed.emit()
+
+        self._load_page(
+            self._page_index
+        )
+
+        if (
+            self.model.rowCount() == 0
+            and
+            self._page_index > 0
+        ):
+            self._load_page(
+                self._page_index - 1
+            )
+
+        if new_enabled:
+            self.status_label.setText(
+                "Fila reactivada localmente. "
+                "Volvera a participar en los "
+                "calculos al aplicar cambios."
+            )
+
+        else:
+            self.status_label.setText(
+                "Fila deshabilitada localmente. "
+                "Sus importes se conservaron."
+            )
+
+        self._update_enabled_action_button()
 
     def _update_distribution_button(
         self,
@@ -850,7 +1244,7 @@ class PresupuestoPage(QWidget):
             )
 
         except CurrentActorError as exc:
-            QMessageBox.warning(
+            AppMessageBox.warning(
                 self,
                 "Usuario no identificado",
                 str(exc),
@@ -954,7 +1348,7 @@ class PresupuestoPage(QWidget):
             )
 
         except Exception as exc:
-            QMessageBox.warning(
+            AppMessageBox.warning(
                 self,
                 "No se pudo importar",
                 "La validacion del Excel "
@@ -1005,7 +1399,7 @@ class PresupuestoPage(QWidget):
         self,
         message,
     ):
-        QMessageBox.warning(
+        AppMessageBox.warning(
             self,
             "No se pudo validar el Excel",
             "El archivo no pudo prepararse "
@@ -1086,7 +1480,7 @@ class PresupuestoPage(QWidget):
             )
 
         except CurrentActorError as exc:
-            QMessageBox.warning(
+            AppMessageBox.warning(
                 self,
                 "Usuario no identificado",
                 str(exc),
@@ -1139,7 +1533,7 @@ class PresupuestoPage(QWidget):
         self,
         message,
     ):
-        QMessageBox.warning(
+        AppMessageBox.warning(
             self,
             "Catalogos no disponibles",
             "No se pudieron cargar los "
@@ -1218,7 +1612,7 @@ class PresupuestoPage(QWidget):
             )
 
         except Exception as exc:
-            QMessageBox.warning(
+            AppMessageBox.warning(
                 self,
                 "No se pudo crear la fila",
                 "La nueva fila no pudo "
@@ -1309,7 +1703,7 @@ class PresupuestoPage(QWidget):
             .capabilities
             .monthly_distribution
         ):
-            QMessageBox.information(
+            AppMessageBox.information(
                 self,
                 "Distribucion mensual",
                 "El modulo activo no permite "
@@ -1322,7 +1716,7 @@ class PresupuestoPage(QWidget):
         )
 
         if not proxy_index.isValid():
-            QMessageBox.information(
+            AppMessageBox.information(
                 self,
                 "Distribucion mensual",
                 "Selecciona primero una fila "
@@ -1344,7 +1738,7 @@ class PresupuestoPage(QWidget):
         )
 
         if session_row_id is None:
-            QMessageBox.warning(
+            AppMessageBox.warning(
                 self,
                 "Distribucion mensual",
                 "No se pudo identificar "
@@ -1386,7 +1780,7 @@ class PresupuestoPage(QWidget):
             )
 
         except Exception as exc:
-            QMessageBox.warning(
+            AppMessageBox.warning(
                 self,
                 "Distribucion mensual",
                 "No se pudo aplicar "
@@ -1416,7 +1810,7 @@ class PresupuestoPage(QWidget):
 
     def show_pending_changes(self):
         if not self._workspace.has_changes:
-            QMessageBox.information(
+            AppMessageBox.information(
                 self,
                 "Cambios pendientes",
                 "No existen cambios pendientes.",
@@ -1430,7 +1824,7 @@ class PresupuestoPage(QWidget):
             )
 
         except Exception as exc:
-            QMessageBox.warning(
+            AppMessageBox.warning(
                 self,
                 "Cambios pendientes",
                 "No se pudo generar "
@@ -1502,6 +1896,12 @@ class PresupuestoPage(QWidget):
             not loading
         )
 
+        self.enabled_filter_combo.setEnabled(
+            self._workspace_ready
+            and
+            not loading
+        )
+
         if loading:
             self.previous_button.setEnabled(
                 False
@@ -1516,6 +1916,8 @@ class PresupuestoPage(QWidget):
 
         self._update_new_row_button()
         self._update_import_excel_button()
+
+        self._update_enabled_action_button()
 
     def _calculate_total_pages(self):
         if self._total_rows == 0:

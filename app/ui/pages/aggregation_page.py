@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QTableView,
     QVBoxLayout,
@@ -31,6 +30,10 @@ from app.services.presupuesto_change_summary_service import (
 from app.services.presupuesto_group_edit_service import (
     PresupuestoGroupEditError,
     PresupuestoGroupEditService,
+)
+from app.ui.dialogs.app_message_box import (
+    AppMessageBox,
+    ask_confirmation,
 )
 from app.ui.dialogs.change_summary_dialog import (
     ChangeSummaryDialog,
@@ -322,6 +325,24 @@ class AggregationPage(QWidget):
             "}"
         )
 
+        self.group_state_button = QPushButton(
+            "Deshabilitar grupo"
+        )
+
+        self.group_state_button.setObjectName(
+            "warningButton"
+        )
+
+        self.group_state_button.setEnabled(
+            False
+        )
+
+        self.group_state_button.setToolTip(
+            "Deshabilita todas las filas "
+            "reales habilitadas que pertenecen "
+            "a la agrupacion seleccionada."
+        )
+
         self.go_start_button = QPushButton(
             "Ir al inicio"
         )
@@ -341,6 +362,10 @@ class AggregationPage(QWidget):
         navigation_layout.addWidget(
             self.selected_context_label,
             1,
+        )
+
+        navigation_layout.addWidget(
+            self.group_state_button
         )
 
         navigation_layout.addWidget(
@@ -582,6 +607,10 @@ class AggregationPage(QWidget):
             self._update_group_month_distribution_control
         )
 
+        self.group_state_button.clicked.connect(
+            self.disable_selected_group
+        )
+
         self.go_start_button.clicked.connect(
             self._go_to_start
         )
@@ -632,6 +661,10 @@ class AggregationPage(QWidget):
         self.status_label.setText(
             "Error al preparar presupuesto: "
             + message
+        )
+
+        self.group_state_button.setEnabled(
+            False
         )
 
     def invalidate(self):
@@ -812,6 +845,8 @@ class AggregationPage(QWidget):
         self._update_group_month_distribution_control()
         self._update_change_controls()
 
+        self._update_group_state_button()
+
     def _update_selected_context(
         self,
         proxy_index,
@@ -858,6 +893,260 @@ class AggregationPage(QWidget):
 
         self.selected_context_label.setText(
             "  |  ".join(parts)
+        )
+
+        self._update_group_state_button()
+
+
+    def _selected_group_scope(
+        self,
+    ):
+        if self._current_result is None:
+            return None
+
+        proxy_index = (
+            self.table.currentIndex()
+        )
+
+        if not proxy_index.isValid():
+            return None
+
+        source_index = (
+            self.proxy_model.mapToSource(
+                proxy_index
+            )
+        )
+
+        if not source_index.isValid():
+            return None
+
+        row = (
+            self.model.row_dict(
+                source_index.row()
+            )
+        )
+
+        group_columns = tuple(
+            self._current_result
+            .group_columns
+        )
+
+        if not group_columns:
+            return None
+
+        group_values = tuple(
+            row.get(column)
+            for column
+            in group_columns
+        )
+
+        return (
+            row,
+            group_columns,
+            group_values,
+        )
+
+    def _update_group_state_button(
+        self,
+    ):
+        if not hasattr(
+            self,
+            "group_state_button",
+        ):
+            return
+
+        scope = (
+            self._selected_group_scope()
+        )
+
+        if (
+            not self._workspace_ready
+            or scope is None
+        ):
+            self.group_state_button.setEnabled(
+                False
+            )
+
+            self.group_state_button.setText(
+                "Deshabilitar grupo"
+            )
+
+            return
+
+        (
+            _,
+            group_columns,
+            group_values,
+        ) = scope
+
+        try:
+            row_ids = (
+                self._group_edit_service
+                .get_group_row_ids(
+                    group_columns=(
+                        group_columns
+                    ),
+                    group_values=(
+                        group_values
+                    ),
+                    enabled=True,
+                )
+            )
+
+        except Exception:
+            row_ids = ()
+
+        self.group_state_button.setEnabled(
+            bool(row_ids)
+        )
+
+        if row_ids:
+            self.group_state_button.setText(
+                "Deshabilitar grupo "
+                f"({len(row_ids):,})"
+            )
+
+        else:
+            self.group_state_button.setText(
+                "Deshabilitar grupo"
+            )
+
+    def disable_selected_group(
+        self,
+    ):
+        scope = (
+            self._selected_group_scope()
+        )
+
+        if scope is None:
+            return
+
+        (
+            row,
+            group_columns,
+            group_values,
+        ) = scope
+
+        try:
+            row_ids = (
+                self._group_edit_service
+                .get_group_row_ids(
+                    group_columns=(
+                        group_columns
+                    ),
+                    group_values=(
+                        group_values
+                    ),
+                    enabled=True,
+                )
+            )
+
+        except Exception as exc:
+            AppMessageBox.warning(
+                self,
+                "Deshabilitar grupo",
+                "No se pudo identificar "
+                "la agrupacion.\n\n"
+                f"{type(exc).__name__}: "
+                f"{exc}",
+            )
+            return
+
+        if not row_ids:
+            return
+
+        context_lines = []
+
+        for column, value in zip(
+            group_columns,
+            group_values,
+        ):
+            label = (
+                column
+                .replace("_", " ")
+                .title()
+            )
+
+            context_lines.append(
+                f"{label}: {value}"
+            )
+
+        context = "\n".join(
+            context_lines
+        )
+
+        annual_column = (
+            self._workspace
+            .module_config
+            .annual_column
+        )
+
+        total = (
+            row.get(
+                annual_column
+            )
+            or ZERO
+        )
+
+        confirmed = ask_confirmation(
+            self,
+            "Deshabilitar agrupacion",
+            f"{context}\n\n"
+            f"Filas reales afectadas: "
+            f"{len(row_ids):,}\n"
+            f"Total del grupo: "
+            f"US$ {total:,.2f}\n\n"
+            "Todas estas filas dejaran de "
+            "participar en Dashboard y "
+            "Agrupaciones.\n\n"
+            "Los importes NO se eliminaran. "
+            "El cambio permanecera local "
+            "hasta usar Aplicar cambios.",
+            confirm_text=(
+                "Deshabilitar grupo"
+            ),
+        )
+
+        if not confirmed:
+            return
+
+        try:
+            affected = (
+                self._group_edit_service
+                .set_group_enabled(
+                    group_columns=(
+                        group_columns
+                    ),
+                    group_values=(
+                        group_values
+                    ),
+                    enabled=False,
+                )
+            )
+
+        except Exception as exc:
+            AppMessageBox.warning(
+                self,
+                "Deshabilitar grupo",
+                "No se pudo deshabilitar "
+                "la agrupacion.\n\n"
+                f"{type(exc).__name__}: "
+                f"{exc}",
+            )
+            return
+
+        if not affected:
+            return
+
+        self.workspace_changed.emit()
+
+        self.load_grouping()
+
+        self.status_label.setText(
+            "Agrupacion deshabilitada "
+            "localmente: "
+            f"{affected:,} filas reales. "
+            "Los importes se conservaron."
         )
 
     def _go_to_start(self):
@@ -1013,7 +1302,7 @@ class AggregationPage(QWidget):
         )
 
         if not proxy_index.isValid():
-            QMessageBox.information(
+            AppMessageBox.information(
                 self,
                 "Distribucion mensual",
                 "Selecciona primero una fila "
@@ -1079,7 +1368,7 @@ class AggregationPage(QWidget):
             )
 
         except Exception as exc:
-            QMessageBox.warning(
+            AppMessageBox.warning(
                 self,
                 "Distribucion mensual",
                 "No se pudo distribuir "
@@ -1393,7 +1682,7 @@ class AggregationPage(QWidget):
 
     def show_change_summary(self):
         if not self._workspace.has_changes:
-            QMessageBox.information(
+            AppMessageBox.information(
                 self,
                 "Resumen de cambios",
                 "No existen cambios pendientes.",
@@ -1407,7 +1696,7 @@ class AggregationPage(QWidget):
             )
 
         except Exception as exc:
-            QMessageBox.warning(
+            AppMessageBox.warning(
                 self,
                 "Resumen de cambios",
                 f"No se pudo generar el resumen: "
@@ -1450,21 +1739,21 @@ class AggregationPage(QWidget):
         if not self._workspace.has_changes:
             return
 
-        result = QMessageBox.question(
+        result = AppMessageBox.question(
             self,
             "Descartar cambios",
             "Se descartaran todos los "
             "cambios de la simulacion local.\n\n"
             "¿Desea continuar?",
-            QMessageBox.StandardButton.Yes
+            AppMessageBox.StandardButton.Yes
             |
-            QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            AppMessageBox.StandardButton.No,
+            AppMessageBox.StandardButton.No,
         )
 
         if (
             result
-            != QMessageBox.StandardButton.Yes
+            != AppMessageBox.StandardButton.Yes
         ):
             return
 
@@ -1639,7 +1928,7 @@ class AggregationPage(QWidget):
             + message
         )
 
-        QMessageBox.warning(
+        AppMessageBox.warning(
             self,
             "Cambio no valido",
             message,
