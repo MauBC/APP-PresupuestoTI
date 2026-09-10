@@ -22,6 +22,9 @@ from PySide6.QtWidgets import (
 from app.services.dimension_allocation_service import (
     DimensionAllocationService,
 )
+from app.services.group_monthly_distribution_service import (
+    GroupMonthlyDistributionService,
+)
 from app.services.presupuesto_change_summary_service import (
     PresupuestoChangeSummaryService,
 )
@@ -34,6 +37,9 @@ from app.ui.dialogs.change_summary_dialog import (
 )
 from app.ui.dialogs.group_edit_dialog import (
     GroupEditDialog,
+)
+from app.ui.dialogs.monthly_distribution_dialog import (
+    MonthlyDistributionDialog,
 )
 from app.ui.dialogs.dimension_allocation_dialog import (
     DimensionAllocationDialog,
@@ -65,6 +71,12 @@ class AggregationPage(QWidget):
 
         self._group_edit_service = (
             PresupuestoGroupEditService(
+                workspace
+            )
+        )
+
+        self._group_monthly_distribution_service = (
+            GroupMonthlyDistributionService(
                 workspace
             )
         )
@@ -216,6 +228,16 @@ class AggregationPage(QWidget):
             )
         )
 
+        self.distribute_group_months_button = (
+            QPushButton(
+                "Distribuir meses del grupo"
+            )
+        )
+
+        self.distribute_group_months_button.setEnabled(
+            False
+        )
+
         self.distribute_ceco_button = (
             QPushButton(
                 "Distribuir por CECO"
@@ -234,6 +256,10 @@ class AggregationPage(QWidget):
 
         self.distribute_country_button.setEnabled(
             False
+        )
+
+        distribution_layout.addWidget(
+            self.distribute_group_months_button
         )
 
         distribution_layout.addWidget(
@@ -518,6 +544,10 @@ class AggregationPage(QWidget):
             self.load_grouping
         )
 
+        self.distribute_group_months_button.clicked.connect(
+            self._show_group_month_distribution
+        )
+
         self.distribute_ceco_button.clicked.connect(
             lambda:
                 self._show_dimension_distribution(
@@ -542,6 +572,10 @@ class AggregationPage(QWidget):
 
         self.table.clicked.connect(
             self._update_selected_context
+        )
+
+        self.table.clicked.connect(
+            self._update_group_month_distribution_control
         )
 
         self.go_start_button.clicked.connect(
@@ -771,6 +805,7 @@ class AggregationPage(QWidget):
             "Fila seleccionada: ninguna"
         )
 
+        self._update_group_month_distribution_control()
         self._update_change_controls()
 
     def _update_selected_context(
@@ -908,6 +943,8 @@ class AggregationPage(QWidget):
             .module_config
         )
 
+        self._update_group_month_distribution_control()
+
         self.distribute_ceco_button.setEnabled(
             bool(
                 self._workspace_ready
@@ -928,6 +965,137 @@ class AggregationPage(QWidget):
                 config.capabilities
                 .country_distribution
             )
+        )
+
+    def _update_group_month_distribution_control(
+        self,
+        *_,
+    ):
+        config = (
+            self._workspace
+            .module_config
+        )
+
+        enabled = (
+            self._workspace_ready
+            and
+            self._current_result
+            is not None
+            and
+            config.capabilities
+            .monthly_distribution
+            and
+            self.table.currentIndex()
+            .isValid()
+        )
+
+        self.distribute_group_months_button.setEnabled(
+            bool(
+                enabled
+            )
+        )
+
+    def _show_group_month_distribution(
+        self,
+    ):
+        if not self._workspace_ready:
+            return
+
+        if self._current_result is None:
+            return
+
+        proxy_index = (
+            self.table.currentIndex()
+        )
+
+        if not proxy_index.isValid():
+            QMessageBox.information(
+                self,
+                "Distribucion mensual",
+                "Selecciona primero una fila "
+                "de la agrupacion.",
+            )
+            return
+
+        source_index = (
+            self.proxy_model
+            .mapToSource(
+                proxy_index
+            )
+        )
+
+        row = self.model.row_dict(
+            source_index.row()
+        )
+
+        group_columns = tuple(
+            self._current_result
+            .group_columns
+        )
+
+        group_values = tuple(
+            row.get(
+                column
+            )
+            for column
+            in group_columns
+        )
+
+        try:
+            dialog = (
+                MonthlyDistributionDialog(
+                    row=row,
+                    module_config=(
+                        self._workspace
+                        .module_config
+                    ),
+                    parent=self,
+                )
+            )
+
+            if not dialog.exec():
+                return
+
+            preview = (
+                self._group_monthly_distribution_service
+                .apply(
+                    group_columns=(
+                        group_columns
+                    ),
+                    group_values=(
+                        group_values
+                    ),
+                    percentages=(
+                        dialog.percentages()
+                    ),
+                    annual_total=(
+                        dialog.annual_total()
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Distribucion mensual",
+                "No se pudo distribuir "
+                "el grupo.\n\n"
+                f"{type(exc).__name__}: {exc}",
+            )
+            return
+
+        self.workspace_changed.emit()
+
+        self.load_grouping()
+
+        self.status_label.setText(
+            "Distribucion mensual del grupo "
+            "aplicada localmente: "
+            f"{preview.row_count:,} registros | "
+            f"Total anual USD "
+            f"{preview.current_total:,.2f} -> "
+            f"{preview.target_total:,.2f}. "
+            "BigQuery no ha sido modificado."
         )
 
     def _dimension_scope(
