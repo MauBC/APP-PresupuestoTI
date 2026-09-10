@@ -118,3 +118,25 @@ CAPEX_SHAREPOINT_BUSINESS_FIELDS = {
     "RegistrosOrigen":
         "registros_origen",
 }
+
+CAPEX_SHAREPOINT_COMPARE_FIELDS = (
+    "Title",
+    "SummaryKey",
+    "Vicepresidencia",
+    "Pais",
+    "Sociedad",
+    "Responsable",
+    "GerenteAprobador",
+    "VPAprobador",
+    "NombreInversion",
+    "TotalUSD",
+    "RegistrosOrigen",
+    "Modulo",
+)
+
+
+CAPEX_SHAREPOINT_METADATA_FIELDS = (
+    "SourceBatchId",
+    "SyncRunId",
+    "UpdatedAt",
+)
