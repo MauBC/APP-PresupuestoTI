@@ -459,3 +459,69 @@ def test_numeric_noise_does_not_create_warning():
         for issue
         in result.warnings
     )
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        None,
+        "",
+        "   ",
+        "-",
+    ),
+)
+def test_blank_quantity_defaults_to_one(
+    value,
+):
+    row = make_row()
+
+    row["Cantidad"] = value
+
+    result = (
+        clean_and_validate_capex_row(
+            row,
+            row_number=9,
+        )
+    )
+
+    assert result.is_valid
+
+    assert (
+        result.row["cantidad"]
+        == 1
+    )
+
+    assert any(
+        issue.code
+        == "QUANTITY_DEFAULTED"
+        and issue.column
+        == "cantidad"
+        for issue
+        in result.information
+    )
+
+
+def test_explicit_quantity_is_preserved():
+    row = make_row()
+
+    row["Cantidad"] = 7
+
+    result = (
+        clean_and_validate_capex_row(
+            row,
+            row_number=9,
+        )
+    )
+
+    assert result.is_valid
+
+    assert (
+        result.row["cantidad"]
+        == 7
+    )
+
+    assert not any(
+        issue.code
+        == "QUANTITY_DEFAULTED"
+        for issue
+        in result.issues
+    )

@@ -297,24 +297,35 @@ def clean_and_validate_capex_row(
             )
         )
 
+    raw_quantity = _raw_value(
+        normalized,
+        "cantidad",
+    )
+
     if cleaned.get("cantidad") is None:
-        issues.append(
-            _issue(
-                row_number=row_number,
-                column="cantidad",
-                code="QUANTITY_REQUIRED",
-                message=(
-                    "Cantidad es obligatoria."
-                ),
-                severity=(
-                    CapexIssueSeverity.ERROR
-                ),
-                raw_value=_raw_value(
-                    normalized,
-                    "cantidad",
-                ),
+        if is_blank_like(
+            raw_quantity
+        ):
+            cleaned["cantidad"] = 1
+
+            issues.append(
+                _issue(
+                    row_number=row_number,
+                    column="cantidad",
+                    code="QUANTITY_DEFAULTED",
+                    message=(
+                        "Cantidad estaba vacia "
+                        "y se asigno 1 "
+                        "automaticamente."
+                    ),
+                    severity=(
+                        CapexIssueSeverity.INFO
+                    ),
+                    raw_value=(
+                        raw_quantity
+                    ),
+                )
             )
-        )
 
     elif cleaned["cantidad"] < 0:
         issues.append(
@@ -329,9 +340,8 @@ def clean_and_validate_capex_row(
                 severity=(
                     CapexIssueSeverity.ERROR
                 ),
-                raw_value=_raw_value(
-                    normalized,
-                    "cantidad",
+                raw_value=(
+                    raw_quantity
                 ),
             )
         )

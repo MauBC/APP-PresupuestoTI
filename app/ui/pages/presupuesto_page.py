@@ -1,4 +1,5 @@
 from decimal import Decimal
+from pathlib import Path
 
 from PySide6.QtCore import (
     QSortFilterProxyModel,
@@ -9,6 +10,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -32,6 +34,9 @@ from app.services.new_budget_row_service import (
 from app.services.presupuesto_change_summary_service import (
     PresupuestoChangeSummaryService,
 )
+from app.ui.dialogs.budget_excel_import_dialog import (
+    BudgetExcelImportDialog,
+)
 from app.ui.dialogs.change_summary_dialog import (
     ChangeSummaryDialog,
 )
@@ -46,6 +51,9 @@ from app.ui.models.presupuesto_table_model import (
 )
 from app.ui.workers.budget_catalog_loader import (
     BudgetCatalogLoadThread,
+)
+from app.ui.workers.budget_excel_import import (
+    BudgetExcelImportThread,
 )
 
 
@@ -83,6 +91,10 @@ class PresupuestoPage(QWidget):
 
         self._new_row_catalog_thread = None
         self._new_row_actor = None
+
+        self._excel_import_thread = None
+        self._excel_import_actor = None
+        self._excel_import_path = None
 
         self._setup_ui()
 
@@ -163,6 +175,14 @@ class PresupuestoPage(QWidget):
             False
         )
 
+        self.import_excel_button = QPushButton(
+            "Importar Excel"
+        )
+
+        self.import_excel_button.setEnabled(
+            False
+        )
+
         self.distribute_months_button = (
             QPushButton(
                 "Distribuir meses"
@@ -188,6 +208,10 @@ class PresupuestoPage(QWidget):
 
         toolbar.addWidget(
             self.new_row_button
+        )
+
+        toolbar.addWidget(
+            self.import_excel_button
         )
 
         toolbar.addWidget(
@@ -395,6 +419,10 @@ class PresupuestoPage(QWidget):
             self.show_new_row_dialog
         )
 
+        self.import_excel_button.clicked.connect(
+            self.show_excel_import
+        )
+
         self.distribute_months_button.clicked.connect(
             self.show_monthly_distribution
         )
@@ -442,12 +470,25 @@ class PresupuestoPage(QWidget):
     def is_busy(
         self,
     ) -> bool:
-        return bool(
+        catalog_busy = (
             self._new_row_catalog_thread
             is not None
             and
             self._new_row_catalog_thread
             .isRunning()
+        )
+
+        import_busy = (
+            self._excel_import_thread
+            is not None
+            and
+            self._excel_import_thread
+            .isRunning()
+        )
+
+        return bool(
+            catalog_busy
+            or import_busy
         )
 
     def set_workspace_ready(self):
@@ -458,6 +499,7 @@ class PresupuestoPage(QWidget):
         )
 
         self._update_new_row_button()
+        self._update_import_excel_button()
 
         self.status_label.setText(
             "Presupuesto local disponible."
@@ -478,6 +520,10 @@ class PresupuestoPage(QWidget):
         )
 
         self.new_row_button.setEnabled(
+            False
+        )
+
+        self.import_excel_button.setEnabled(
             False
         )
 
@@ -716,6 +762,263 @@ class PresupuestoPage(QWidget):
             bool(enabled)
         )
 
+    def _update_import_excel_button(
+        self,
+    ):
+        if not hasattr(
+            self,
+            "import_excel_button",
+        ):
+            return
+
+        enabled = (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+            and
+            not self.is_busy
+        )
+
+        self.import_excel_button.setEnabled(
+            enabled
+        )
+
+        if (
+            self._excel_import_thread
+            is not None
+            and
+            self._excel_import_thread
+            .isRunning()
+        ):
+            self.import_excel_button.setText(
+                "Validando Excel..."
+            )
+
+        else:
+            self.import_excel_button.setText(
+                "Importar Excel"
+            )
+
+    def show_excel_import(
+        self,
+    ):
+        if not (
+            self._workspace_ready
+            and self._workspace.is_loaded
+        ):
+            return
+
+        if self.is_busy:
+            return
+
+        file_path, _ = (
+            QFileDialog
+            .getOpenFileName(
+                self,
+                "Seleccionar Excel "
+                f"{self._workspace.module_config.label}",
+                "",
+                (
+                    "Excel (*.xlsx *.xlsm);;"
+                    "Todos los archivos (*.*)"
+                ),
+            )
+        )
+
+        if not file_path:
+            return
+
+        try:
+            actor = (
+                resolve_current_actor()
+            )
+
+        except CurrentActorError as exc:
+            QMessageBox.warning(
+                self,
+                "Usuario no identificado",
+                str(exc),
+            )
+            return
+
+        self._excel_import_actor = (
+            actor
+        )
+
+        self._excel_import_path = (
+            file_path
+        )
+
+        self._excel_import_thread = (
+            BudgetExcelImportThread(
+                module_config=(
+                    self._workspace
+                    .module_config
+                ),
+                file_path=file_path,
+                actor=actor,
+                parent=self,
+            )
+        )
+
+        self._excel_import_thread.loaded.connect(
+            self._on_excel_import_loaded
+        )
+
+        self._excel_import_thread.failed.connect(
+            self._on_excel_import_failed
+        )
+
+        self._excel_import_thread.finished.connect(
+            self._on_excel_import_finished
+        )
+
+        self.status_label.setText(
+            "Leyendo, limpiando y validando "
+            f"{Path(file_path).name}..."
+        )
+
+        self._update_new_row_button()
+        self._update_import_excel_button()
+
+        self._excel_import_thread.start()
+
+    def _on_excel_import_loaded(
+        self,
+        result,
+    ):
+        dialog = (
+            BudgetExcelImportDialog(
+                result=result,
+                module_config=(
+                    self._workspace
+                    .module_config
+                ),
+                parent=self,
+            )
+        )
+
+        accepted = (
+            dialog.exec()
+        )
+
+        if not accepted:
+            self.status_label.setText(
+                "Importacion cancelada. "
+                "No se agregaron filas."
+            )
+
+            self._excel_import_actor = None
+            self._excel_import_path = None
+
+            return
+
+        if not result.is_valid:
+            self._excel_import_actor = None
+            self._excel_import_path = None
+            return
+
+        source_name = (
+            Path(
+                result.source_path
+            )
+            .name
+        )
+
+        try:
+            session_ids = (
+                self._workspace
+                .add_new_rows(
+                    result.rows,
+                    description=(
+                        "Importar Excel "
+                        f"{source_name}"
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "No se pudo importar",
+                "La validacion del Excel "
+                "finalizo, pero las filas "
+                "no pudieron agregarse "
+                "al Workspace.\n\n"
+                f"{type(exc).__name__}: "
+                f"{exc}",
+            )
+
+            self._excel_import_actor = None
+            self._excel_import_path = None
+
+            return
+
+        last_page = max(
+            0,
+            (
+                self._workspace.row_count
+                - 1
+            )
+            // self._page_size,
+        )
+
+        self._load_page(
+            last_page
+        )
+
+        if session_ids:
+            self._select_session_row(
+                session_ids[-1]
+            )
+
+        self.status_label.setText(
+            f"{len(session_ids):,} filas "
+            "agregadas al Workspace desde "
+            f"{source_name}. "
+            "BigQuery todavia no ha sido "
+            "modificado."
+        )
+
+        self.workspace_changed.emit()
+
+        self._excel_import_actor = None
+        self._excel_import_path = None
+
+    def _on_excel_import_failed(
+        self,
+        message,
+    ):
+        QMessageBox.warning(
+            self,
+            "No se pudo validar el Excel",
+            "El archivo no pudo prepararse "
+            "para importacion.\n\n"
+            f"Detalle: {message}",
+        )
+
+        self.status_label.setText(
+            "Importacion Excel fallida. "
+            "No se realizaron cambios."
+        )
+
+        self._excel_import_actor = None
+        self._excel_import_path = None
+
+    def _on_excel_import_finished(
+        self,
+    ):
+        if (
+            self._excel_import_thread
+            is not None
+        ):
+            self._excel_import_thread.deleteLater()
+
+            self._excel_import_thread = None
+
+        self._update_new_row_button()
+        self._update_import_excel_button()
+
     def _update_new_row_button(
         self,
     ):
@@ -804,6 +1107,7 @@ class PresupuestoPage(QWidget):
         )
 
         self._update_new_row_button()
+        self._update_import_excel_button()
 
         self._new_row_catalog_thread.start()
 
@@ -847,6 +1151,7 @@ class PresupuestoPage(QWidget):
         self._new_row_actor = None
 
         self._update_new_row_button()
+        self._update_import_excel_button()
 
     def _open_new_row_dialog(
         self,
@@ -1194,6 +1499,7 @@ class PresupuestoPage(QWidget):
             self._update_navigation()
 
         self._update_new_row_button()
+        self._update_import_excel_button()
 
     def _calculate_total_pages(self):
         if self._total_rows == 0:
