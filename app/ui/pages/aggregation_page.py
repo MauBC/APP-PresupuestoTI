@@ -479,7 +479,7 @@ class AggregationPage(QWidget):
         )
 
         self.table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectItems
+            QAbstractItemView.SelectionBehavior.SelectRows
         )
 
         self.table.setSelectionMode(
@@ -503,7 +503,11 @@ class AggregationPage(QWidget):
         )
 
         self.table.verticalHeader().setMinimumWidth(
-            42
+            44
+        )
+
+        self.table.verticalHeader().setMaximumWidth(
+            44
         )
 
         header = (

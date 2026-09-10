@@ -317,7 +317,7 @@ class PresupuestoPage(QWidget):
         )
 
         self.table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectItems
+            QAbstractItemView.SelectionBehavior.SelectRows
         )
 
         self.table.setSelectionMode(
@@ -338,8 +338,24 @@ class PresupuestoPage(QWidget):
             QAbstractItemView.ScrollMode.ScrollPerPixel
         )
 
-        self.table.verticalHeader().setVisible(
-            False
+        vertical_header = (
+            self.table.verticalHeader()
+        )
+
+        vertical_header.setVisible(
+            True
+        )
+
+        vertical_header.setDefaultSectionSize(
+            28
+        )
+
+        vertical_header.setMinimumWidth(
+            44
+        )
+
+        vertical_header.setMaximumWidth(
+            44
         )
 
         header = (

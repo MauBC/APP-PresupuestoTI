@@ -78,11 +78,18 @@ class PresupuestoTableModel(
             self._config.annual_column
         )
 
+        self._row_number_offset = 0
+
     def set_page(
         self,
         page: PageResult,
     ):
         self.beginResetModel()
+
+        self._row_number_offset = (
+            page.page_index
+            * page.page_size
+        )
 
         self._rows = [
             dict(row)
@@ -129,6 +136,7 @@ class PresupuestoTableModel(
         self._rows = []
         self._columns = ()
         self._original_rows = {}
+        self._row_number_offset = 0
         self._new_row_ids = set()
 
         self.endResetModel()
@@ -213,6 +221,12 @@ class PresupuestoTableModel(
             )
 
         if role == Qt.ItemDataRole.UserRole:
+            if isinstance(
+                value,
+                Decimal,
+            ):
+                return float(value)
+
             return value
 
         if role == Qt.ItemDataRole.BackgroundRole:
@@ -485,7 +499,19 @@ class PresupuestoTableModel(
                     .upper()
                 )
 
-        return section + 1
+        if (
+            orientation
+            == Qt.Orientation.Vertical
+            and
+            0 <= section < len(self._rows)
+        ):
+            return (
+                self._row_number_offset
+                + section
+                + 1
+            )
+
+        return None
 
     def session_row_id(
         self,

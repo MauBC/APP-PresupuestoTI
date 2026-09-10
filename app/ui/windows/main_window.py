@@ -659,9 +659,15 @@ class MainWindow(QMainWindow):
             }
 
             QPushButton:checked {
-                background-color: #2F7650;
-                color: #FFFFFF;
-                border-color: #2F7650;
+                background-color: #FDE9CC;
+                color: #8A4700;
+                border-color: #E5A04B;
+            }
+
+            QPushButton:checked:hover {
+                background-color: #F8D9AE;
+                color: #7A3E00;
+                border-color: #D98A2B;
             }
             """
         )

@@ -136,6 +136,12 @@ class ResultTableModel(
             return str(value)
 
         if role == Qt.ItemDataRole.UserRole:
+            if isinstance(
+                value,
+                Decimal,
+            ):
+                return float(value)
+
             return value
 
         if role == Qt.ItemDataRole.BackgroundRole:

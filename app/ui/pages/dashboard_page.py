@@ -10,6 +10,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config.budget_module_config import (
+    BudgetModule,
+)
 from app.ui.models.result_table_model import (
     ResultTableModel,
 )
@@ -240,6 +243,103 @@ class DashboardPage(QWidget):
             1,
         )
 
+        if (
+            module_config.module
+            == BudgetModule.CAPEX
+        ):
+            extra_tables_layout = (
+                QHBoxLayout()
+            )
+
+            extra_tables_layout.setSpacing(
+                16
+            )
+
+            vicepresidency_container = (
+                QVBoxLayout()
+            )
+
+            vicepresidency_title = QLabel(
+                "Presupuesto por vicepresidencia"
+            )
+
+            vicepresidency_title.setObjectName(
+                "sectionTitle"
+            )
+
+            self.vicepresidency_model = (
+                ResultTableModel(
+                    self,
+                    amount_columns=(
+                        "total_usd",
+                    ),
+                )
+            )
+
+            self.vicepresidency_table = (
+                self._create_table(
+                    self.vicepresidency_model
+                )
+            )
+
+            vicepresidency_container.addWidget(
+                vicepresidency_title
+            )
+
+            vicepresidency_container.addWidget(
+                self.vicepresidency_table
+            )
+
+            manager_container = (
+                QVBoxLayout()
+            )
+
+            manager_title = QLabel(
+                "Presupuesto por gerente aprobador"
+            )
+
+            manager_title.setObjectName(
+                "sectionTitle"
+            )
+
+            self.manager_model = (
+                ResultTableModel(
+                    self,
+                    amount_columns=(
+                        "total_usd",
+                    ),
+                )
+            )
+
+            self.manager_table = (
+                self._create_table(
+                    self.manager_model
+                )
+            )
+
+            manager_container.addWidget(
+                manager_title
+            )
+
+            manager_container.addWidget(
+                self.manager_table
+            )
+
+            extra_tables_layout.addLayout(
+                vicepresidency_container,
+                1,
+            )
+
+            extra_tables_layout.addLayout(
+                manager_container,
+                1,
+            )
+
+            layout.addLayout(
+                extra_tables_layout,
+                1,
+            )
+
         self.status_label = QLabel(
             "Esperando carga del presupuesto..."
         )
@@ -415,6 +515,48 @@ class DashboardPage(QWidget):
                 True
             )
 
+    def _dashboard_dimension_rows(
+        self,
+        dimension,
+    ):
+        result = (
+            self._analysis_service
+            .get_grouped_totals(
+                (
+                    dimension,
+                )
+            )
+        )
+
+        annual_column = (
+            self._analysis_service
+            .module_config
+            .annual_column
+        )
+
+        return tuple(
+            {
+                dimension: (
+                    row.get(
+                        dimension
+                    )
+                    or "(Sin valor)"
+                ),
+                "registros": (
+                    row.get(
+                        "registros",
+                        0,
+                    )
+                ),
+                "total_usd": (
+                    row.get(
+                        annual_column
+                    )
+                ),
+            }
+            for row in result.rows
+        )
+
     def _on_loaded(
         self,
         result,
@@ -488,6 +630,45 @@ class DashboardPage(QWidget):
                 "total_usd",
             ),
         )
+
+        module_config = (
+            self._analysis_service
+            .module_config
+        )
+
+        if (
+            module_config.module
+            == BudgetModule.CAPEX
+        ):
+            vicepresidency_rows = (
+                self._dashboard_dimension_rows(
+                    "vicepresidencia"
+                )
+            )
+
+            manager_rows = (
+                self._dashboard_dimension_rows(
+                    "gerente_aprobador"
+                )
+            )
+
+            self.vicepresidency_model.set_data(
+                vicepresidency_rows,
+                (
+                    "vicepresidencia",
+                    "registros",
+                    "total_usd",
+                ),
+            )
+
+            self.manager_model.set_data(
+                manager_rows,
+                (
+                    "gerente_aprobador",
+                    "registros",
+                    "total_usd",
+                ),
+            )
 
         self._loaded_once = True
 
