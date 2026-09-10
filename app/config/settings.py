@@ -107,6 +107,15 @@ class Settings:
         .strip()
     )
 
+
+    SHAREPOINT_OPEX_LIST_NAME = (
+        os.getenv(
+            "SHAREPOINT_OPEX_LIST_NAME",
+            "Resumen_Opex",
+        )
+        .strip()
+    )
+
     WINDOW_WIDTH = 1280
     WINDOW_HEIGHT = 760
 
