@@ -243,6 +243,42 @@ class SharePointClient:
             )
         )
 
+    def create_column(
+        self,
+        list_name,
+        definition,
+    ):
+        site_id = (
+            self.get_site_id()
+        )
+
+        list_id = (
+            self.get_list_id(
+                list_name
+            )
+        )
+
+        if not isinstance(
+            definition,
+            dict,
+        ) or not definition:
+            raise SharePointClientError(
+                "definition debe contener "
+                "datos."
+            )
+
+        return (
+            self._graph
+            .post(
+                "/sites/"
+                f"{site_id}/lists/"
+                f"{list_id}/columns",
+                json_body=dict(
+                    definition
+                ),
+            )
+        )
+
     def get_items(
         self,
         list_name,
