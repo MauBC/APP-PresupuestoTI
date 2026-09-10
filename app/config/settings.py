@@ -50,6 +50,63 @@ class Settings:
         "presupuesto_change_staging",
     )
 
+    # Microsoft Graph / SharePoint
+    MS_TENANT_ID = (
+        os.getenv(
+            "MS_TENANT_ID",
+            "",
+        )
+        .strip()
+    )
+
+    MS_CLIENT_ID = (
+        os.getenv(
+            "MS_CLIENT_ID",
+            "",
+        )
+        .strip()
+    )
+
+    MS_CLIENT_SECRET = (
+        os.getenv(
+            "MS_CLIENT_SECRET",
+            "",
+        )
+        .strip()
+    )
+
+    MS_GRAPH_SCOPE = (
+        os.getenv(
+            "MS_GRAPH_SCOPE",
+            "https://graph.microsoft.com/.default",
+        )
+        .strip()
+    )
+
+    SHAREPOINT_HOSTNAME = (
+        os.getenv(
+            "SHAREPOINT_HOSTNAME",
+            "",
+        )
+        .strip()
+    )
+
+    SHAREPOINT_SITE_PATH = (
+        os.getenv(
+            "SHAREPOINT_SITE_PATH",
+            "",
+        )
+        .strip()
+    )
+
+    SHAREPOINT_CAPEX_LIST_NAME = (
+        os.getenv(
+            "SHAREPOINT_CAPEX_LIST_NAME",
+            "Resumen_Capex",
+        )
+        .strip()
+    )
+
     WINDOW_WIDTH = 1280
     WINDOW_HEIGHT = 760
 
