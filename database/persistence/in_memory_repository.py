@@ -1,4 +1,4 @@
-﻿from copy import deepcopy
+from copy import deepcopy
 from dataclasses import replace
 from typing import (
     Any,
@@ -7,7 +7,11 @@ from typing import (
 )
 
 from app.config.presupuesto_app_config import (
+    CREATED_AT_COLUMN,
+    CREATED_BY_COLUMN,
     ROW_ID_COLUMN,
+    UPDATED_AT_COLUMN,
+    UPDATED_BY_COLUMN,
     VERSION_COLUMN,
 )
 from database.persistence.contract import (
@@ -212,6 +216,30 @@ class InMemoryPersistenceRepository:
                 staged_row.row_id
             )
 
+            if staged_row.is_insert:
+                if current is not None:
+                    current_version = (
+                        self._required_version(
+                            current.get(
+                                VERSION_COLUMN
+                            )
+                        )
+                    )
+
+                    conflicts.append(
+                        ConflictDetail(
+                            row_id=(
+                                staged_row.row_id
+                            ),
+                            expected_version=0,
+                            current_version=(
+                                current_version
+                            ),
+                        )
+                    )
+
+                continue
+
             if current is None:
                 conflicts.append(
                     ConflictDetail(
@@ -333,12 +361,6 @@ class InMemoryPersistenceRepository:
         )
 
         for staged_row in staging:
-            current = deepcopy(
-                updated_rows[
-                    staged_row.row_id
-                ]
-            )
-
             editable = dict(
                 staged_row.editable_values
             )
@@ -353,6 +375,60 @@ class InMemoryPersistenceRepository:
                         "con el contrato editable."
                     )
                 )
+
+            if staged_row.is_insert:
+                current = deepcopy(
+                    dict(
+                        staged_row
+                        .insert_values
+                    )
+                )
+
+                for (
+                    column,
+                    value,
+                ) in editable.items():
+                    current[
+                        column
+                    ] = deepcopy(
+                        value
+                    )
+
+                current[
+                    ROW_ID_COLUMN
+                ] = staged_row.row_id
+
+                current[
+                    VERSION_COLUMN
+                ] = 1
+
+                current[
+                    CREATED_AT_COLUMN
+                ] = batch.created_at
+
+                current[
+                    CREATED_BY_COLUMN
+                ] = batch.actor
+
+                current[
+                    UPDATED_AT_COLUMN
+                ] = batch.created_at
+
+                current[
+                    UPDATED_BY_COLUMN
+                ] = batch.actor
+
+                updated_rows[
+                    staged_row.row_id
+                ] = current
+
+                continue
+
+            current = deepcopy(
+                updated_rows[
+                    staged_row.row_id
+                ]
+            )
 
             for (
                 column,

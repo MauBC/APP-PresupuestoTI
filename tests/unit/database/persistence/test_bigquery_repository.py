@@ -511,7 +511,7 @@ def test_load_staging_uses_bulk_append():
         call[
             "job_config"
         ].schema
-    ) == 18
+    ) == 20
 
     record = (
         call["rows"][0]

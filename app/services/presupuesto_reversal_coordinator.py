@@ -241,6 +241,21 @@ class PresupuestoReversalCoordinator:
             detail_started,
         )
 
+        if any(
+            change.version_before == 0
+            for change in detail.changes
+        ):
+            raise (
+                PresupuestoReversalCoordinatorError(
+                    "Los batches que contienen "
+                    "altas nuevas no pueden "
+                    "revertirse con el mecanismo "
+                    "actual. La reversion de altas "
+                    "requiere una politica explicita "
+                    "de baja logica."
+                )
+            )
+
         read_started = (
             perf_counter()
         )

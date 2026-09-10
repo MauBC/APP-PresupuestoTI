@@ -1,3 +1,4 @@
+
 from dataclasses import dataclass
 from enum import Enum
 
@@ -59,6 +60,14 @@ class BudgetModuleConfig:
         ...
     ] = ()
 
+    insert_column_types: tuple[
+        tuple[
+            str,
+            str,
+        ],
+        ...
+    ] = ()
+
     configured: bool = True
 
     @property
@@ -81,3 +90,27 @@ class BudgetModuleConfig:
         ...
     ]:
         return self.amount_columns
+
+    @property
+    def insert_columns(
+        self,
+    ) -> tuple[
+        str,
+        ...
+    ]:
+        return tuple(
+            column
+            for column, _
+            in self.insert_column_types
+        )
+
+    @property
+    def insert_type_map(
+        self,
+    ) -> dict[
+        str,
+        str,
+    ]:
+        return dict(
+            self.insert_column_types
+        )

@@ -1,3 +1,4 @@
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,7 +19,7 @@ class PendingRowChange:
 @dataclass(frozen=True)
 class RowStateChange:
     session_row_id: int
-    before: dict[str, Any]
+    before: dict[str, Any] | None
     after: dict[str, Any]
 
 

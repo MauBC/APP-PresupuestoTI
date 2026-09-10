@@ -136,10 +136,14 @@ def test_staging_contract():
         HABILITADO_COLUMN,
         *USD_COLUMNS,
         "staged_at",
+        "operation",
+        "insert_payload",
     )
 
     assert STAGING_NULLABLE_COLUMNS == (
-        USD_COLUMNS
+        *USD_COLUMNS,
+        "operation",
+        "insert_payload",
     )
 
     assert set(

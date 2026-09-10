@@ -85,7 +85,8 @@ class FakeHistoryService:
             SimpleNamespace(
                 row_ids=(
                     "row-001",
-                )
+                ),
+                changes=(),
             )
         )
 
@@ -625,6 +626,49 @@ def test_wrong_batch_type_is_rejected():
         )
 
     assert history.calls == []
+    assert reader.calls == []
+    assert reversal.calls == []
+    assert persistence.calls == []
+    assert loader.calls == []
+
+
+
+def test_insert_batch_reversal_is_blocked():
+    (
+        coordinator,
+        history,
+        reader,
+        reversal,
+        persistence,
+        loader,
+    ) = make_coordinator()
+
+    history.detail = (
+        SimpleNamespace(
+            row_ids=(
+                "row-001",
+            ),
+            changes=(
+                SimpleNamespace(
+                    version_before=0,
+                ),
+            ),
+        )
+    )
+
+    with pytest.raises(
+        PresupuestoReversalCoordinatorError,
+        match="altas nuevas",
+    ):
+        coordinator.revert_and_reload(
+            make_batch(),
+            actor="PC\\Reversor",
+        )
+
+    assert len(
+        history.calls
+    ) == 1
+
     assert reader.calls == []
     assert reversal.calls == []
     assert persistence.calls == []

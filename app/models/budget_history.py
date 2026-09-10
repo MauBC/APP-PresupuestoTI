@@ -221,10 +221,10 @@ class BudgetAuditChange:
                     "estar vacio."
                 )
 
-        if self.version_before < 1:
+        if self.version_before < 0:
             raise ValueError(
                 "version_before debe ser "
-                "mayor o igual a 1."
+                "mayor o igual a 0."
             )
 
         if self.version_after < 1:

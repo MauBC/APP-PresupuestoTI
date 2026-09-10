@@ -1,4 +1,5 @@
-﻿from datetime import (
+
+from datetime import (
     datetime,
     timezone,
 )
@@ -21,6 +22,14 @@ class AuditBuildError(
     ValueError
 ):
     pass
+
+
+SUPPORTED_VALUE_TYPES = {
+    "BOOLEAN",
+    "NUMERIC",
+    "STRING",
+    "INTEGER",
+}
 
 
 def generate_audit_id() -> str:
@@ -119,6 +128,51 @@ def _serialize_numeric(
     )
 
 
+def _serialize_integer(
+    value,
+) -> str:
+    if isinstance(
+        value,
+        bool,
+    ):
+        raise AuditBuildError(
+            "BOOLEAN no puede auditarse "
+            "como INTEGER."
+        )
+
+    try:
+        integer_value = int(
+            value
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise AuditBuildError(
+            "Valor INTEGER no valido "
+            "para auditoria."
+        ) from exc
+
+    if str(
+        value
+    ).strip() not in {
+        str(integer_value),
+        f"+{integer_value}",
+    } and not isinstance(
+        value,
+        int,
+    ):
+        raise AuditBuildError(
+            "Valor INTEGER no valido "
+            "para auditoria."
+        )
+
+    return str(
+        integer_value
+    )
+
+
 def serialize_audit_value(
     value,
     value_type: str,
@@ -133,6 +187,16 @@ def serialize_audit_value(
 
     if value_type == "NUMERIC":
         return _serialize_numeric(
+            value
+        )
+
+    if value_type == "STRING":
+        return str(
+            value
+        )
+
+    if value_type == "INTEGER":
+        return _serialize_integer(
             value
         )
 
@@ -168,32 +232,60 @@ def build_audit_changes(
     seen_audit_ids = set()
 
     for row in batch.rows:
+        insert_columns = set(
+            row.insert_dict()
+        )
+
         for field_change in (
             row.field_changes
         ):
-            expected_type = (
-                EDITABLE_VALUE_TYPES.get(
+            if row.is_update:
+                expected_type = (
+                    EDITABLE_VALUE_TYPES.get(
+                        field_change.column
+                    )
+                )
+
+                if expected_type is None:
+                    raise AuditBuildError(
+                        "Columna no soportada "
+                        "para auditoria: "
+                        f"{field_change.column}"
+                    )
+
+                if (
+                    field_change.value_type
+                    != expected_type
+                ):
+                    raise AuditBuildError(
+                        "El tipo de auditoria "
+                        "no coincide con el "
+                        "contrato para "
+                        f"{field_change.column}."
+                    )
+
+            else:
+                if (
+                    field_change.value_type
+                    not in SUPPORTED_VALUE_TYPES
+                ):
+                    raise AuditBuildError(
+                        "Tipo INSERT no soportado "
+                        "para auditoria: "
+                        f"{field_change.value_type}"
+                    )
+
+                if (
                     field_change.column
-                )
-            )
-
-            if expected_type is None:
-                raise AuditBuildError(
-                    "Columna no soportada "
-                    "para auditoria: "
-                    f"{field_change.column}"
-                )
-
-            if (
-                field_change.value_type
-                != expected_type
-            ):
-                raise AuditBuildError(
-                    "El tipo de auditoria "
-                    "no coincide con el "
-                    "contrato para "
-                    f"{field_change.column}."
-                )
+                    != "habilitado"
+                    and field_change.column
+                    not in insert_columns
+                ):
+                    raise AuditBuildError(
+                        "La auditoria INSERT "
+                        "contiene una columna "
+                        "fuera del payload."
+                    )
 
             audit_id = str(
                 audit_id_factory()

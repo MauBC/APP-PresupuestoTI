@@ -1,9 +1,12 @@
+
 from app.config.budget_module_config import (
     BudgetModule,
     BudgetModuleCapabilities,
     BudgetModuleConfig,
 )
 from app.config.capex_schema import (
+    CAPEX_BUSINESS_COLUMNS,
+    CAPEX_BUSINESS_TYPES,
     CAPEX_DIMENSION_COLUMNS,
     CAPEX_GROUPABLE_COLUMNS,
     CAPEX_USD_MONTH_COLUMNS,
@@ -15,7 +18,31 @@ from app.config.presupuesto_app_config import (
     USD_MONTH_COLUMNS,
     USD_TOTAL_COLUMN,
 )
+from app.config.presupuesto_schema import (
+    AMOUNT_COLUMNS,
+    LEGACY_EXPECTED_TYPES,
+)
 from app.config.settings import settings
+
+
+def _column_types(
+    columns,
+    types,
+):
+    return tuple(
+        (
+            column,
+            types[column],
+        )
+        for column
+        in columns
+    )
+
+
+OPEX_INSERT_COLUMNS = (
+    *DIMENSION_COLUMNS,
+    *AMOUNT_COLUMNS,
+)
 
 
 OPEX_MODULE_CONFIG = (
@@ -55,6 +82,12 @@ OPEX_MODULE_CONFIG = (
             "proveedor",
             "nombre_gasto",
             "ceco",
+        ),
+        insert_column_types=(
+            _column_types(
+                OPEX_INSERT_COLUMNS,
+                LEGACY_EXPECTED_TYPES,
+            )
         ),
         configured=True,
     )
@@ -100,6 +133,12 @@ CAPEX_MODULE_CONFIG = (
             "tipo_capex",
             "codigo_cebe",
             "codigo_ceco",
+        ),
+        insert_column_types=(
+            _column_types(
+                CAPEX_BUSINESS_COLUMNS,
+                CAPEX_BUSINESS_TYPES,
+            )
         ),
         configured=True,
     )

@@ -245,18 +245,171 @@ class PresupuestoWorkspace:
 
         if (
             session_row_id
-            not in self._original_rows
+            in self._original_rows
         ):
-            raise PresupuestoWorkspaceError(
-                "No existe la fila "
-                f"{session_row_id}."
+            return deepcopy(
+                self._original_rows[
+                    session_row_id
+                ]
             )
 
-        return deepcopy(
-            self._original_rows[
-                session_row_id
-            ]
+        if (
+            session_row_id
+            in self._working_rows
+        ):
+            return {}
+
+        raise PresupuestoWorkspaceError(
+            "No existe la fila "
+            f"{session_row_id}."
         )
+
+    def is_new_row(
+        self,
+        session_row_id: int,
+    ) -> bool:
+        self._require_row(
+            session_row_id
+        )
+
+        return (
+            session_row_id
+            not in self._original_rows
+        )
+
+    def add_new_row(
+        self,
+        source_row:
+            Mapping[str, Any],
+    ) -> int:
+        self._require_loaded()
+
+        row = deepcopy(
+            dict(source_row)
+        )
+
+        row_id = str(
+            row.get(
+                ROW_ID_COLUMN,
+                "",
+            )
+            or ""
+        ).strip()
+
+        if not row_id:
+            raise PresupuestoWorkspaceError(
+                "La nueva fila no contiene "
+                "row_id."
+            )
+
+        existing_row_ids = {
+            str(
+                existing.get(
+                    ROW_ID_COLUMN,
+                    "",
+                )
+                or ""
+            ).strip()
+            for existing
+            in self._working_rows.values()
+        }
+
+        if row_id in existing_row_ids:
+            raise PresupuestoWorkspaceError(
+                "El row_id de la nueva fila "
+                "ya existe en el Workspace."
+            )
+
+        version = row.get(
+            VERSION_COLUMN
+        )
+
+        if (
+            isinstance(
+                version,
+                bool,
+            )
+            or not isinstance(
+                version,
+                int,
+            )
+            or version != 1
+        ):
+            raise PresupuestoWorkspaceError(
+                "Una nueva fila debe iniciar "
+                "con version 1."
+            )
+
+        missing_amounts = (
+            set(
+                self._module_config
+                .amount_columns
+            )
+            - set(row)
+        )
+
+        if missing_amounts:
+            raise PresupuestoWorkspaceError(
+                "La nueva fila no contiene "
+                "todas las columnas USD: "
+                + ", ".join(
+                    sorted(
+                        missing_amounts
+                    )
+                )
+            )
+
+        row[
+            HABILITADO_COLUMN
+        ] = self._normalize_enabled(
+            row.get(
+                HABILITADO_COLUMN,
+                True,
+            )
+        )
+
+        session_row_id = (
+            max(
+                self._working_rows,
+                default=-1,
+            )
+            + 1
+        )
+
+        row[
+            SESSION_ROW_ID
+        ] = session_row_id
+
+        self._working_rows[
+            session_row_id
+        ] = deepcopy(
+            row
+        )
+
+        self._dirty_row_ids.add(
+            session_row_id
+        )
+
+        self._history.append(
+            ChangeBatch(
+                description=(
+                    "Agregar nueva fila"
+                ),
+                rows=(
+                    RowStateChange(
+                        session_row_id=(
+                            session_row_id
+                        ),
+                        before=None,
+                        after=deepcopy(
+                            row
+                        ),
+                    ),
+                ),
+            )
+        )
+
+        return session_row_id
 
     def reconcile_persisted_rows(
         self,
@@ -272,7 +425,7 @@ class PresupuestoWorkspace:
         session_by_row_id = {}
 
         for session_row_id, row in (
-            self._original_rows.items()
+            self._working_rows.items()
         ):
             persistent_row_id = str(
                 row.get(
@@ -307,7 +460,7 @@ class PresupuestoWorkspace:
             self._dirty_row_ids
         ):
             row_id = str(
-                self._original_rows[
+                self._working_rows[
                     session_row_id
                 ].get(
                     ROW_ID_COLUMN,
@@ -842,6 +995,18 @@ class PresupuestoWorkspace:
         batch = self._history.pop()
 
         for change in batch.rows:
+            if change.before is None:
+                self._working_rows.pop(
+                    change.session_row_id,
+                    None,
+                )
+
+                self._dirty_row_ids.discard(
+                    change.session_row_id
+                )
+
+                continue
+
             self._working_rows[
                 change.session_row_id
             ] = deepcopy(
@@ -879,26 +1044,46 @@ class PresupuestoWorkspace:
         for row_id in sorted(
             self._dirty_row_ids
         ):
-            original = (
-                self._original_rows[row_id]
-            )
-
             working = (
-                self._working_rows[row_id]
+                self._working_rows[
+                    row_id
+                ]
             )
 
-            columns = (
-                set(original)
-                | set(working)
-            )
+            if (
+                row_id
+                not in self._original_rows
+            ):
+                original = {}
 
-            columns.discard(
-                SESSION_ROW_ID
-            )
+                columns = (
+                    HABILITADO_COLUMN,
+                    *self._module_config
+                    .insert_columns,
+                )
+
+            else:
+                original = (
+                    self._original_rows[
+                        row_id
+                    ]
+                )
+
+                columns = tuple(
+                    sorted(
+                        (
+                            set(original)
+                            | set(working)
+                        )
+                        - {
+                            SESSION_ROW_ID
+                        }
+                    )
+                )
 
             changes = []
 
-            for column in sorted(columns):
+            for column in columns:
                 before = original.get(
                     column
                 )
@@ -1002,6 +1187,15 @@ class PresupuestoWorkspace:
         self,
         session_row_id: int,
     ) -> None:
+        if (
+            session_row_id
+            not in self._original_rows
+        ):
+            self._dirty_row_ids.add(
+                session_row_id
+            )
+            return
+
         original = (
             self._original_rows[
                 session_row_id

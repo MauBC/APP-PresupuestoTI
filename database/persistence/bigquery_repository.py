@@ -18,9 +18,11 @@ from database.persistence.contract import (
     APPLIED_STATUS,
     BATCH_STATUSES,
     BUDGET_MODULE_COLUMN,
+    INSERT_OPERATION,
     REVERTED_BATCH_ID_COLUMN,
     PENDING_STATUS,
     STAGING_COLUMNS,
+    UPDATE_OPERATION,
 )
 from database.persistence.models import (
     ConflictDetail,
@@ -982,6 +984,9 @@ class BigQueryPersistenceRepository:
                 staging_table_id=(
                     self.staging_table_id
                 ),
+                module_config=(
+                    self._module_config
+                ),
             )
         )
 
@@ -1270,6 +1275,25 @@ class BigQueryPersistenceRepository:
                     )
                 )
 
+            operation = (
+                str(
+                    row.operation
+                )
+                .strip()
+                .upper()
+            )
+
+            if operation not in {
+                UPDATE_OPERATION,
+                INSERT_OPERATION,
+            }:
+                raise (
+                    BigQueryPersistenceError(
+                        "Operacion staging "
+                        "no soportada."
+                    )
+                )
+
             if (
                 isinstance(
                     row.expected_version,
@@ -1279,13 +1303,63 @@ class BigQueryPersistenceRepository:
                     row.expected_version,
                     int,
                 )
-                or row.expected_version < 1
             ):
                 raise (
                     BigQueryPersistenceError(
                         "expected_version "
-                        "debe ser un entero "
-                        "mayor o igual a 1."
+                        "debe ser entero."
+                    )
+                )
+
+            if (
+                operation
+                == UPDATE_OPERATION
+                and row.expected_version < 1
+            ):
+                raise (
+                    BigQueryPersistenceError(
+                        "UPDATE requiere "
+                        "expected_version >= 1."
+                    )
+                )
+
+            if (
+                operation
+                == INSERT_OPERATION
+                and row.expected_version != 0
+            ):
+                raise (
+                    BigQueryPersistenceError(
+                        "INSERT requiere "
+                        "expected_version = 0."
+                    )
+                )
+
+            if (
+                operation
+                == INSERT_OPERATION
+                and not str(
+                    row.insert_payload
+                    or ""
+                ).strip()
+            ):
+                raise (
+                    BigQueryPersistenceError(
+                        "INSERT requiere "
+                        "insert_payload."
+                    )
+                )
+
+            if (
+                operation
+                == UPDATE_OPERATION
+                and row.insert_payload
+                is not None
+            ):
+                raise (
+                    BigQueryPersistenceError(
+                        "UPDATE no debe incluir "
+                        "insert_payload."
                     )
                 )
 
@@ -1420,6 +1494,3 @@ class BigQueryPersistenceRepository:
             )
 
         return text
-
-
-

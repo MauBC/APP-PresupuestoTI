@@ -139,11 +139,21 @@ class NewBudgetRowService:
             .dimension_columns
         }
 
-        for column in (
+        for (
+            column,
+            value_type,
+        ) in (
             self._config
-            .amount_columns
+            .insert_column_types
         ):
-            row[column] = ZERO
+            if column in row:
+                continue
+
+            if value_type == "NUMERIC":
+                row[column] = ZERO
+
+            else:
+                row[column] = None
 
         row.update(
             {

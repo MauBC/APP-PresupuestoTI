@@ -124,7 +124,7 @@ def test_staging_bigquery_schema():
 
     assert len(
         schema
-    ) == 18
+    ) == 20
 
     fields = schema_map(
         schema

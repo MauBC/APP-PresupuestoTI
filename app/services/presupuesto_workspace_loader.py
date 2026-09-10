@@ -201,15 +201,15 @@ class PresupuestoWorkspaceLoader:
         row_ids = []
 
         for change in pending_changes:
-            original = (
+            current = (
                 self._workspace
-                .get_original_row(
+                .get_row(
                     change.session_row_id
                 )
             )
 
             row_id = str(
-                original.get(
+                current.get(
                     ROW_ID_COLUMN,
                     ""
                 )

@@ -1,4 +1,5 @@
-﻿from copy import deepcopy
+
+from copy import deepcopy
 from datetime import (
     datetime,
     timezone,
@@ -6,13 +7,16 @@ from datetime import (
 from uuid import uuid4
 
 from app.config.presupuesto_app_config import (
+    HABILITADO_COLUMN,
     ROW_ID_COLUMN,
     VERSION_COLUMN,
 )
 from database.persistence.contract import (
     EDITABLE_COLUMNS,
     EDITABLE_VALUE_TYPES,
+    INSERT_OPERATION,
     PENDING_STATUS,
+    UPDATE_OPERATION,
 )
 from database.persistence.models import (
     PersistenceBatch,
@@ -102,7 +106,151 @@ def _required_version(
     return value
 
 
-def _build_row_change(
+def _editable_values(
+    current,
+):
+    values = []
+
+    for column in EDITABLE_COLUMNS:
+        if column not in current:
+            raise PersistenceBuildError(
+                "La fila no contiene la "
+                "columna editable requerida: "
+                f"{column}"
+            )
+
+        values.append(
+            (
+                column,
+                deepcopy(
+                    current.get(
+                        column
+                    )
+                ),
+            )
+        )
+
+    return tuple(values)
+
+
+def _build_insert_row_change(
+    workspace,
+    pending_change,
+) -> PersistenceRowChange:
+    session_row_id = (
+        pending_change.session_row_id
+    )
+
+    current = workspace.get_row(
+        session_row_id
+    )
+
+    row_id = _required_text(
+        current.get(
+            ROW_ID_COLUMN
+        ),
+        ROW_ID_COLUMN,
+    )
+
+    version = _required_version(
+        current.get(
+            VERSION_COLUMN
+        )
+    )
+
+    if version != 1:
+        raise PersistenceBuildError(
+            "Una fila INSERT debe iniciar "
+            "con version 1."
+        )
+
+    config = (
+        workspace.module_config
+    )
+
+    insert_values = []
+
+    for (
+        column,
+        value_type,
+    ) in (
+        config.insert_column_types
+    ):
+        if column not in current:
+            raise PersistenceBuildError(
+                "La nueva fila no contiene "
+                "la columna requerida para "
+                f"INSERT: {column}"
+            )
+
+        insert_values.append(
+            (
+                column,
+                deepcopy(
+                    current.get(
+                        column
+                    )
+                ),
+            )
+        )
+
+    field_changes = [
+        PersistenceFieldChange(
+            column=HABILITADO_COLUMN,
+            before=None,
+            after=deepcopy(
+                current.get(
+                    HABILITADO_COLUMN,
+                    True,
+                )
+            ),
+            value_type="BOOLEAN",
+        )
+    ]
+
+    for (
+        column,
+        value_type,
+    ) in config.insert_column_types:
+        value = current.get(
+            column
+        )
+
+        if value is None:
+            continue
+
+        field_changes.append(
+            PersistenceFieldChange(
+                column=column,
+                before=None,
+                after=deepcopy(
+                    value
+                ),
+                value_type=(
+                    value_type
+                ),
+            )
+        )
+
+    return PersistenceRowChange(
+        row_id=row_id,
+        expected_version=0,
+        field_changes=tuple(
+            field_changes
+        ),
+        editable_values=(
+            _editable_values(
+                current
+            )
+        ),
+        operation=INSERT_OPERATION,
+        insert_values=tuple(
+            insert_values
+        ),
+    )
+
+
+def _build_update_row_change(
     workspace,
     pending_change,
 ) -> PersistenceRowChange:
@@ -236,25 +384,6 @@ def _build_row_change(
             "no contiene cambios persistibles."
         )
 
-    editable_values = []
-
-    for column in EDITABLE_COLUMNS:
-        if column not in current:
-            raise PersistenceBuildError(
-                "La fila no contiene la "
-                "columna editable requerida: "
-                f"{column}"
-            )
-
-        editable_values.append(
-            (
-                column,
-                deepcopy(
-                    current.get(column)
-                ),
-            )
-        )
-
     return PersistenceRowChange(
         row_id=row_id,
         expected_version=(
@@ -263,9 +392,42 @@ def _build_row_change(
         field_changes=tuple(
             persistent_changes
         ),
-        editable_values=tuple(
-            editable_values
+        editable_values=(
+            _editable_values(
+                current
+            )
         ),
+        operation=UPDATE_OPERATION,
+    )
+
+
+def _build_row_change(
+    workspace,
+    pending_change,
+) -> PersistenceRowChange:
+    is_new = getattr(
+        workspace,
+        "is_new_row",
+        None,
+    )
+
+    if (
+        is_new is not None
+        and is_new(
+            pending_change
+            .session_row_id
+        )
+    ):
+        return (
+            _build_insert_row_change(
+                workspace,
+                pending_change,
+            )
+        )
+
+    return _build_update_row_change(
+        workspace,
+        pending_change,
     )
 
 

@@ -1,3 +1,4 @@
+
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
     USD_COLUMNS,
@@ -14,6 +15,15 @@ BATCH_STATUSES = (
     APPLIED_STATUS,
     CONFLICT_STATUS,
     FAILED_STATUS,
+)
+
+
+UPDATE_OPERATION = "UPDATE"
+INSERT_OPERATION = "INSERT"
+
+PERSISTENCE_OPERATIONS = (
+    UPDATE_OPERATION,
+    INSERT_OPERATION,
 )
 
 
@@ -116,12 +126,23 @@ AUDIT_NULLABLE_COLUMNS = (
 )
 
 
+STAGING_OPERATION_COLUMN = (
+    "operation"
+)
+
+STAGING_INSERT_PAYLOAD_COLUMN = (
+    "insert_payload"
+)
+
+
 STAGING_COLUMNS = (
     "batch_id",
     "row_id",
     "expected_version",
     *EDITABLE_COLUMNS,
     "staged_at",
+    STAGING_OPERATION_COLUMN,
+    STAGING_INSERT_PAYLOAD_COLUMN,
 )
 
 
@@ -135,9 +156,15 @@ STAGING_TYPES = {
         for column in USD_COLUMNS
     },
     "staged_at": "TIMESTAMP",
+    STAGING_OPERATION_COLUMN:
+        "STRING",
+    STAGING_INSERT_PAYLOAD_COLUMN:
+        "STRING",
 }
 
 
-STAGING_NULLABLE_COLUMNS = tuple(
-    USD_COLUMNS
+STAGING_NULLABLE_COLUMNS = (
+    *USD_COLUMNS,
+    STAGING_OPERATION_COLUMN,
+    STAGING_INSERT_PAYLOAD_COLUMN,
 )

@@ -1,6 +1,12 @@
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+from database.persistence.contract import (
+    INSERT_OPERATION,
+    UPDATE_OPERATION,
+)
 
 
 @dataclass(
@@ -32,8 +38,42 @@ class PersistenceRowChange:
         ...
     ]
 
+    operation: str = (
+        UPDATE_OPERATION
+    )
+
+    insert_values: tuple[
+        tuple[str, Any],
+        ...
+    ] = ()
+
+    @property
+    def is_insert(
+        self,
+    ) -> bool:
+        return (
+            self.operation
+            .strip()
+            .upper()
+            == INSERT_OPERATION
+        )
+
+    @property
+    def is_update(
+        self,
+    ) -> bool:
+        return (
+            self.operation
+            .strip()
+            .upper()
+            == UPDATE_OPERATION
+        )
+
     @property
     def version_after(self) -> int:
+        if self.is_insert:
+            return 1
+
         return (
             self.expected_version
             + 1
@@ -50,6 +90,13 @@ class PersistenceRowChange:
     ) -> dict[str, Any]:
         return dict(
             self.editable_values
+        )
+
+    def insert_dict(
+        self,
+    ) -> dict[str, Any]:
+        return dict(
+            self.insert_values
         )
 
 
@@ -103,6 +150,39 @@ class StagingRow:
 
     staged_at: datetime
 
+    operation: str = (
+        UPDATE_OPERATION
+    )
+
+    insert_payload: str | None = None
+
+    insert_values: tuple[
+        tuple[str, Any],
+        ...
+    ] = ()
+
+    @property
+    def is_insert(
+        self,
+    ) -> bool:
+        return (
+            self.operation
+            .strip()
+            .upper()
+            == INSERT_OPERATION
+        )
+
+    @property
+    def is_update(
+        self,
+    ) -> bool:
+        return (
+            self.operation
+            .strip()
+            .upper()
+            == UPDATE_OPERATION
+        )
+
     def as_record(
         self,
     ) -> dict[str, Any]:
@@ -121,6 +201,14 @@ class StagingRow:
         record[
             "staged_at"
         ] = self.staged_at
+
+        record[
+            "operation"
+        ] = self.operation
+
+        record[
+            "insert_payload"
+        ] = self.insert_payload
 
         return record
 

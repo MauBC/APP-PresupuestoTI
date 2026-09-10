@@ -1,11 +1,16 @@
-﻿from datetime import (
+
+import json
+from datetime import (
     datetime,
     timezone,
 )
+from decimal import Decimal
 
 from database.persistence.contract import (
     EDITABLE_COLUMNS,
+    INSERT_OPERATION,
     PENDING_STATUS,
+    UPDATE_OPERATION,
 )
 from database.persistence.models import (
     PersistenceBatch,
@@ -41,6 +46,56 @@ def _normalize_timestamp(
 
     return value.astimezone(
         timezone.utc
+    )
+
+
+def _json_default(
+    value,
+):
+    if isinstance(
+        value,
+        Decimal,
+    ):
+        return format(
+            value,
+            "f",
+        )
+
+    if isinstance(
+        value,
+        datetime,
+    ):
+        return (
+            value
+            .astimezone(
+                timezone.utc
+            )
+            .isoformat()
+        )
+
+    raise TypeError(
+        "Valor no serializable "
+        "en insert_payload: "
+        f"{type(value).__name__}"
+    )
+
+
+def _insert_payload(
+    row,
+) -> str | None:
+    if not row.is_insert:
+        return None
+
+    return json.dumps(
+        dict(
+            row.insert_values
+        ),
+        ensure_ascii=False,
+        separators=(
+            ",",
+            ":",
+        ),
+        default=_json_default,
     )
 
 
@@ -91,6 +146,44 @@ def build_staging_rows(
                 "el contrato de staging."
             )
 
+        operation = (
+            str(
+                row.operation
+            )
+            .strip()
+            .upper()
+        )
+
+        if operation not in {
+            UPDATE_OPERATION,
+            INSERT_OPERATION,
+        }:
+            raise StagingBuildError(
+                "Operacion de persistencia "
+                "no soportada: "
+                f"{row.operation}"
+            )
+
+        if (
+            operation
+            == UPDATE_OPERATION
+            and row.expected_version < 1
+        ):
+            raise StagingBuildError(
+                "UPDATE requiere "
+                "expected_version >= 1."
+            )
+
+        if (
+            operation
+            == INSERT_OPERATION
+            and row.expected_version != 0
+        ):
+            raise StagingBuildError(
+                "INSERT requiere "
+                "expected_version = 0."
+            )
+
         result.append(
             StagingRow(
                 batch_id=batch.batch_id,
@@ -102,6 +195,15 @@ def build_staging_rows(
                     row.editable_values
                 ),
                 staged_at=staged_at,
+                operation=operation,
+                insert_payload=(
+                    _insert_payload(
+                        row
+                    )
+                ),
+                insert_values=(
+                    row.insert_values
+                ),
             )
         )
 
