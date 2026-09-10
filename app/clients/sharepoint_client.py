@@ -54,6 +54,12 @@ class SharePointClient:
         self._lists = None
         self._list_cache = {}
 
+    @property
+    def graph_client(
+        self,
+    ):
+        return self._graph
+
     def get_site(
         self,
     ) -> dict:
