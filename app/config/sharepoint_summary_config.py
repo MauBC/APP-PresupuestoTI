@@ -24,11 +24,6 @@ CAPEX_SHAREPOINT_COLUMN_SPECS = (
         kind="text",
     ),
     SharePointColumnSpec(
-        name="Sociedad",
-        display_name="Sociedad",
-        kind="text",
-    ),
-    SharePointColumnSpec(
         name="Responsable",
         display_name="Responsable",
         kind="text",
@@ -39,26 +34,10 @@ CAPEX_SHAREPOINT_COLUMN_SPECS = (
         kind="text",
     ),
     SharePointColumnSpec(
-        name="VPAprobador",
-        display_name="VP Aprobador",
-        kind="text",
-    ),
-    SharePointColumnSpec(
-        name="NombreInversion",
-        display_name="Nombre de Inversion",
-        kind="text",
-    ),
-    SharePointColumnSpec(
         name="TotalUSD",
         display_name="Total USD",
         kind="number",
         decimal_places="two",
-    ),
-    SharePointColumnSpec(
-        name="RegistrosOrigen",
-        display_name="Registros Origen",
-        kind="number",
-        decimal_places="none",
     ),
     SharePointColumnSpec(
         name="SourceBatchId",
@@ -71,17 +50,6 @@ CAPEX_SHAREPOINT_COLUMN_SPECS = (
         display_name="Sync Run Id",
         kind="text",
         max_length=100,
-    ),
-    SharePointColumnSpec(
-        name="UpdatedAt",
-        display_name="Updated At",
-        kind="dateTime",
-    ),
-    SharePointColumnSpec(
-        name="Modulo",
-        display_name="Modulo",
-        kind="text",
-        max_length=20,
     ),
 )
 
@@ -103,40 +71,27 @@ CAPEX_SHAREPOINT_BUSINESS_FIELDS = {
         "vicepresidencia",
     "Pais":
         "pais",
-    "Sociedad":
-        "sociedad",
     "Responsable":
         "responsable",
     "GerenteAprobador":
         "gerente_aprobador",
-    "VPAprobador":
-        "vp_aprobador",
-    "NombreInversion":
-        "nombre_inversion",
     "TotalUSD":
         "total_usd",
-    "RegistrosOrigen":
-        "registros_origen",
 }
+
 
 CAPEX_SHAREPOINT_COMPARE_FIELDS = (
     "Title",
     "SummaryKey",
     "Vicepresidencia",
     "Pais",
-    "Sociedad",
     "Responsable",
     "GerenteAprobador",
-    "VPAprobador",
-    "NombreInversion",
     "TotalUSD",
-    "RegistrosOrigen",
-    "Modulo",
 )
 
 
 CAPEX_SHAREPOINT_METADATA_FIELDS = (
     "SourceBatchId",
     "SyncRunId",
-    "UpdatedAt",
 )

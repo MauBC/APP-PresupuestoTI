@@ -22,7 +22,7 @@ class SharePointSummaryMapper:
         field_mapping,
         compare_fields,
         title_source,
-        module,
+        module=None,
     ):
         self._field_mapping = dict(
             field_mapping
@@ -36,9 +36,11 @@ class SharePointSummaryMapper:
             title_source
         ).strip()
 
-        self._module = str(
-            module
-        ).strip().upper()
+        self._module = (
+            str(module).strip().upper()
+            if module is not None
+            else None
+        )
 
         if not self._title_source:
             raise ValueError(
@@ -46,10 +48,15 @@ class SharePointSummaryMapper:
                 "estar vacio."
             )
 
-        if not self._module:
+        if (
+            "Modulo"
+            in self._compare_fields
+            and not self._module
+        ):
             raise ValueError(
-                "module no puede "
-                "estar vacio."
+                "module es obligatorio "
+                "cuando Modulo forma parte "
+                "del contrato SharePoint."
             )
 
     def map_result(
@@ -131,9 +138,15 @@ class SharePointSummaryMapper:
         fields = {
             "Title":
                 title,
-            "Modulo":
-                self._module,
         }
+
+        if (
+            "Modulo"
+            in self._compare_fields
+        ):
+            fields[
+                "Modulo"
+            ] = self._module
 
         for (
             sharepoint_field,

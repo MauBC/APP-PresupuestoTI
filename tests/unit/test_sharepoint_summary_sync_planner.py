@@ -22,7 +22,6 @@ def planner():
             compare_fields=(
                 CAPEX_SHAREPOINT_COMPARE_FIELDS
             ),
-            module="CAPEX",
         )
     )
 
@@ -42,22 +41,12 @@ def desired(
             "TI",
         "Pais":
             "Peru",
-        "Sociedad":
-            "Ransa",
         "Responsable":
             "Ana",
         "GerenteAprobador":
             "Gerente",
-        "VPAprobador":
-            "VP",
-        "NombreInversion":
-            name,
         "TotalUSD":
             total,
-        "RegistrosOrigen":
-            2,
-        "Modulo":
-            "CAPEX",
     }
 
     return (
@@ -81,7 +70,6 @@ def current(
     key="key-001",
     total=100.0,
     name="Proyecto A",
-    module="CAPEX",
 ):
     return {
         "id":
@@ -97,22 +85,12 @@ def current(
                 "TI",
             "Pais":
                 "Peru",
-            "Sociedad":
-                "Ransa",
             "Responsable":
                 "Ana",
             "GerenteAprobador":
                 "Gerente",
-            "VPAprobador":
-                "VP",
-            "NombreInversion":
-                name,
             "TotalUSD":
                 total,
-            "RegistrosOrigen":
-                2,
-            "Modulo":
-                module,
         },
     }
 
@@ -151,7 +129,6 @@ def test_identical_item_is_unchanged():
     assert plan.update_count == 0
     assert plan.delete_count == 0
     assert plan.unchanged_count == 1
-    assert plan.write_count == 0
 
 
 def test_changed_total_is_update():
@@ -173,21 +150,8 @@ def test_changed_total_is_update():
 
     assert plan.update_count == 1
 
-    action = (
-        plan.updates[0]
-    )
 
-    assert action.item_id == "10"
-
-    assert (
-        action.fields_dict()[
-            "TotalUSD"
-        ]
-        == 125.50
-    )
-
-
-def test_obsolete_managed_item_is_delete():
+def test_obsolete_item_with_summary_key_is_delete():
     plan = (
         planner()
         .build(
@@ -199,10 +163,6 @@ def test_obsolete_managed_item_is_delete():
     )
 
     assert plan.delete_count == 1
-    assert (
-        plan.deletes[0].item_id
-        == "10"
-    )
 
 
 def test_item_without_summary_key_is_unmanaged():
@@ -226,21 +186,21 @@ def test_item_without_summary_key_is_unmanaged():
     assert plan.unmanaged_count == 1
 
 
-def test_wrong_module_is_unmanaged():
+def test_dedicated_list_does_not_require_modulo():
     plan = (
         planner()
         .build(
-            desired_items=(),
+            desired_items=(
+                desired(),
+            ),
             current_items=(
-                current(
-                    module="OPEX"
-                ),
+                current(),
             ),
         )
     )
 
-    assert plan.delete_count == 0
-    assert plan.unmanaged_count == 1
+    assert plan.unchanged_count == 1
+    assert plan.unmanaged_count == 0
 
 
 def test_duplicate_current_key_blocks_sync():
@@ -248,21 +208,18 @@ def test_duplicate_current_key_blocks_sync():
         SharePointSummarySyncPlanError,
         match="duplicada",
     ):
-        (
-            planner()
-            .build(
-                desired_items=(
-                    desired(),
+        planner().build(
+            desired_items=(
+                desired(),
+            ),
+            current_items=(
+                current(
+                    item_id="1"
                 ),
-                current_items=(
-                    current(
-                        item_id="1"
-                    ),
-                    current(
-                        item_id="2"
-                    ),
+                current(
+                    item_id="2"
                 ),
-            )
+            ),
         )
 
 

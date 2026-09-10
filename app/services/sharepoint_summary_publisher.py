@@ -150,10 +150,6 @@ class SharePointSummaryPublisher:
                 source_batch_value,
             "SyncRunId":
                 sync_run_id_value,
-            "UpdatedAt":
-                self._timestamp_text(
-                    timestamp
-                ),
         }
 
         upserts = []

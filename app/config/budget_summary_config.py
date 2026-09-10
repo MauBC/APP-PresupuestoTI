@@ -21,10 +21,8 @@ CAPEX_POWERAPPS_SUMMARY = (
         group_by=(
             "vicepresidencia",
             "pais",
-            "sociedad",
             "responsable",
             "gerente_aprobador",
-            "vp_aprobador",
             "nombre_inversion",
         ),
         amount_column=(

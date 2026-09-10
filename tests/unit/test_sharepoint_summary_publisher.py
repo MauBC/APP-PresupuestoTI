@@ -144,7 +144,7 @@ def test_publisher_creates_with_metadata():
         == "sync-001"
     )
 
-    assert "UpdatedAt" in fields
+    assert "UpdatedAt" not in fields
 
 
 def test_updates_are_executed_before_deletes():

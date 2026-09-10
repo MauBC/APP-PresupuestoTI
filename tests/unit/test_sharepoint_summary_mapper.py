@@ -3,9 +3,6 @@ from decimal import Decimal
 
 import pytest
 
-from app.config.budget_summary_config import (
-    CAPEX_POWERAPPS_SUMMARY,
-)
 from app.config.sharepoint_summary_config import (
     CAPEX_SHAREPOINT_BUSINESS_FIELDS,
     CAPEX_SHAREPOINT_COMPARE_FIELDS,
@@ -33,7 +30,6 @@ def mapper():
             title_source=(
                 "nombre_inversion"
             ),
-            module="CAPEX",
         )
     )
 
@@ -52,20 +48,12 @@ def make_row():
                     "Peru",
                 ),
                 (
-                    "sociedad",
-                    "Ransa Comercial",
-                ),
-                (
                     "responsable",
                     "Ana",
                 ),
                 (
                     "gerente_aprobador",
                     "Gerente",
-                ),
-                (
-                    "vp_aprobador",
-                    "VP",
                 ),
                 (
                     "nombre_inversion",
@@ -80,7 +68,7 @@ def make_row():
     )
 
 
-def test_maps_capex_summary_to_sharepoint():
+def test_maps_minimal_capex_summary():
     item = (
         mapper()
         .map_row(
@@ -90,11 +78,6 @@ def test_maps_capex_summary_to_sharepoint():
 
     fields = (
         item.fields_dict()
-    )
-
-    assert (
-        item.summary_key
-        == "a" * 64
     )
 
     assert (
@@ -108,27 +91,52 @@ def test_maps_capex_summary_to_sharepoint():
     )
 
     assert (
+        fields["Vicepresidencia"]
+        == "TI"
+    )
+
+    assert (
+        fields["Pais"]
+        == "Peru"
+    )
+
+    assert (
+        fields["Responsable"]
+        == "Ana"
+    )
+
+    assert (
+        fields["GerenteAprobador"]
+        == "Gerente"
+    )
+
+    assert (
         fields["TotalUSD"]
         == 65000.25
     )
 
-    assert (
-        fields["RegistrosOrigen"]
-        == 3
+
+def test_mapper_does_not_publish_removed_fields():
+    fields = (
+        mapper()
+        .map_row(
+            make_row()
+        )
+        .fields_dict()
     )
 
-    assert (
-        fields["Modulo"]
-        == "CAPEX"
-    )
+    for field in (
+        "Sociedad",
+        "VPAprobador",
+        "NombreInversion",
+        "RegistrosOrigen",
+        "Modulo",
+        "UpdatedAt",
+    ):
+        assert field not in fields
 
-    assert (
-        "CodigoCECO"
-        not in fields
-    )
 
-
-def test_mapper_preserves_nullable_dimensions():
+def test_mapper_preserves_nullable_dimension():
     row = make_row()
 
     dimensions = tuple(

@@ -23,15 +23,17 @@ class SharePointSummarySyncPlanner:
         self,
         *,
         compare_fields,
-        module,
+        module=None,
     ):
         self._compare_fields = tuple(
             compare_fields
         )
 
-        self._module = str(
-            module
-        ).strip().upper()
+        self._module = (
+            str(module).strip().upper()
+            if module is not None
+            else None
+        )
 
         if not self._compare_fields:
             raise ValueError(
@@ -39,10 +41,15 @@ class SharePointSummarySyncPlanner:
                 "estar vacio."
             )
 
-        if not self._module:
+        if (
+            "Modulo"
+            in self._compare_fields
+            and not self._module
+        ):
             raise ValueError(
-                "module no puede "
-                "estar vacio."
+                "module es obligatorio "
+                "cuando Modulo forma parte "
+                "del contrato SharePoint."
             )
 
     def build(
@@ -127,24 +134,34 @@ class SharePointSummarySyncPlanner:
                 or ""
             ).strip()
 
-            module = str(
-                fields.get(
-                    "Modulo",
-                    "",
-                )
-                or ""
-            ).strip().upper()
-
-            if (
-                not key
-                or module != self._module
-            ):
+            if not key:
                 if item_id:
                     unmanaged.append(
                         item_id
                     )
 
                 continue
+
+            if (
+                "Modulo"
+                in self._compare_fields
+                and self._module
+            ):
+                module = str(
+                    fields.get(
+                        "Modulo",
+                        "",
+                    )
+                    or ""
+                ).strip().upper()
+
+                if module != self._module:
+                    if item_id:
+                        unmanaged.append(
+                            item_id
+                        )
+
+                    continue
 
             if not item_id:
                 raise (
