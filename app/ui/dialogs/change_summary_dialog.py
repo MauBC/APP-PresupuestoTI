@@ -1,3 +1,5 @@
+from PySide6.QtCore import Qt
+
 from decimal import Decimal
 
 from PySide6.QtGui import (
@@ -6,6 +8,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -117,6 +120,16 @@ class ChangeSummaryDialog(QDialog):
                 padding: 8px;
             }
 
+            QLabel#changeTypeSummary {
+                background-color: #F8F9FA;
+                color: #344054;
+                border: 1px solid #D8DEE4;
+                border-radius: 6px;
+                padding: 9px 12px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+
             QTabWidget::pane {
                 border: 1px solid #D8DEE4;
                 background-color: #FFFFFF;
@@ -146,6 +159,19 @@ class ChangeSummaryDialog(QDialog):
             }
 
             QLineEdit:focus {
+                border: 2px solid #2F7650;
+            }
+
+            QComboBox {
+                background-color: #FFFFFF;
+                color: #1F2937;
+                border: 1px solid #98A2B3;
+                border-radius: 6px;
+                padding: 7px 10px;
+                min-width: 170px;
+            }
+
+            QComboBox:focus {
                 border: 2px solid #2F7650;
             }
 
@@ -231,6 +257,18 @@ class ChangeSummaryDialog(QDialog):
 
         layout.addLayout(
             self._build_summary_cards()
+        )
+
+        self.type_summary_label = QLabel(
+            self._type_summary_text()
+        )
+
+        self.type_summary_label.setObjectName(
+            "changeTypeSummary"
+        )
+
+        layout.addWidget(
+            self.type_summary_label
         )
 
         self.tabs = QTabWidget()
@@ -541,6 +579,47 @@ class ChangeSummaryDialog(QDialog):
             1,
         )
 
+        type_label = QLabel(
+            "Tipo:"
+        )
+
+        self.detail_type_filter = (
+            QComboBox()
+        )
+
+        self.detail_type_filter.addItem(
+            "Todos",
+            "ALL",
+        )
+
+        self.detail_type_filter.addItem(
+            "Ediciones",
+            "EDITED",
+        )
+
+        self.detail_type_filter.addItem(
+            "Nuevas filas",
+            "NEW",
+        )
+
+        self.detail_type_filter.addItem(
+            "Deshabilitadas",
+            "DISABLED",
+        )
+
+        self.detail_type_filter.addItem(
+            "Reactivadas",
+            "REACTIVATED",
+        )
+
+        search_layout.addWidget(
+            type_label
+        )
+
+        search_layout.addWidget(
+            self.detail_type_filter
+        )
+
         layout.addLayout(
             search_layout
         )
@@ -581,6 +660,7 @@ class ChangeSummaryDialog(QDialog):
         )
 
         headers = [
+            "TIPO",
             *(
                 label.upper()
                 for _, label
@@ -622,7 +702,11 @@ class ChangeSummaryDialog(QDialog):
                 detail.context_map
             )
 
-            values = []
+            values = [
+                self._change_type_label(
+                    detail.change_type
+                )
+            ]
 
             for (
                 column,
@@ -663,11 +747,22 @@ class ChangeSummaryDialog(QDialog):
                     str(value)
                 )
 
-                if (
+                if column_index == 0:
+                    item.setData(
+                        Qt.ItemDataRole.UserRole,
+                        detail.change_type,
+                    )
+
+                    self._color_change_type_item(
+                        item,
+                        detail.change_type,
+                    )
+
+                elif (
                     column_index
                     >= len(
                         context_columns
-                    ) + 3
+                    ) + 4
                 ):
                     self._color_variation_item(
                         item,
@@ -703,23 +798,29 @@ class ChangeSummaryDialog(QDialog):
             self._filter_details
         )
 
+        self.detail_type_filter.currentIndexChanged.connect(
+            self._filter_details
+        )
+
         layout.addWidget(
             self.detail_table,
             1,
         )
 
-        footer = QLabel(
+        self.detail_footer = QLabel(
             f"{len(all_details):,} "
             "cambios detectados"
         )
 
-        footer.setObjectName(
+        self.detail_footer.setObjectName(
             "summarySubtitle"
         )
 
         layout.addWidget(
-            footer
+            self.detail_footer
         )
+
+        self._filter_details()
 
         return widget
 
@@ -791,54 +892,180 @@ class ChangeSummaryDialog(QDialog):
 
     def _filter_details(
         self,
-        text,
+        *_,
     ):
         needle = (
-            text
+            self.detail_search
+            .text()
             .strip()
             .lower()
         )
+
+        selected_type = (
+            self.detail_type_filter
+            .currentData()
+        )
+
+        visible_count = 0
 
         for row_index in range(
             self.detail_table
             .rowCount()
         ):
-            if not needle:
-                self.detail_table.setRowHidden(
-                    row_index,
-                    False,
-                )
-                continue
-
-            values = []
-
-            for column_index in range(
+            type_item = (
                 self.detail_table
-                .columnCount()
-            ):
-                item = (
+                .item(
+                    row_index,
+                    0,
+                )
+            )
+
+            row_type = (
+                type_item.data(
+                    Qt.ItemDataRole.UserRole
+                )
+                if type_item is not None
+                else None
+            )
+
+            type_matches = (
+                selected_type == "ALL"
+                or
+                row_type == selected_type
+            )
+
+            text_matches = True
+
+            if needle:
+                values = []
+
+                for column_index in range(
                     self.detail_table
-                    .item(
-                        row_index,
-                        column_index,
+                    .columnCount()
+                ):
+                    item = (
+                        self.detail_table
+                        .item(
+                            row_index,
+                            column_index,
+                        )
                     )
+
+                    if item is not None:
+                        values.append(
+                            item.text()
+                            .lower()
+                        )
+
+                text_matches = any(
+                    needle in value
+                    for value in values
                 )
 
-                if item is not None:
-                    values.append(
-                        item.text()
-                        .lower()
-                    )
-
-            matches = any(
-                needle in value
-                for value in values
+            visible = (
+                type_matches
+                and
+                text_matches
             )
 
             self.detail_table.setRowHidden(
                 row_index,
-                not matches,
+                not visible,
             )
+
+            if visible:
+                visible_count += 1
+
+        total = (
+            self.detail_table
+            .rowCount()
+        )
+
+        self.detail_footer.setText(
+            f"{visible_count:,} de "
+            f"{total:,} cambios visibles"
+        )
+
+    def _type_summary_text(
+        self,
+    ) -> str:
+        return (
+            "Operaciones por fila  |  "
+            f"Ediciones: "
+            f"{self._summary.edited_rows:,}  |  "
+            f"Nuevas: "
+            f"{self._summary.new_rows:,}  |  "
+            f"Deshabilitadas: "
+            f"{self._summary.disabled_rows:,}  |  "
+            f"Reactivadas: "
+            f"{self._summary.reactivated_rows:,}"
+        )
+
+    @staticmethod
+    def _change_type_label(
+        change_type,
+    ) -> str:
+        labels = {
+            "EDITED": "Editado",
+            "NEW": "Nueva fila",
+            "DISABLED": "Deshabilitado",
+            "REACTIVATED": "Reactivado",
+        }
+
+        return labels.get(
+            str(change_type),
+            str(change_type),
+        )
+
+    @staticmethod
+    def _color_change_type_item(
+        item,
+        change_type,
+    ):
+        styles = {
+            "EDITED": (
+                "#344054",
+                "#F2F4F7",
+            ),
+            "NEW": (
+                "#067647",
+                "#ECFDF3",
+            ),
+            "DISABLED": (
+                "#92400E",
+                "#FFF4E5",
+            ),
+            "REACTIVATED": (
+                "#067647",
+                "#ECFDF3",
+            ),
+        }
+
+        foreground, background = (
+            styles.get(
+                str(change_type),
+                (
+                    "#344054",
+                    "#F2F4F7",
+                ),
+            )
+        )
+
+        item.setForeground(
+            QBrush(
+                QColor(
+                    foreground
+                )
+            )
+        )
+
+        item.setBackground(
+            QBrush(
+                QColor(
+                    background
+                )
+            )
+        )
 
     @staticmethod
     def _field_label(

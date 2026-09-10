@@ -17,6 +17,11 @@ from app.services.presupuesto_workspace import (
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
 
+CHANGE_TYPE_EDITED = "EDITED"
+CHANGE_TYPE_NEW = "NEW"
+CHANGE_TYPE_DISABLED = "DISABLED"
+CHANGE_TYPE_REACTIVATED = "REACTIVATED"
+
 
 @dataclass(frozen=True)
 class VariationBreakdown:
@@ -49,6 +54,10 @@ class ChangeDetail:
 
     difference: Decimal | None
     variation_percent: Decimal | None
+
+    change_type: str = (
+        CHANGE_TYPE_EDITED
+    )
 
     @property
     def context_map(
@@ -132,6 +141,11 @@ class ChangeSummary:
         ...
     ]
 
+    edited_rows: int = 0
+    new_rows: int = 0
+    disabled_rows: int = 0
+    reactivated_rows: int = 0
+
 
 class PresupuestoChangeSummaryService:
     def __init__(
@@ -179,6 +193,13 @@ class PresupuestoChangeSummaryService:
 
         details = []
 
+        change_type_counts = {
+            CHANGE_TYPE_EDITED: 0,
+            CHANGE_TYPE_NEW: 0,
+            CHANGE_TYPE_DISABLED: 0,
+            CHANGE_TYPE_REACTIVATED: 0,
+        }
+
         country_column = (
             self._config.country_column
         )
@@ -205,6 +226,15 @@ class PresupuestoChangeSummaryService:
                     row_id
                 )
             )
+
+            change_type = self._change_type(
+                original,
+                current,
+            )
+
+            change_type_counts[
+                change_type
+            ] += 1
 
             original_amount = (
                 self._active_annual(
@@ -261,16 +291,35 @@ class PresupuestoChangeSummaryService:
             for field_change in (
                 row_change.changes
             ):
-                (
-                    field_difference,
-                    field_variation,
-                ) = (
-                    self._field_variation(
-                        field_change.column,
-                        field_change.before,
-                        field_change.after,
+                if (
+                    field_change.column
+                    == HABILITADO_COLUMN
+                ):
+                    field_difference = (
+                        self._money(
+                            simulated_amount
+                            - original_amount
+                        )
                     )
-                )
+
+                    field_variation = (
+                        self._variation_percent(
+                            original_amount,
+                            field_difference,
+                        )
+                    )
+
+                else:
+                    (
+                        field_difference,
+                        field_variation,
+                    ) = (
+                        self._field_variation(
+                            field_change.column,
+                            field_change.before,
+                            field_change.after,
+                        )
+                    )
 
                 details.append(
                     ChangeDetail(
@@ -292,6 +341,9 @@ class PresupuestoChangeSummaryService:
                         ),
                         variation_percent=(
                             field_variation
+                        ),
+                        change_type=(
+                            change_type
                         ),
                     )
                 )
@@ -351,6 +403,26 @@ class PresupuestoChangeSummaryService:
             details=tuple(
                 details
             ),
+            edited_rows=(
+                change_type_counts[
+                    CHANGE_TYPE_EDITED
+                ]
+            ),
+            new_rows=(
+                change_type_counts[
+                    CHANGE_TYPE_NEW
+                ]
+            ),
+            disabled_rows=(
+                change_type_counts[
+                    CHANGE_TYPE_DISABLED
+                ]
+            ),
+            reactivated_rows=(
+                change_type_counts[
+                    CHANGE_TYPE_REACTIVATED
+                ]
+            ),
         )
 
     def _build_context(
@@ -388,6 +460,46 @@ class PresupuestoChangeSummaryService:
         return tuple(
             result
         )
+
+    def _change_type(
+        self,
+        original,
+        current,
+    ) -> str:
+        if not original:
+            return CHANGE_TYPE_NEW
+
+        original_enabled = (
+            self._is_enabled(
+                original
+            )
+        )
+
+        current_enabled = (
+            self._is_enabled(
+                current
+            )
+        )
+
+        if (
+            original_enabled
+            and
+            not current_enabled
+        ):
+            return (
+                CHANGE_TYPE_DISABLED
+            )
+
+        if (
+            not original_enabled
+            and
+            current_enabled
+        ):
+            return (
+                CHANGE_TYPE_REACTIVATED
+            )
+
+        return CHANGE_TYPE_EDITED
 
     def _active_annual(
         self,
