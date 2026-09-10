@@ -189,6 +189,392 @@ class PresupuestoRepository:
             for row in result
         )
 
+    def get_catalog_values(
+        self,
+        column: str,
+        *,
+        filters=None,
+        limit: int = 500,
+    ) -> tuple[str, ...]:
+        allowed = set(
+            self._module_config
+            .dimension_columns
+        )
+
+        if column not in allowed:
+            raise ValueError(
+                "Columna de catalogo "
+                f"no valida: {column}"
+            )
+
+        if limit < 1:
+            raise ValueError(
+                "limit debe ser mayor "
+                "que cero."
+            )
+
+        if limit > 5000:
+            raise ValueError(
+                "limit no puede superar "
+                "5000."
+            )
+
+        clean_filters = {}
+
+        for (
+            filter_column,
+            filter_value,
+        ) in dict(
+            filters or {}
+        ).items():
+            if (
+                filter_column
+                not in allowed
+            ):
+                raise ValueError(
+                    "Filtro de catalogo "
+                    "no valido: "
+                    f"{filter_column}"
+                )
+
+            if (
+                filter_column
+                == column
+            ):
+                continue
+
+            if filter_value is None:
+                continue
+
+            value = str(
+                filter_value
+            ).strip()
+
+            if value:
+                clean_filters[
+                    filter_column
+                ] = value
+
+        table_ref = (
+            self._bigquery
+            .get_table_reference(
+                self._module_config
+                .main_table
+            )
+        )
+
+        conditions = [
+            "COALESCE(`habilitado`, TRUE)",
+            f"`{column}` IS NOT NULL",
+            (
+                "TRIM(CAST("
+                f"`{column}`"
+                " AS STRING)) != ''"
+            ),
+        ]
+
+        parameters = []
+
+        for (
+            index,
+            (
+                filter_column,
+                filter_value,
+            ),
+        ) in enumerate(
+            clean_filters.items()
+        ):
+            parameter_name = (
+                f"filter_{index}"
+            )
+
+            conditions.append(
+                "TRIM(CAST("
+                f"`{filter_column}`"
+                " AS STRING)) "
+                f"= @{parameter_name}"
+            )
+
+            parameters.append(
+                bigquery
+                .ScalarQueryParameter(
+                    parameter_name,
+                    "STRING",
+                    filter_value,
+                )
+            )
+
+        parameters.append(
+            bigquery
+            .ScalarQueryParameter(
+                "limit",
+                "INT64",
+                int(limit),
+            )
+        )
+
+        where_sql = (
+            "\n                AND "
+            .join(
+                conditions
+            )
+        )
+
+        sql = f"""
+            SELECT DISTINCT
+                TRIM(
+                    CAST(
+                        `{column}`
+                        AS STRING
+                    )
+                ) AS value
+
+            FROM `{table_ref}`
+
+            WHERE
+                {where_sql}
+
+            ORDER BY value
+            LIMIT @limit
+        """
+
+        job_config = (
+            bigquery
+            .QueryJobConfig(
+                query_parameters=(
+                    parameters
+                )
+            )
+        )
+
+        rows = (
+            self._bigquery
+            .client
+            .query(
+                sql,
+                job_config=job_config,
+                location=(
+                    self._bigquery
+                    .client
+                    .location
+                    if getattr(
+                        self._bigquery
+                        .client,
+                        "location",
+                        None,
+                    )
+                    else None
+                ),
+            )
+            .result()
+        )
+
+        return tuple(
+            str(
+                row["value"]
+            ).strip()
+            for row in rows
+            if str(
+                row["value"]
+                if row["value"]
+                is not None
+                else ""
+            ).strip()
+        )
+
+    def get_catalog_values(
+        self,
+        column: str,
+        *,
+        filters=None,
+        limit: int = 500,
+    ) -> tuple[str, ...]:
+        allowed = set(
+            self._module_config
+            .dimension_columns
+        )
+
+        if column not in allowed:
+            raise ValueError(
+                "Columna de catalogo "
+                f"no valida: {column}"
+            )
+
+        if limit < 1:
+            raise ValueError(
+                "limit debe ser mayor "
+                "que cero."
+            )
+
+        if limit > 5000:
+            raise ValueError(
+                "limit no puede superar "
+                "5000."
+            )
+
+        clean_filters = {}
+
+        for (
+            filter_column,
+            filter_value,
+        ) in dict(
+            filters or {}
+        ).items():
+            if (
+                filter_column
+                not in allowed
+            ):
+                raise ValueError(
+                    "Filtro de catalogo "
+                    "no valido: "
+                    f"{filter_column}"
+                )
+
+            if (
+                filter_column
+                == column
+            ):
+                continue
+
+            if filter_value is None:
+                continue
+
+            value = str(
+                filter_value
+            ).strip()
+
+            if value:
+                clean_filters[
+                    filter_column
+                ] = value
+
+        table_ref = (
+            self._bigquery
+            .get_table_reference(
+                self._module_config
+                .main_table
+            )
+        )
+
+        conditions = [
+            "COALESCE(`habilitado`, TRUE)",
+            f"`{column}` IS NOT NULL",
+            (
+                "TRIM(CAST("
+                f"`{column}`"
+                " AS STRING)) != ''"
+            ),
+        ]
+
+        parameters = []
+
+        for (
+            index,
+            (
+                filter_column,
+                filter_value,
+            ),
+        ) in enumerate(
+            clean_filters.items()
+        ):
+            parameter_name = (
+                f"filter_{index}"
+            )
+
+            conditions.append(
+                "TRIM(CAST("
+                f"`{filter_column}`"
+                " AS STRING)) "
+                f"= @{parameter_name}"
+            )
+
+            parameters.append(
+                bigquery
+                .ScalarQueryParameter(
+                    parameter_name,
+                    "STRING",
+                    filter_value,
+                )
+            )
+
+        parameters.append(
+            bigquery
+            .ScalarQueryParameter(
+                "limit",
+                "INT64",
+                int(limit),
+            )
+        )
+
+        where_sql = (
+            "\n                AND "
+            .join(
+                conditions
+            )
+        )
+
+        sql = f"""
+            SELECT DISTINCT
+                TRIM(
+                    CAST(
+                        `{column}`
+                        AS STRING
+                    )
+                ) AS value
+
+            FROM `{table_ref}`
+
+            WHERE
+                {where_sql}
+
+            ORDER BY value
+            LIMIT @limit
+        """
+
+        job_config = (
+            bigquery
+            .QueryJobConfig(
+                query_parameters=(
+                    parameters
+                )
+            )
+        )
+
+        rows = (
+            self._bigquery
+            .client
+            .query(
+                sql,
+                job_config=job_config,
+                location=(
+                    self._bigquery
+                    .client
+                    .location
+                    if getattr(
+                        self._bigquery
+                        .client,
+                        "location",
+                        None,
+                    )
+                    else None
+                ),
+            )
+            .result()
+        )
+
+        return tuple(
+            str(
+                row["value"]
+            ).strip()
+            for row in rows
+            if str(
+                row["value"]
+                if row["value"]
+                is not None
+                else ""
+            ).strip()
+        )
+
     def get_page(
         self,
         *,
