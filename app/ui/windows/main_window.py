@@ -642,6 +642,27 @@ class MainWindow(QMainWindow):
             self._sync_module_selector()
             return
 
+        presupuesto_page = getattr(
+            self,
+            "presupuesto_page",
+            None,
+        )
+
+        if (
+            presupuesto_page is not None
+            and presupuesto_page.is_busy
+        ):
+            show_info(
+                self,
+                "Operacion en curso",
+                "Espera a que termine "
+                "la carga de catalogos "
+                "antes de cambiar de modulo.",
+            )
+
+            self._sync_module_selector()
+            return
+
         config = (
             get_budget_module_config(
                 module

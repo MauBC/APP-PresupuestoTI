@@ -22,6 +22,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.services.current_actor_service import (
+    CurrentActorError,
+    resolve_current_actor,
+)
+from app.services.new_budget_row_service import (
+    NewBudgetRowService,
+)
 from app.services.presupuesto_change_summary_service import (
     PresupuestoChangeSummaryService,
 )
@@ -31,8 +38,14 @@ from app.ui.dialogs.change_summary_dialog import (
 from app.ui.dialogs.monthly_distribution_dialog import (
     MonthlyDistributionDialog,
 )
+from app.ui.dialogs.new_budget_row_dialog import (
+    NewBudgetRowDialog,
+)
 from app.ui.models.presupuesto_table_model import (
     PresupuestoTableModel,
+)
+from app.ui.workers.budget_catalog_loader import (
+    BudgetCatalogLoadThread,
 )
 
 
@@ -68,6 +81,9 @@ class PresupuestoPage(QWidget):
         self._workspace_ready = False
         self._loaded_once = False
 
+        self._new_row_catalog_thread = None
+        self._new_row_actor = None
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -91,10 +107,10 @@ class PresupuestoPage(QWidget):
         )
 
         subtitle = QLabel(
-            "Simula modificaciones en USD. "
-            "Todos los cambios permanecen "
-            "locales hasta que exista un "
-            "proceso de guardado aprobado."
+            "Modifica importes en USD y "
+            "prepara nuevas filas. Todos los "
+            "cambios permanecen locales hasta "
+            "usar Aplicar cambios."
         )
 
         subtitle.setObjectName(
@@ -135,6 +151,18 @@ class PresupuestoPage(QWidget):
             False
         )
 
+        self.new_row_button = QPushButton(
+            "Nueva fila"
+        )
+
+        self.new_row_button.setObjectName(
+            "primaryButton"
+        )
+
+        self.new_row_button.setEnabled(
+            False
+        )
+
         self.distribute_months_button = (
             QPushButton(
                 "Distribuir meses"
@@ -156,6 +184,10 @@ class PresupuestoPage(QWidget):
 
         toolbar.addWidget(
             self.page_size_combo
+        )
+
+        toolbar.addWidget(
+            self.new_row_button
         )
 
         toolbar.addWidget(
@@ -359,6 +391,10 @@ class PresupuestoPage(QWidget):
             self.refresh
         )
 
+        self.new_row_button.clicked.connect(
+            self.show_new_row_dialog
+        )
+
         self.distribute_months_button.clicked.connect(
             self.show_monthly_distribution
         )
@@ -402,12 +438,26 @@ class PresupuestoPage(QWidget):
         self._update_navigation()
         self._update_change_controls()
 
+    @property
+    def is_busy(
+        self,
+    ) -> bool:
+        return bool(
+            self._new_row_catalog_thread
+            is not None
+            and
+            self._new_row_catalog_thread
+            .isRunning()
+        )
+
     def set_workspace_ready(self):
         self._workspace_ready = True
 
         self.refresh_button.setEnabled(
             True
         )
+
+        self._update_new_row_button()
 
         self.status_label.setText(
             "Presupuesto local disponible."
@@ -424,6 +474,10 @@ class PresupuestoPage(QWidget):
         self._workspace_ready = False
 
         self.refresh_button.setEnabled(
+            False
+        )
+
+        self.new_row_button.setEnabled(
             False
         )
 
@@ -662,6 +716,269 @@ class PresupuestoPage(QWidget):
             bool(enabled)
         )
 
+    def _update_new_row_button(
+        self,
+    ):
+        if not hasattr(
+            self,
+            "new_row_button",
+        ):
+            return
+
+        busy = self.is_busy
+
+        enabled = (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+            and
+            not busy
+        )
+
+        self.new_row_button.setEnabled(
+            enabled
+        )
+
+        if busy:
+            self.new_row_button.setText(
+                "Cargando catalogos..."
+            )
+
+        else:
+            self.new_row_button.setText(
+                "Nueva fila"
+            )
+
+    def show_new_row_dialog(
+        self,
+    ):
+        if not (
+            self._workspace_ready
+            and self._workspace.is_loaded
+        ):
+            return
+
+        if self.is_busy:
+            return
+
+        try:
+            actor = (
+                resolve_current_actor()
+            )
+
+        except CurrentActorError as exc:
+            QMessageBox.warning(
+                self,
+                "Usuario no identificado",
+                str(exc),
+            )
+            return
+
+        self._new_row_actor = (
+            actor
+        )
+
+        self._new_row_catalog_thread = (
+            BudgetCatalogLoadThread(
+                self._workspace
+                .module_config,
+                parent=self,
+            )
+        )
+
+        self._new_row_catalog_thread.loaded.connect(
+            self._on_new_row_catalogs_loaded
+        )
+
+        self._new_row_catalog_thread.failed.connect(
+            self._on_new_row_catalogs_failed
+        )
+
+        self._new_row_catalog_thread.finished.connect(
+            self._on_new_row_catalogs_finished
+        )
+
+        self.status_label.setText(
+            "Cargando catalogos para "
+            "la nueva fila..."
+        )
+
+        self._update_new_row_button()
+
+        self._new_row_catalog_thread.start()
+
+    def _on_new_row_catalogs_loaded(
+        self,
+        catalogs,
+    ):
+        self._open_new_row_dialog(
+            catalogs
+        )
+
+    def _on_new_row_catalogs_failed(
+        self,
+        message,
+    ):
+        QMessageBox.warning(
+            self,
+            "Catalogos no disponibles",
+            "No se pudieron cargar los "
+            "catalogos desde BigQuery.\n\n"
+            "El formulario puede continuar "
+            "con campos libres.\n\n"
+            f"Detalle: {message}",
+        )
+
+        self._open_new_row_dialog(
+            {}
+        )
+
+    def _on_new_row_catalogs_finished(
+        self,
+    ):
+        if (
+            self._new_row_catalog_thread
+            is not None
+        ):
+            self._new_row_catalog_thread.deleteLater()
+
+            self._new_row_catalog_thread = None
+
+        self._new_row_actor = None
+
+        self._update_new_row_button()
+
+    def _open_new_row_dialog(
+        self,
+        catalogs,
+    ):
+        actor = (
+            self._new_row_actor
+        )
+
+        if not actor:
+            return
+
+        dialog = (
+            NewBudgetRowDialog(
+                module_config=(
+                    self._workspace
+                    .module_config
+                ),
+                catalogs=catalogs,
+                parent=self,
+            )
+        )
+
+        if not dialog.exec():
+            self.status_label.setText(
+                "Alta cancelada. "
+                "No se realizaron cambios."
+            )
+            return
+
+        try:
+            draft = (
+                NewBudgetRowService(
+                    self._workspace
+                    .module_config
+                )
+                .create_draft(
+                    dialog.dimensions(),
+                    actor=actor,
+                )
+            )
+
+            session_row_id = (
+                self._workspace
+                .add_new_row(
+                    draft.row
+                )
+            )
+
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "No se pudo crear la fila",
+                "La nueva fila no pudo "
+                "agregarse al Workspace.\n\n"
+                f"{type(exc).__name__}: {exc}",
+            )
+            return
+
+        last_page = max(
+            0,
+            (
+                self._workspace.row_count
+                - 1
+            )
+            // self._page_size,
+        )
+
+        self._load_page(
+            last_page
+        )
+
+        self._select_session_row(
+            session_row_id
+        )
+
+        self.status_label.setText(
+            "Nueva fila creada localmente. "
+            "Los importes iniciales son 0. "
+            "Puedes editar USD o usar "
+            "Distribuir meses. BigQuery "
+            "todavia no ha sido modificado."
+        )
+
+        self.workspace_changed.emit()
+
+    def _select_session_row(
+        self,
+        session_row_id,
+    ):
+        for source_row in range(
+            self.model.rowCount()
+        ):
+            if (
+                self.model
+                .session_row_id(
+                    source_row
+                )
+                != session_row_id
+            ):
+                continue
+
+            source_index = (
+                self.model.index(
+                    source_row,
+                    0,
+                )
+            )
+
+            proxy_index = (
+                self.proxy_model
+                .mapFromSource(
+                    source_index
+                )
+            )
+
+            if not proxy_index.isValid():
+                return
+
+            self.table.setCurrentIndex(
+                proxy_index
+            )
+
+            self.table.scrollTo(
+                proxy_index,
+                QAbstractItemView
+                .ScrollHint
+                .PositionAtCenter,
+            )
+
+            return
+
     def show_monthly_distribution(
         self,
     ):
@@ -875,6 +1192,8 @@ class PresupuestoPage(QWidget):
 
         else:
             self._update_navigation()
+
+        self._update_new_row_button()
 
     def _calculate_total_pages(self):
         if self._total_rows == 0:

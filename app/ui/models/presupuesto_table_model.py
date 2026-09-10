@@ -36,6 +36,10 @@ class PresupuestoTableModel(
         "#FFF1C7"
     )
 
+    NEW_ROW_BACKGROUND = QColor(
+        "#EAF7EE"
+    )
+
     DISABLED_BACKGROUND = QColor(
         "#F0F2F1"
     )
@@ -60,6 +64,7 @@ class PresupuestoTableModel(
         self._columns = ()
 
         self._original_rows = {}
+        self._new_row_ids = set()
 
         self._amount_columns = set(
             self._config.amount_columns
@@ -89,6 +94,7 @@ class PresupuestoTableModel(
         )
 
         self._original_rows = {}
+        self._new_row_ids = set()
 
         for row in self._rows:
             row_id = row.get(
@@ -105,6 +111,16 @@ class PresupuestoTableModel(
                 )
             )
 
+            if (
+                self._workspace
+                .is_new_row(
+                    row_id
+                )
+            ):
+                self._new_row_ids.add(
+                    row_id
+                )
+
         self.endResetModel()
 
     def clear(self):
@@ -113,6 +129,7 @@ class PresupuestoTableModel(
         self._rows = []
         self._columns = ()
         self._original_rows = {}
+        self._new_row_ids = set()
 
         self.endResetModel()
 
@@ -199,6 +216,15 @@ class PresupuestoTableModel(
             return value
 
         if role == Qt.ItemDataRole.BackgroundRole:
+            row_id = row.get(
+                SESSION_ROW_ID
+            )
+
+            if row_id in self._new_row_ids:
+                return (
+                    self.NEW_ROW_BACKGROUND
+                )
+
             if self._is_modified(
                 row,
                 column,
