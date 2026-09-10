@@ -34,6 +34,9 @@ from app.services.presupuesto_workspace import (
 from app.services.presupuesto_workspace_analysis_service import (
     PresupuestoWorkspaceAnalysisService,
 )
+from app.services.sharepoint_sync_queue import (
+    SharePointSyncRequestQueue,
+)
 from app.ui.dialogs.app_message_box import (
     show_error,
     show_info,
@@ -62,6 +65,9 @@ from app.ui.workers.presupuesto_reversal import (
 )
 from app.ui.workers.presupuesto_save import (
     PresupuestoSaveThread,
+)
+from app.ui.workers.sharepoint_summary_sync import (
+    CapexSharePointSummarySyncThread,
 )
 from app.ui.workers.workspace_loader import (
     WorkspaceLoadThread,
@@ -108,6 +114,19 @@ class MainWindow(QMainWindow):
         self._workspace_loader = None
         self._save_thread = None
         self._reversal_thread = None
+
+        self._sharepoint_sync_thread = None
+
+        self._sharepoint_sync_queue = (
+            SharePointSyncRequestQueue()
+        )
+
+        self._sharepoint_sync_status = (
+            "IDLE"
+        )
+
+        self._sharepoint_sync_last_error = None
+        self._sharepoint_sync_current_manual = False
 
         self._save_in_progress = False
         self._reversal_in_progress = False
@@ -471,6 +490,65 @@ class MainWindow(QMainWindow):
 
         layout.addSpacing(8)
 
+        self.sharepoint_sync_status_label = QLabel(
+            "SharePoint: listo"
+        )
+
+        self.sharepoint_sync_status_label.setObjectName(
+            "appSubtitle"
+        )
+
+        self.sharepoint_sync_status_label.setWordWrap(
+            True
+        )
+
+        self.sharepoint_sync_button = QPushButton(
+            "Actualizar SharePoint"
+        )
+
+        self.sharepoint_sync_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        self.sharepoint_sync_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #FFFFFF;
+                color: #2F7650;
+                border: 1px solid #2F7650;
+                border-radius: 7px;
+                padding: 9px 8px;
+                font-weight: 700;
+            }
+
+            QPushButton:hover {
+                background-color: #F2F8F4;
+            }
+
+            QPushButton:disabled {
+                background-color: #F2F4F7;
+                color: #98A2B3;
+                border-color: #D0D5DD;
+            }
+            """
+        )
+
+        self.sharepoint_sync_button.clicked.connect(
+            self._request_manual_sharepoint_sync
+        )
+
+        layout.addWidget(
+            self.sharepoint_sync_status_label
+        )
+
+        layout.addWidget(
+            self.sharepoint_sync_button
+        )
+
+        self._update_sharepoint_sync_ui()
+
+        layout.addSpacing(8)
+
         version_label = QLabel(
             f"Version {settings.APP_VERSION}"
         )
@@ -613,6 +691,20 @@ class MainWindow(QMainWindow):
             return
 
         if (
+            self._sharepoint_sync_thread is not None
+            and self._sharepoint_sync_thread.isRunning()
+        ):
+            show_info(
+                self,
+                "Sincronizacion en curso",
+                "Espera a que termine la sincronizacion "
+                "con SharePoint antes de cambiar "
+                "entre OPEX y CAPEX.",
+            )
+            self._sync_module_selector()
+            return
+
+        if (
             self._workspace_loader
             is not None
             and self._workspace_loader
@@ -727,6 +819,352 @@ class MainWindow(QMainWindow):
             not is_opex
         )
 
+
+        self._update_sharepoint_sync_ui()
+
+    def _sharepoint_sync_is_capex(
+        self,
+    ) -> bool:
+        return (
+            self.active_module.module
+            == BudgetModule.CAPEX
+        )
+
+    def _request_manual_sharepoint_sync(
+        self,
+    ):
+        if not self._sharepoint_sync_is_capex():
+            show_info(
+                self,
+                "SharePoint OPEX en pausa",
+                "La sincronizacion de OPEX "
+                "permanece deshabilitada hasta "
+                "despues de la presentacion.",
+            )
+
+            return
+
+        if not self.workspace.is_loaded:
+            show_info(
+                self,
+                "Actualizar SharePoint",
+                "CAPEX todavia no se encuentra "
+                "cargado.",
+            )
+
+            return
+
+        if (
+            self._save_in_progress
+            or self._reversal_in_progress
+        ):
+            show_info(
+                self,
+                "Operacion en curso",
+                "Espera a que termine la "
+                "operacion de BigQuery.",
+            )
+
+            return
+
+        if self.workspace.has_changes:
+            show_warning(
+                self,
+                "Cambios locales pendientes",
+                "SharePoint se actualiza desde "
+                "el estado confirmado de BigQuery."
+                "\n\n"
+                "Aplica o descarta primero los "
+                "cambios locales.",
+            )
+
+            return
+
+        self._queue_sharepoint_sync(
+            source_batch_id=None,
+            manual=True,
+        )
+
+    def _queue_sharepoint_sync(
+        self,
+        *,
+        source_batch_id=None,
+        manual=False,
+    ):
+        if not self._sharepoint_sync_is_capex():
+            return
+
+        request = (
+            self._sharepoint_sync_queue
+            .request(
+                source_batch_id=(
+                    source_batch_id
+                ),
+                manual=manual,
+            )
+        )
+
+        if request is None:
+            self._sharepoint_sync_status = (
+                "PENDING"
+            )
+
+            self._update_sharepoint_sync_ui()
+            return
+
+        self._start_sharepoint_sync(
+            request
+        )
+
+    def _start_sharepoint_sync(
+        self,
+        request,
+    ):
+        self._sharepoint_sync_status = (
+            "SYNCING"
+        )
+
+        self._sharepoint_sync_last_error = None
+
+        self._sharepoint_sync_current_manual = (
+            bool(
+                request.manual
+            )
+        )
+
+        self._sharepoint_sync_thread = (
+            CapexSharePointSummarySyncThread(
+                source_batch_id=(
+                    request.source_batch_id
+                ),
+                parent=self,
+            )
+        )
+
+        self._sharepoint_sync_thread.completed.connect(
+            self._on_sharepoint_sync_completed
+        )
+
+        self._sharepoint_sync_thread.failed.connect(
+            self._on_sharepoint_sync_failed
+        )
+
+        self._sharepoint_sync_thread.finished.connect(
+            self._on_sharepoint_sync_finished
+        )
+
+        self._update_sharepoint_sync_ui()
+
+        self._sharepoint_sync_thread.start()
+
+    def _on_sharepoint_sync_completed(
+        self,
+        outcome,
+    ):
+        self._sharepoint_sync_status = (
+            "OK"
+        )
+
+        self._sharepoint_sync_last_error = None
+
+        result = (
+            outcome.publish_result
+        )
+
+        self._update_sharepoint_sync_ui()
+
+        if self._sharepoint_sync_current_manual:
+            show_info(
+                self,
+                "SharePoint actualizado",
+                "El resumen CAPEX quedo "
+                "sincronizado correctamente."
+                "\n\n"
+                f"Creados: "
+                f"{result.created_count:,}\n"
+                f"Actualizados: "
+                f"{result.updated_count:,}\n"
+                f"Eliminados: "
+                f"{result.deleted_count:,}\n"
+                f"Escrituras: "
+                f"{result.write_count:,}",
+            )
+
+    def _on_sharepoint_sync_failed(
+        self,
+        failure,
+    ):
+        self._sharepoint_sync_status = (
+            "ERROR"
+        )
+
+        self._sharepoint_sync_last_error = (
+            failure.message
+        )
+
+        self._update_sharepoint_sync_ui()
+
+        show_warning(
+            self,
+            "SharePoint pendiente",
+            "BigQuery permanece guardado "
+            "correctamente, pero no se pudo "
+            "actualizar Resumen_Capex."
+            "\n\n"
+            "No se revertira ni se repetira "
+            "el batch de BigQuery."
+            "\n\n"
+            "Puedes usar el boton "
+            "'Reintentar SharePoint'."
+            "\n\n"
+            f"Detalle: {failure.message}",
+        )
+
+    def _on_sharepoint_sync_finished(
+        self,
+    ):
+        if (
+            self._sharepoint_sync_thread
+            is not None
+        ):
+            self._sharepoint_sync_thread.deleteLater()
+            self._sharepoint_sync_thread = None
+
+        self._sharepoint_sync_current_manual = False
+
+        next_request = (
+            self._sharepoint_sync_queue
+            .complete()
+        )
+
+        if next_request is not None:
+            self._start_sharepoint_sync(
+                next_request
+            )
+
+            return
+
+        self._update_sharepoint_sync_ui()
+
+    def _update_sharepoint_sync_ui(
+        self,
+    ):
+        label = getattr(
+            self,
+            "sharepoint_sync_status_label",
+            None,
+        )
+
+        button = getattr(
+            self,
+            "sharepoint_sync_button",
+            None,
+        )
+
+        if (
+            label is None
+            or button is None
+        ):
+            return
+
+        if not self._sharepoint_sync_is_capex():
+            label.setText(
+                "SharePoint: OPEX en pausa"
+            )
+
+            button.setText(
+                "Actualizar SharePoint"
+            )
+
+            button.setEnabled(
+                False
+            )
+
+            button.setToolTip(
+                "Resumen_Opex permanece "
+                "sin modificaciones hasta "
+                "despues de la presentacion."
+            )
+
+            return
+
+        status = (
+            self._sharepoint_sync_status
+        )
+
+        if (
+            self._sharepoint_sync_queue
+            .has_pending
+        ):
+            status = "PENDING"
+
+        labels = {
+            "IDLE":
+                "SharePoint: listo",
+            "SYNCING":
+                "SharePoint: sincronizando...",
+            "PENDING":
+                "SharePoint: actualizacion pendiente",
+            "OK":
+                "SharePoint: actualizado",
+            "ERROR":
+                "SharePoint: error pendiente",
+        }
+
+        label.setText(
+            labels.get(
+                status,
+                "SharePoint: estado desconocido",
+            )
+        )
+
+        running = (
+            self._sharepoint_sync_thread
+            is not None
+            and
+            self._sharepoint_sync_thread
+            .isRunning()
+        )
+
+        can_sync = (
+            self.workspace.is_loaded
+            and not running
+            and not self._save_in_progress
+            and not self._reversal_in_progress
+            and not self.workspace.has_changes
+        )
+
+        button.setEnabled(
+            can_sync
+        )
+
+        if status == "ERROR":
+            button.setText(
+                "Reintentar SharePoint"
+            )
+
+            button.setToolTip(
+                self._sharepoint_sync_last_error
+                or
+                "Reintenta la sincronizacion."
+            )
+
+        elif running:
+            button.setText(
+                "Sincronizando..."
+            )
+
+        else:
+            button.setText(
+                "Actualizar SharePoint"
+            )
+
+            button.setToolTip(
+                "Recalcula el resumen CAPEX "
+                "desde BigQuery y publica solo "
+                "las diferencias."
+            )
+
     def _create_nav_button(
         self,
         text: str,
@@ -770,6 +1208,84 @@ class MainWindow(QMainWindow):
             "ensure_loaded",
         ):
             page.ensure_loaded()
+
+    def _running_background_operation(
+        self,
+    ):
+        thread_checks = (
+            (
+                "la carga del presupuesto",
+                "_workspace_loader",
+            ),
+            (
+                "el guardado en BigQuery",
+                "_save_thread",
+            ),
+            (
+                "la reversion en BigQuery",
+                "_reversal_thread",
+            ),
+            (
+                "la sincronizacion con SharePoint",
+                "_sharepoint_sync_thread",
+            ),
+        )
+
+        for label, attribute_name in thread_checks:
+            thread = getattr(
+                self,
+                attribute_name,
+                None,
+            )
+
+            if (
+                thread is not None
+                and thread.isRunning()
+            ):
+                return label
+
+        history_page = getattr(
+            self,
+            "history_page",
+            None,
+        )
+
+        if (
+            history_page is not None
+            and getattr(
+                history_page,
+                "is_busy",
+                False,
+            )
+        ):
+            return "la consulta del historial"
+
+        return None
+
+    def closeEvent(
+        self,
+        event,
+    ):
+        operation = (
+            self._running_background_operation()
+        )
+
+        if operation is not None:
+            event.ignore()
+
+            show_info(
+                self,
+                "Operacion en curso",
+                "No se puede cerrar la aplicacion "
+                f"mientras continua {operation}.\n\n"
+                "Espera a que termine la operacion "
+                "y vuelve a cerrar la ventana.",
+            )
+            return
+
+        super().closeEvent(
+            event
+        )
 
     def _start_workspace_load(self):
         if (
@@ -877,6 +1393,8 @@ class MainWindow(QMainWindow):
             self._update_apply_button(
                 0
             )
+
+            self._update_sharepoint_sync_ui()
             return
 
         pending_rows = (
@@ -932,6 +1450,9 @@ class MainWindow(QMainWindow):
         self._update_apply_button(
             pending_rows
         )
+
+
+        self._update_sharepoint_sync_ui()
 
     def _update_apply_button(
         self,
@@ -1226,6 +1747,7 @@ class MainWindow(QMainWindow):
             return
 
         self._reversal_in_progress = True
+        self._update_sharepoint_sync_ui()
 
         self._reversal_reload_after_applied_failure = (
             False
@@ -1284,6 +1806,12 @@ class MainWindow(QMainWindow):
         )
 
         if result.status == "APPLIED":
+            self._queue_sharepoint_sync(
+                source_batch_id=(
+                    result.batch_id
+                ),
+            )
+
             self._invalidate_page(
                 self.dashboard_page
             )
@@ -1395,6 +1923,12 @@ class MainWindow(QMainWindow):
         )
 
         if failure.was_applied:
+            self._queue_sharepoint_sync(
+                source_batch_id=(
+                    failure.batch_id
+                ),
+            )
+
             self._reversal_reload_after_applied_failure = (
                 True
             )
@@ -1484,6 +2018,8 @@ class MainWindow(QMainWindow):
             return
 
         self._save_in_progress = True
+
+        self._update_sharepoint_sync_ui()
         self._reload_after_applied_failure = False
 
         self.pages.setEnabled(
@@ -1535,6 +2071,12 @@ class MainWindow(QMainWindow):
         )
 
         if result.status == "APPLIED":
+            self._queue_sharepoint_sync(
+                source_batch_id=(
+                    result.batch_id
+                ),
+            )
+
             self._invalidate_page(
                 self.dashboard_page
             )
@@ -1650,6 +2192,12 @@ class MainWindow(QMainWindow):
         failure,
     ):
         if failure.was_applied:
+            self._queue_sharepoint_sync(
+                source_batch_id=(
+                    failure.batch_id
+                ),
+            )
+
             self._reload_after_applied_failure = True
 
             self._invalidate_page(
