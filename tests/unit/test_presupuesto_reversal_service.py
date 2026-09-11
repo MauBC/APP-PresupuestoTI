@@ -1,4 +1,4 @@
-﻿from datetime import (
+from datetime import (
     datetime,
     timezone,
 )
@@ -6,6 +6,10 @@ from decimal import Decimal
 
 import pytest
 
+from app.config.budget_modules import (
+    CAPEX_MODULE_CONFIG,
+    OPEX_MODULE_CONFIG,
+)
 from app.config.presupuesto_app_config import (
     USD_MONTH_COLUMNS,
 )
@@ -150,6 +154,48 @@ def current_row(
     ] = Decimal(
         january
     )
+
+    return row
+
+
+def current_full_row(
+    config,
+    *,
+    row_id="row-1",
+    version=2,
+    overrides=None,
+):
+    row = {
+        "row_id": row_id,
+        "version": version,
+        "habilitado": True,
+    }
+
+    for (
+        column,
+        value_type,
+    ) in config.insert_column_types:
+        if value_type == "NUMERIC":
+            row[column] = Decimal(
+                "0"
+            )
+
+        elif value_type == "INTEGER":
+            row[column] = 1
+
+        elif value_type == "STRING":
+            row[column] = None
+
+        else:
+            raise AssertionError(
+                "Tipo inesperado en test: "
+                f"{value_type}"
+            )
+
+    if overrides:
+        row.update(
+            overrides
+        )
 
     return row
 
@@ -722,3 +768,241 @@ def test_new_batch_id_cannot_equal_source():
                 ),
             )
         )
+
+def test_string_business_change_is_reversed():
+    history = detail(
+        (
+            audit(
+                "responsable",
+                "ANA",
+                "MARIA",
+                value_type="STRING",
+            ),
+        ),
+        field_count=1,
+        module="CAPEX",
+    )
+
+    row = current_full_row(
+        CAPEX_MODULE_CONFIG,
+        overrides={
+            "responsable": "MARIA",
+        },
+    )
+
+    proposal = (
+        PresupuestoReversalService
+        .build_proposal(
+            history,
+            (row,),
+            actor="usuario",
+            timestamp=NOW,
+            batch_id_factory=lambda: (
+                "revert-string"
+            ),
+            expected_module="CAPEX",
+        )
+    )
+
+    persistence_row = (
+        proposal.batch.rows[0]
+    )
+
+    change = (
+        persistence_row
+        .field_changes[0]
+    )
+
+    assert change.column == "responsable"
+    assert change.value_type == "STRING"
+    assert change.before == "MARIA"
+    assert change.after == "ANA"
+
+    assert (
+        persistence_row
+        .insert_dict()[
+            "responsable"
+        ]
+        == "ANA"
+    )
+
+    assert (
+        len(
+            persistence_row
+            .insert_values
+        )
+        == len(
+            CAPEX_MODULE_CONFIG
+            .insert_columns
+        )
+    )
+
+
+def test_integer_business_change_is_reversed():
+    history = detail(
+        (
+            audit(
+                "cantidad",
+                "1",
+                "2",
+                value_type="INTEGER",
+            ),
+        ),
+        field_count=1,
+        module="CAPEX",
+    )
+
+    row = current_full_row(
+        CAPEX_MODULE_CONFIG,
+        overrides={
+            "cantidad": 2,
+        },
+    )
+
+    proposal = (
+        PresupuestoReversalService
+        .build_proposal(
+            history,
+            (row,),
+            actor="usuario",
+            timestamp=NOW,
+            batch_id_factory=lambda: (
+                "revert-integer"
+            ),
+            expected_module="CAPEX",
+        )
+    )
+
+    persistence_row = (
+        proposal.batch.rows[0]
+    )
+
+    change = (
+        persistence_row
+        .field_changes[0]
+    )
+
+    assert change.column == "cantidad"
+    assert change.value_type == "INTEGER"
+    assert change.before == 2
+    assert change.after == 1
+
+    assert (
+        persistence_row
+        .insert_dict()[
+            "cantidad"
+        ]
+        == 1
+    )
+
+
+def test_string_reversal_preserves_leading_zero():
+    history = detail(
+        (
+            audit(
+                "ceco",
+                "001234",
+                "009999",
+                value_type="STRING",
+            ),
+        ),
+        field_count=1,
+        module="OPEX",
+    )
+
+    row = current_full_row(
+        OPEX_MODULE_CONFIG,
+        overrides={
+            "ceco": "009999",
+        },
+    )
+
+    proposal = (
+        PresupuestoReversalService
+        .build_proposal(
+            history,
+            (row,),
+            actor="usuario",
+            timestamp=NOW,
+            batch_id_factory=lambda: (
+                "revert-code"
+            ),
+            expected_module="OPEX",
+        )
+    )
+
+    persistence_row = (
+        proposal.batch.rows[0]
+    )
+
+    change = (
+        persistence_row
+        .field_changes[0]
+    )
+
+    assert change.after == "001234"
+
+    assert (
+        persistence_row
+        .insert_dict()[
+            "ceco"
+        ]
+        == "001234"
+    )
+
+
+def test_nullable_string_business_change_is_reversed():
+    history = detail(
+        (
+            audit(
+                "clasificacion_inversion",
+                None,
+                "ESTRATEGICA",
+                value_type="STRING",
+            ),
+        ),
+        field_count=1,
+        module="CAPEX",
+    )
+
+    row = current_full_row(
+        CAPEX_MODULE_CONFIG,
+        overrides={
+            "clasificacion_inversion":
+                "ESTRATEGICA",
+        },
+    )
+
+    proposal = (
+        PresupuestoReversalService
+        .build_proposal(
+            history,
+            (row,),
+            actor="usuario",
+            timestamp=NOW,
+            batch_id_factory=lambda: (
+                "revert-null-string"
+            ),
+            expected_module="CAPEX",
+        )
+    )
+
+    persistence_row = (
+        proposal.batch.rows[0]
+    )
+
+    change = (
+        persistence_row
+        .field_changes[0]
+    )
+
+    assert change.before == "ESTRATEGICA"
+    assert change.after is None
+
+    assert (
+        persistence_row
+        .insert_dict()[
+            "clasificacion_inversion"
+        ]
+        is None
+    )
