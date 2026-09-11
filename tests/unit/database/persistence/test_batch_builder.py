@@ -1,4 +1,4 @@
-﻿from datetime import (
+from datetime import (
     datetime,
     timezone,
 )
@@ -380,7 +380,7 @@ def test_duplicate_persistent_row_id_is_rejected():
         )
 
 
-def test_non_editable_dimension_change_is_rejected():
+def test_non_editable_technical_change_is_rejected():
     workspace = PresupuestoWorkspace()
 
     workspace.load(
@@ -394,11 +394,13 @@ def test_non_editable_dimension_change_is_rejected():
     )
 
     replacement[
-        "pais"
-    ] = "CHILE"
+        "created_by"
+    ] = "otro@empresa.com"
 
     workspace.apply_batch(
-        description="Cambio invalido",
+        description=(
+            "Cambio tecnico invalido"
+        ),
         replacements={
             0: replacement,
         },

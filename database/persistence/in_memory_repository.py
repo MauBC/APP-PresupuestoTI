@@ -433,6 +433,12 @@ class InMemoryPersistenceRepository:
             for (
                 column,
                 value,
+            ) in staged_row.insert_values:
+                current[column] = deepcopy(value)
+
+            for (
+                column,
+                value,
             ) in editable.items():
                 current[
                     column

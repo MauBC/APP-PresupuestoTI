@@ -66,9 +66,41 @@ class PresupuestoTableModel(
         self._original_rows = {}
         self._new_row_ids = set()
 
-        self._amount_columns = set(
-            self._config.amount_columns
+        editable_columns = getattr(
+            self._config,
+            "editable_columns",
+            None,
         )
+
+        if editable_columns is None:
+            editable_columns = (
+                self._config
+                .amount_columns
+            )
+
+        self._editable_columns = set(
+            editable_columns
+        )
+
+        insert_column_types = getattr(
+            self._config,
+            "insert_column_types",
+            (),
+        )
+
+        if insert_column_types:
+            self._amount_columns = {
+                column
+                for column, value_type
+                in insert_column_types
+                if value_type == "NUMERIC"
+            }
+
+        else:
+            self._amount_columns = set(
+                self._config
+                .amount_columns
+            )
 
         self._month_columns = set(
             self._config.month_columns
@@ -291,26 +323,15 @@ class PresupuestoTableModel(
         index,
     ):
         if not index.isValid():
-            return (
-                Qt.ItemFlag.NoItemFlags
-            )
+            return Qt.ItemFlag.NoItemFlags
 
-        column = self._columns[
-            index.column()
-        ]
+        column = self._columns[index.column()]
+        flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
 
-        flags = (
-            Qt.ItemFlag.ItemIsEnabled
-            | Qt.ItemFlag.ItemIsSelectable
-        )
-
-        if column in self._amount_columns:
-            flags |= (
-                Qt.ItemFlag.ItemIsEditable
-            )
+        if column in self._editable_columns:
+            flags |= Qt.ItemFlag.ItemIsEditable
 
         return flags
-
     def setData(
         self,
         index,
@@ -320,88 +341,37 @@ class PresupuestoTableModel(
         if not index.isValid():
             return False
 
-        row = self._rows[
-            index.row()
-        ]
-
-        column = self._columns[
-            index.column()
-        ]
-
-        row_id = row.get(
-            SESSION_ROW_ID
-        )
+        row = self._rows[index.row()]
+        column = self._columns[index.column()]
+        row_id = row.get(SESSION_ROW_ID)
 
         if row_id is None:
             self.edit_failed.emit(
-                "La fila no contiene un "
-                "identificador de sesion."
+                "La fila no contiene un identificador de sesion."
             )
-
             return False
 
         try:
-            changed = False
-
             if (
-                column in self._amount_columns
-                and
-                role
-                in (
+                column not in self._editable_columns
+                or role not in (
                     Qt.ItemDataRole.EditRole,
                     Qt.ItemDataRole.DisplayRole,
                 )
             ):
-                amount = (
-                    self._parse_decimal(
-                        value
-                    )
-                )
-
-                if column == self._annual_column:
-                    changed = (
-                        self._workspace
-                        .edit_annual(
-                            row_id,
-                            amount,
-                        )
-                    )
-
-                else:
-                    changed = (
-                        self._workspace
-                        .edit_month(
-                            row_id,
-                            column,
-                            amount,
-                        )
-                    )
-
-            else:
                 return False
 
+            changed = self._workspace.edit_value(
+                row_id,
+                column,
+                value,
+            )
             if not changed:
                 return False
 
-            self._rows[
-                index.row()
-            ] = (
-                self._workspace
-                .get_row(
-                    row_id
-                )
-            )
-
-            first = self.index(
-                index.row(),
-                0,
-            )
-
-            last = self.index(
-                index.row(),
-                self.columnCount() - 1,
-            )
-
+            self._rows[index.row()] = self._workspace.get_row(row_id)
+            first = self.index(index.row(), 0)
+            last = self.index(index.row(), self.columnCount() - 1)
             self.dataChanged.emit(
                 first,
                 last,
@@ -414,28 +384,16 @@ class PresupuestoTableModel(
                     Qt.ItemDataRole.CheckStateRole,
                 ],
             )
-
             self.workspace_changed.emit()
-
             return True
 
-        except (
-            ValueError,
-            InvalidOperation,
-        ) as exc:
-            self.edit_failed.emit(
-                str(exc)
-            )
-
+        except (ValueError, InvalidOperation) as exc:
+            self.edit_failed.emit(str(exc))
             return False
 
         except Exception as exc:
-            self.edit_failed.emit(
-                f"{type(exc).__name__}: {exc}"
-            )
-
+            self.edit_failed.emit(f"{type(exc).__name__}: {exc}")
             return False
-
     def headerData(
         self,
         section,

@@ -254,153 +254,90 @@ def _build_update_row_change(
     workspace,
     pending_change,
 ) -> PersistenceRowChange:
-    session_row_id = (
-        pending_change.session_row_id
-    )
+    session_row_id = pending_change.session_row_id
+    original = workspace.get_original_row(session_row_id)
+    current = workspace.get_row(session_row_id)
 
-    original = (
-        workspace.get_original_row(
-            session_row_id
-        )
-    )
-
-    current = (
-        workspace.get_row(
-            session_row_id
-        )
-    )
-
-    row_id = _required_text(
-        original.get(
-            ROW_ID_COLUMN
-        ),
-        ROW_ID_COLUMN,
-    )
-
-    current_row_id = _required_text(
-        current.get(
-            ROW_ID_COLUMN
-        ),
-        ROW_ID_COLUMN,
-    )
-
+    row_id = _required_text(original.get(ROW_ID_COLUMN), ROW_ID_COLUMN)
+    current_row_id = _required_text(current.get(ROW_ID_COLUMN), ROW_ID_COLUMN)
     if current_row_id != row_id:
-        raise PersistenceBuildError(
-            "row_id fue modificado dentro "
-            "del Workspace."
-        )
+        raise PersistenceBuildError("row_id fue modificado dentro del Workspace.")
 
-    expected_version = (
-        _required_version(
-            original.get(
-                VERSION_COLUMN
-            )
-        )
-    )
+    expected_version = _required_version(original.get(VERSION_COLUMN))
+    current_version = _required_version(current.get(VERSION_COLUMN))
+    if current_version != expected_version:
+        raise PersistenceBuildError("version fue modificada dentro del Workspace.")
 
-    current_version = (
-        _required_version(
-            current.get(
-                VERSION_COLUMN
-            )
-        )
-    )
-
-    if (
-        current_version
-        != expected_version
-    ):
-        raise PersistenceBuildError(
-            "version fue modificada dentro "
-            "del Workspace."
-        )
-
+    config = workspace.module_config
+    value_types = {
+        HABILITADO_COLUMN: "BOOLEAN",
+        **config.insert_type_map,
+    }
+    editable_set = set(value_types)
     persistent_changes = []
 
-    editable_set = set(
-        EDITABLE_COLUMNS
-    )
-
-    for change in (
-        pending_change.changes
-    ):
+    for change in pending_change.changes:
         column = change.column
-
         if column not in editable_set:
             raise PersistenceBuildError(
-                "Se intento persistir una "
-                "columna no editable: "
-                f"{column}"
+                "Se intento persistir una columna no editable: " f"{column}"
             )
 
-        original_value = (
-            original.get(column)
-        )
-
-        current_value = (
-            current.get(column)
-        )
-
-        if (
-            change.before
-            != original_value
-        ):
+        original_value = original.get(column)
+        current_value = current.get(column)
+        if change.before != original_value:
             raise PersistenceBuildError(
-                "El valor anterior del cambio "
-                "no coincide con la fila original "
+                "El valor anterior del cambio no coincide con la fila original "
                 f"para {column}."
             )
-
-        if (
-            change.after
-            != current_value
-        ):
+        if change.after != current_value:
             raise PersistenceBuildError(
-                "El valor final del cambio "
-                "no coincide con el Workspace "
+                "El valor final del cambio no coincide con el Workspace "
                 f"para {column}."
             )
 
         persistent_changes.append(
             PersistenceFieldChange(
                 column=column,
-                before=deepcopy(
-                    change.before
-                ),
-                after=deepcopy(
-                    change.after
-                ),
-                value_type=(
-                    EDITABLE_VALUE_TYPES[
-                        column
-                    ]
-                ),
+                before=deepcopy(change.before),
+                after=deepcopy(change.after),
+                value_type=value_types[column],
             )
         )
 
     if not persistent_changes:
         raise PersistenceBuildError(
-            "La fila marcada como modificada "
-            "no contiene cambios persistibles."
+            "La fila marcada como modificada no contiene cambios persistibles."
         )
+
+    snapshot_available = all(column in current for column in config.insert_columns)
+    has_payload_change = any(
+        change.column not in EDITABLE_COLUMNS
+        for change in persistent_changes
+    )
+    if has_payload_change and not snapshot_available:
+        raise PersistenceBuildError(
+            "La fila no contiene el contrato de negocio completo requerido "
+            "para persistir el UPDATE."
+        )
+
+    insert_values = (
+        tuple(
+            (column, deepcopy(current.get(column)))
+            for column in config.insert_columns
+        )
+        if snapshot_available
+        else ()
+    )
 
     return PersistenceRowChange(
         row_id=row_id,
-        expected_version=(
-            expected_version
-        ),
-        field_changes=tuple(
-            persistent_changes
-        ),
-        editable_values=(
-            _editable_values(
-                current
-            )
-        ),
+        expected_version=expected_version,
+        field_changes=tuple(persistent_changes),
+        editable_values=_editable_values(current),
         operation=UPDATE_OPERATION,
+        insert_values=insert_values,
     )
-
-
 def _build_row_change(
     workspace,
     pending_change,

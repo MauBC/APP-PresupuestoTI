@@ -45,26 +45,20 @@ class PresupuestoRepository:
     ) -> tuple[str, ...]:
         return (
             *self._module_config
-            .dimension_columns,
+            .insert_columns,
             "habilitado",
-            *self._module_config
-            .amount_columns,
         )
-
     @property
     def load_columns(
         self,
     ) -> tuple[str, ...]:
         return (
             *self._module_config
-            .dimension_columns,
+            .insert_columns,
             "row_id",
             "version",
             "habilitado",
-            *self._module_config
-            .amount_columns,
         )
-
     def get_connection_status(self) -> bool:
         return self._bigquery.test_connection()
 

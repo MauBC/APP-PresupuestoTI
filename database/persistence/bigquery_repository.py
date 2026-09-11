@@ -1529,13 +1529,13 @@ class BigQueryPersistenceRepository:
             if (
                 operation
                 == UPDATE_OPERATION
-                and row.insert_payload
-                is not None
+                and row.insert_payload is not None
+                and not str(row.insert_payload).strip()
             ):
                 raise (
                     BigQueryPersistenceError(
-                        "UPDATE no debe incluir "
-                        "insert_payload."
+                        "UPDATE no puede incluir "
+                        "insert_payload vacio."
                     )
                 )
 
