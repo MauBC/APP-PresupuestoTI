@@ -18,6 +18,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config.grouping_config import (
+    MAX_GROUPING_LEVELS,
+)
 from app.services.dimension_allocation_service import (
     DimensionAllocationService,
 )
@@ -124,8 +127,9 @@ class AggregationPage(QWidget):
 
         subtitle = QLabel(
             "Agrupa el presupuesto por hasta "
-            "tres dimensiones y modifica "
-            "totales USD de forma masiva."
+            f"{MAX_GROUPING_LEVELS} dimensiones "
+            "y modifica totales USD "
+            "de forma masiva."
         )
 
         subtitle.setObjectName(
@@ -135,25 +139,30 @@ class AggregationPage(QWidget):
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
-        group_layout = QHBoxLayout()
+        group_layout = QVBoxLayout()
 
-        self.group_1 = (
+        group_row_1 = QHBoxLayout()
+        group_row_2 = QHBoxLayout()
+
+        self.group_combos = tuple(
             self._create_group_combo(
-                allow_none=False
+                allow_none=(
+                    index > 0
+                )
+            )
+            for index
+            in range(
+                MAX_GROUPING_LEVELS
             )
         )
 
-        self.group_2 = (
-            self._create_group_combo(
-                allow_none=True
-            )
-        )
-
-        self.group_3 = (
-            self._create_group_combo(
-                allow_none=True
-            )
-        )
+        (
+            self.group_1,
+            self.group_2,
+            self.group_3,
+            self.group_4,
+            self.group_5,
+        ) = self.group_combos
 
         default_group = (
             self._workspace
@@ -197,24 +206,46 @@ class AggregationPage(QWidget):
             False
         )
 
-        group_layout.addWidget(
+        group_row_1.addWidget(
             QLabel("Agrupar por:")
         )
 
-        group_layout.addWidget(
+        group_row_1.addWidget(
             self.group_1
         )
 
-        group_layout.addWidget(
+        group_row_1.addWidget(
             self.group_2
         )
 
-        group_layout.addWidget(
+        group_row_1.addWidget(
             self.group_3
         )
 
-        group_layout.addWidget(
+        group_row_2.addWidget(
+            QLabel("Niveles 4-5:")
+        )
+
+        group_row_2.addWidget(
+            self.group_4
+        )
+
+        group_row_2.addWidget(
+            self.group_5
+        )
+
+        group_row_2.addWidget(
             self.group_button
+        )
+
+        group_row_2.addStretch()
+
+        group_layout.addLayout(
+            group_row_1
+        )
+
+        group_layout.addLayout(
+            group_row_2
         )
 
         layout.addLayout(
@@ -722,15 +753,10 @@ class AggregationPage(QWidget):
             self.load_grouping()
 
     def _selected_groups(self):
-        combos = (
-            self.group_1,
-            self.group_2,
-            self.group_3,
-        )
-
         return [
             combo.currentData()
-            for combo in combos
+            for combo
+            in self.group_combos
             if combo.currentData()
         ]
 

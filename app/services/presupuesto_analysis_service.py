@@ -1,3 +1,6 @@
+from app.config.grouping_config import (
+    MAX_GROUPING_LEVELS,
+)
 from app.config.presupuesto_app_config import (
     GROUPABLE_COLUMNS,
 )
@@ -7,7 +10,7 @@ from app.repositories.presupuesto_repository import (
 
 
 class PresupuestoAnalysisService:
-    MAX_GROUP_COLUMNS = 3
+    MAX_GROUP_COLUMNS = MAX_GROUPING_LEVELS
 
     def __init__(
         self,

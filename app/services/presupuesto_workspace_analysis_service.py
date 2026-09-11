@@ -4,6 +4,9 @@ from decimal import (
     ROUND_HALF_UP,
 )
 
+from app.config.grouping_config import (
+    MAX_GROUPING_LEVELS,
+)
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
 )
@@ -27,7 +30,7 @@ CENT = Decimal("0.01")
 
 
 class PresupuestoWorkspaceAnalysisService:
-    MAX_GROUP_COLUMNS = 3
+    MAX_GROUP_COLUMNS = MAX_GROUPING_LEVELS
 
     def __init__(
         self,
