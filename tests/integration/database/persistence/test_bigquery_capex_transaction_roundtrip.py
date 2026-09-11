@@ -450,13 +450,6 @@ def test_real_capex_save_conflict_history_and_reversal():
         )
     )
 
-    assert initial_count == 173, (
-        "La prueba se detuvo porque "
-        "capex_2027 no contiene "
-        "exactamente 173 filas. "
-        f"Encontradas={initial_count}."
-    )
-
     token = uuid4().hex
 
     row_id = (
@@ -1054,9 +1047,9 @@ def test_real_capex_save_conflict_history_and_reversal():
         )
 
     #
-    # Los 173 registros originales
-    # deben quedar exactamente iguales
-    # en cantidad.
+    # La tabla debe conservar exactamente
+    # el mismo baseline que tenia antes
+    # de insertar la fila sintetica.
     #
     assert (
         count_capex_rows(

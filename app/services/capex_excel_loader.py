@@ -15,6 +15,9 @@ from app.models.capex_import import (
     CapexCleanRowResult,
     CapexIssueSeverity,
 )
+from app.services.capex_cleaner import (
+    is_blank_like,
+)
 from app.services.capex_validator import (
     clean_and_validate_capex_row,
 )
@@ -313,22 +316,12 @@ def validate_capex_headers(
 def _row_is_empty(
     values: dict[str, Any],
 ) -> bool:
-    for value in values.values():
-        if value is None:
-            continue
-
-        if (
-            isinstance(
-                value,
-                str,
-            )
-            and not value.strip()
-        ):
-            continue
-
-        return False
-
-    return True
+    return all(
+        is_blank_like(
+            value
+        )
+        for value in values.values()
+    )
 
 
 def load_capex_workbook(
