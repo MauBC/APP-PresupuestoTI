@@ -263,3 +263,39 @@ def test_capex_dashboard_exposes_advanced_metrics():
         )
         == 12
     )
+
+
+
+def test_capex_dashboard_can_filter_by_responsable():
+    service = build_service()
+
+    result = service.get_dashboard(
+        budgeter_filter="Ana"
+    )
+
+    assert (
+        result.total_usd
+        == Decimal("100")
+    )
+
+    assert result.total_rows == 1
+    assert result.total_countries == 1
+    assert result.total_budgeters == 1
+
+
+def test_capex_dashboard_filter_options_use_responsable():
+    service = build_service()
+
+    result = (
+        service.get_dashboard_filter_options()
+    )
+
+    assert result["countries"] == (
+        "CHL",
+        "PER",
+    )
+
+    assert result["budgeters"] == (
+        "Ana",
+        "Luis",
+    )

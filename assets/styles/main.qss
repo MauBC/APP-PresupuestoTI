@@ -54,6 +54,19 @@ QWidget {
     font-size: 14px;
 }
 
+#dashboardScroll {
+    background-color: #FFFFFF;
+    border: none;
+}
+
+#dashboardScrollViewport {
+    background-color: #FFFFFF;
+}
+
+#dashboardScrollContent {
+    background-color: #FFFFFF;
+}
+
 #sectionTitle {
     color: #164D36;
     font-size: 16px;
@@ -62,8 +75,13 @@ QWidget {
 
 #dashboardCard {
     background-color: #FFFFFF;
-    border: 1px solid #DCE8E0;
-    border-radius: 10px;
+    border: 1px solid #D7E4DC;
+    border-radius: 12px;
+}
+
+QFrame#dashboardCard:hover {
+    background-color: #FCFEFD;
+    border: 1px solid #A8C9B4;
 }
 
 #cardTitle {
@@ -80,6 +98,58 @@ QWidget {
 #cardDescription {
     color: #8A9990;
     font-size: 12px;
+}
+
+#dashboardSectionEyebrow {
+    color: #607067;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding-top: 6px;
+}
+
+#filterPanel {
+    background-color: #F5F8F6;
+    border: 1px solid #DCE6DF;
+    border-radius: 10px;
+}
+
+#filterPanelTitle {
+    color: #164D36;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+#filterLabel {
+    color: #53645A;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#filterStatus {
+    color: #607067;
+    font-size: 12px;
+    padding-top: 2px;
+}
+
+QLabel#cardValue[comparisonRole="neutralMetric"] {
+    color: #101828;
+    font-weight: 700;
+}
+
+QLabel#cardValue[comparisonRole="deltaMetric"][comparisonState="increase"] {
+    color: #B42318;
+    font-weight: 700;
+}
+
+QLabel#cardValue[comparisonRole="deltaMetric"][comparisonState="decrease"] {
+    color: #067647;
+    font-weight: 700;
+}
+
+QLabel#cardValue[comparisonRole="deltaMetric"][comparisonState="neutral"] {
+    color: #667085;
+    font-weight: 700;
 }
 
 #analysisSummary {
@@ -124,6 +194,35 @@ QPushButton:disabled {
 
 #primaryButton:hover {
     background-color: #145D3B;
+}
+
+#primaryButton:disabled {
+    background-color: #B8D2C3;
+    color: #FFFFFF;
+    border: none;
+}
+
+#secondaryButton {
+    background-color: #FFFFFF;
+    color: #53645A;
+    border: 1px solid #CBD8D0;
+    font-weight: 600;
+}
+
+#secondaryButton:hover {
+    background-color: #F4F7F5;
+    border-color: #9AB5A4;
+    color: #244D38;
+}
+
+#secondaryButton:pressed {
+    background-color: #E9F0EC;
+}
+
+#secondaryButton:disabled {
+    background-color: #F5F6F5;
+    color: #A0AAA4;
+    border-color: #E0E5E2;
 }
 
 QLineEdit {

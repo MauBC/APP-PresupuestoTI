@@ -76,6 +76,125 @@ class PresupuestoWorkspaceAnalysisService:
             )
         )
 
+    def _dashboard_country_value(
+        self,
+        row,
+    ) -> str:
+        column = (
+            self._config
+            .country_column
+        )
+
+        value = (
+            self._text(
+                row.get(column)
+            )
+            if column
+            else ""
+        )
+
+        return (
+            value
+            or "(Sin pais)"
+        )
+
+    def _dashboard_budgeter_value(
+        self,
+        row,
+    ) -> str:
+        column = (
+            self._config
+            .budgeter_column
+        )
+
+        value = (
+            self._text(
+                row.get(column)
+            )
+            if column
+            else ""
+        )
+
+        return (
+            value
+            or "(Sin presupuestador)"
+        )
+
+    def _matches_dashboard_filters(
+        self,
+        row,
+        *,
+        country_filter=None,
+        budgeter_filter=None,
+    ) -> bool:
+        country = self._text(
+            country_filter
+        )
+
+        budgeter = self._text(
+            budgeter_filter
+        )
+
+        if (
+            country
+            and self._dashboard_country_value(
+                row
+            ) != country
+        ):
+            return False
+
+        if (
+            budgeter
+            and self._dashboard_budgeter_value(
+                row
+            ) != budgeter
+        ):
+            return False
+
+        return True
+
+    def get_dashboard_filter_options(
+        self,
+    ) -> dict[
+        str,
+        tuple[str, ...],
+    ]:
+        countries = set()
+        budgeters = set()
+
+        for row in (
+            self._workspace.iter_rows()
+        ):
+            if not self._is_enabled(row):
+                continue
+
+            countries.add(
+                self._dashboard_country_value(
+                    row
+                )
+            )
+
+            budgeters.add(
+                self._dashboard_budgeter_value(
+                    row
+                )
+            )
+
+        return {
+            "countries": tuple(
+                sorted(
+                    countries,
+                    key=str.casefold,
+                )
+            ),
+            "budgeters": tuple(
+                sorted(
+                    budgeters,
+                    key=str.casefold,
+                )
+            ),
+        }
+
     def get_page(
         self,
         *,
@@ -191,6 +310,9 @@ class PresupuestoWorkspaceAnalysisService:
     def get_grouped_totals(
         self,
         group_columns,
+        *,
+        country_filter=None,
+        budgeter_filter=None,
     ) -> AggregationResult:
         columns = tuple(group_columns)
 
@@ -232,6 +354,13 @@ class PresupuestoWorkspaceAnalysisService:
 
         for row in self._workspace.iter_rows():
             if not self._is_enabled(row):
+                continue
+
+            if not self._matches_dashboard_filters(
+                row,
+                country_filter=country_filter,
+                budgeter_filter=budgeter_filter,
+            ):
                 continue
 
             key = tuple(
@@ -299,6 +428,9 @@ class PresupuestoWorkspaceAnalysisService:
 
     def get_dashboard(
         self,
+        *,
+        country_filter=None,
+        budgeter_filter=None,
     ) -> DashboardResult:
         total_usd = ZERO
         active_rows = 0
@@ -330,6 +462,13 @@ class PresupuestoWorkspaceAnalysisService:
             if not self._is_enabled(row):
                 continue
 
+            if not self._matches_dashboard_filters(
+                row,
+                country_filter=country_filter,
+                budgeter_filter=budgeter_filter,
+            ):
+                continue
+
             active_rows += 1
 
             amount = self._decimal(
@@ -351,44 +490,16 @@ class PresupuestoWorkspaceAnalysisService:
                     )
                 )
 
-            country_column = (
-                self._config
-                .country_column
-            )
-
-            budgeter_column = (
-                self._config
-                .budgeter_column
-            )
-
             country = (
-                self._text(
-                    row.get(
-                        country_column
-                    )
+                self._dashboard_country_value(
+                    row
                 )
-                if country_column
-                else ""
-            )
-
-            country = (
-                country
-                or "(Sin pais)"
             )
 
             budgeter = (
-                self._text(
-                    row.get(
-                        budgeter_column
-                    )
+                self._dashboard_budgeter_value(
+                    row
                 )
-                if budgeter_column
-                else ""
-            )
-
-            budgeter = (
-                budgeter
-                or "(Sin presupuestador)"
             )
 
             if country != "(Sin pais)":
