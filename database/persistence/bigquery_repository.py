@@ -311,35 +311,81 @@ class BigQueryPersistenceRepository:
         )
 
         sql = f"""
+            WITH applied_reversals AS (
+                SELECT
+                    `{REVERTED_BATCH_ID_COLUMN}`
+                        AS source_batch_id,
+
+                    ARRAY_AGG(
+                        batch_id
+                        ORDER BY
+                            created_at DESC,
+                            batch_id DESC
+                        LIMIT 1
+                    )[OFFSET(0)]
+                        AS reversal_batch_id
+
+                FROM `{self.batch_table_id}`
+
+                WHERE
+                    status = 'APPLIED'
+
+                    AND `{REVERTED_BATCH_ID_COLUMN}`
+                        IS NOT NULL
+
+                    AND COALESCE(
+                        `{BUDGET_MODULE_COLUMN}`,
+                        'OPEX'
+                    ) = @budget_module
+
+                GROUP BY
+                    `{REVERTED_BATCH_ID_COLUMN}`
+            )
+
             SELECT
-                batch_id,
-                status,
-                actor,
-                created_at,
-                completed_at,
-                row_count,
-                field_count,
-                app_version,
-                error_message,
+                source.batch_id,
+                source.status,
+                source.actor,
+                source.created_at,
+                source.completed_at,
+                source.row_count,
+                source.field_count,
+                source.app_version,
+                source.error_message,
+
                 COALESCE(
-                    `{BUDGET_MODULE_COLUMN}`,
+                    source.`{BUDGET_MODULE_COLUMN}`,
                     'OPEX'
                 ) AS budget_module,
-                `{REVERTED_BATCH_ID_COLUMN}`
-                    AS reverted_batch_id
+
+                source.`{REVERTED_BATCH_ID_COLUMN}`
+                    AS reverted_batch_id,
+
+                reversal.reversal_batch_id
+
             FROM `{self.batch_table_id}`
+                AS source
+
+            LEFT JOIN applied_reversals
+                AS reversal
+                ON reversal.source_batch_id
+                    = source.batch_id
+
             WHERE
                 COALESCE(
-                    `{BUDGET_MODULE_COLUMN}`,
+                    source.`{BUDGET_MODULE_COLUMN}`,
                     'OPEX'
                 ) = @budget_module
+
                 AND (
                     @status IS NULL
-                    OR status = @status
+                    OR source.status = @status
                 )
+
             ORDER BY
-                created_at DESC,
-                batch_id DESC
+                source.created_at DESC,
+                source.batch_id DESC
+
             LIMIT @limit
             OFFSET @offset
         """
@@ -383,6 +429,22 @@ class BigQueryPersistenceRepository:
         result = []
 
         for row in rows:
+            def optional_value(
+                key,
+            ):
+                try:
+                    return self._row_value(
+                        row,
+                        key,
+                    )
+
+                except (
+                    AttributeError,
+                    KeyError,
+                    TypeError,
+                ):
+                    return None
+
             result.append(
                 {
                     "batch_id":
@@ -390,26 +452,31 @@ class BigQueryPersistenceRepository:
                             row,
                             "batch_id",
                         ),
+
                     "status":
                         self._row_value(
                             row,
                             "status",
                         ),
+
                     "actor":
                         self._row_value(
                             row,
                             "actor",
                         ),
+
                     "created_at":
                         self._row_value(
                             row,
                             "created_at",
                         ),
+
                     "completed_at":
                         self._row_value(
                             row,
                             "completed_at",
                         ),
+
                     "row_count":
                         int(
                             self._row_value(
@@ -418,6 +485,7 @@ class BigQueryPersistenceRepository:
                             )
                             or 0
                         ),
+
                     "field_count":
                         int(
                             self._row_value(
@@ -426,33 +494,38 @@ class BigQueryPersistenceRepository:
                             )
                             or 0
                         ),
+
                     "app_version":
                         self._row_value(
                             row,
                             "app_version",
                         ),
+
                     "error_message":
                         self._row_value(
                             row,
                             "error_message",
                         ),
+
                     "budget_module":
                         self._row_value(
                             row,
                             "budget_module",
                         ),
+
                     "reverted_batch_id":
-                        self._row_value(
-                            row,
-                            "reverted_batch_id",
+                        optional_value(
+                            "reverted_batch_id"
+                        ),
+
+                    "reversal_batch_id":
+                        optional_value(
+                            "reversal_batch_id"
                         ),
                 }
             )
 
-        return tuple(
-            result
-        )
-
+        return tuple(result)
     def get_batch_audit(
         self,
         batch_id: str,
@@ -623,6 +696,109 @@ class BigQueryPersistenceRepository:
 
         return tuple(
             result
+        )
+
+    def get_history_row_context(
+        self,
+        row_ids,
+    ) -> tuple[
+        dict,
+        ...,
+    ]:
+        clean_row_ids = tuple(
+            dict.fromkeys(
+                str(row_id).strip()
+                for row_id in row_ids
+                if str(row_id).strip()
+            )
+        )
+
+        if not clean_row_ids:
+            return ()
+
+        context_columns = tuple(
+            dict.fromkeys(
+                self._module_config
+                .change_detail_columns
+            )
+        )
+
+        dimension_columns = set(
+            self._module_config
+            .dimension_columns
+        )
+
+        invalid_columns = (
+            set(context_columns)
+            - dimension_columns
+        )
+
+        if invalid_columns:
+            raise BigQueryPersistenceError(
+                "El contexto de historial "
+                "contiene columnas que no "
+                "pertenecen al modulo: "
+                + ", ".join(
+                    sorted(
+                        invalid_columns
+                    )
+                )
+            )
+
+        selected_columns = (
+            "row_id",
+            *context_columns,
+        )
+
+        select_sql = ",\n                ".join(
+            f"`{column}`"
+            for column in selected_columns
+        )
+
+        sql = f"""
+            SELECT
+                {select_sql}
+
+            FROM `{self.main_table_id}`
+
+            WHERE
+                row_id IN UNNEST(
+                    @row_ids
+                )
+        """
+
+        job_config = (
+            bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ArrayQueryParameter(
+                        "row_ids",
+                        "STRING",
+                        list(clean_row_ids),
+                    )
+                ]
+            )
+        )
+
+        rows = (
+            self._client.query(
+                sql,
+                job_config=job_config,
+                location=self._location,
+            )
+            .result()
+        )
+
+        return tuple(
+            {
+                column:
+                    self._row_value(
+                        row,
+                        column,
+                    )
+                for column
+                in selected_columns
+            }
+            for row in rows
         )
 
     def clear_staging(

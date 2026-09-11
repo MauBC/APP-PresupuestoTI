@@ -4,6 +4,7 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -33,11 +34,11 @@ HISTORY_COLUMNS = (
     "FECHA",
     "USUARIO",
     "ESTADO",
+    "TIPO",
     "FILAS",
     "CAMPOS",
     "BATCH ID",
-    "VERSION APP",
-    "REVERSION DE",
+    "RELACION",
 )
 
 
@@ -51,9 +52,7 @@ def format_history_datetime(
         value,
         datetime,
     ):
-        return str(
-            value
-        )
+        return str(value)
 
     if (
         value.tzinfo is not None
@@ -88,6 +87,79 @@ def format_history_status(
     )
 
 
+def history_operation_code(
+    batch,
+) -> str:
+    if batch is None:
+        return ""
+
+    if getattr(
+        batch,
+        "reverted_batch_id",
+        None,
+    ):
+        return "REVERSAL"
+
+    if getattr(
+        batch,
+        "reversal_batch_id",
+        None,
+    ):
+        return "REVERTED"
+
+    return "CHANGE"
+
+
+def format_history_operation(
+    batch,
+) -> str:
+    labels = {
+        "CHANGE": "CAMBIO",
+        "REVERTED": "REVERTIDO",
+        "REVERSAL": "REVERSION",
+    }
+
+    return labels.get(
+        history_operation_code(
+            batch
+        ),
+        "",
+    )
+
+
+def format_history_relation(
+    batch,
+) -> str:
+    if batch is None:
+        return ""
+
+    source = getattr(
+        batch,
+        "reverted_batch_id",
+        None,
+    )
+
+    if source:
+        return (
+            "Revierte: "
+            + str(source)
+        )
+
+    reversal = getattr(
+        batch,
+        "reversal_batch_id",
+        None,
+    )
+
+    if reversal:
+        return (
+            "Revertido por: "
+            + str(reversal)
+        )
+
+    return ""
+
+
 def can_revert_history_batch(
     batch,
     batches=(),
@@ -107,18 +179,28 @@ def can_revert_history_batch(
     if status != "APPLIED":
         return False
 
-    if (
-        getattr(
-            batch,
-            "reverted_batch_id",
-            None,
-        )
-        is not None
+    if getattr(
+        batch,
+        "reverted_batch_id",
+        None,
     ):
         return False
 
+    if getattr(
+        batch,
+        "reversal_batch_id",
+        None,
+    ):
+        return False
+
+    # Compatibilidad con objetos antiguos/tests
+    # que todavia no exponen reversal_batch_id.
     applied_reverted_sources = {
-        item.reverted_batch_id
+        getattr(
+            item,
+            "reverted_batch_id",
+            None,
+        )
         for item in batches
         if (
             str(
@@ -139,7 +221,11 @@ def can_revert_history_batch(
     }
 
     return (
-        batch.batch_id
+        getattr(
+            batch,
+            "batch_id",
+            None,
+        )
         not in applied_reverted_sources
     )
 
@@ -148,6 +234,8 @@ class HistoryPage(QWidget):
     reversal_requested = Signal(
         object
     )
+
+    PAGE_LIMIT = 500
 
     def __init__(
         self,
@@ -183,8 +271,8 @@ class HistoryPage(QWidget):
 
         self._worker = None
         self._detail_worker = None
-        self._loaded_once = False
 
+        self._loaded_once = False
         self._batches = ()
 
         self._setup_ui()
@@ -193,29 +281,24 @@ class HistoryPage(QWidget):
     def is_busy(
         self,
     ) -> bool:
-        worker_busy = (
-            self._worker is not None
-            and self._worker.isRunning()
-        )
-
-        detail_busy = (
-            self._detail_worker
-            is not None
-            and self._detail_worker
-            .isRunning()
-        )
-
         return bool(
-            worker_busy
-            or detail_busy
+            (
+                self._worker is not None
+                and self._worker.isRunning()
+            )
+            or
+            (
+                self._detail_worker
+                is not None
+                and self._detail_worker
+                .isRunning()
+            )
         )
 
     def _setup_ui(
         self,
     ):
-        layout = QVBoxLayout(
-            self
-        )
+        layout = QVBoxLayout(self)
 
         layout.setContentsMargins(
             32,
@@ -224,41 +307,27 @@ class HistoryPage(QWidget):
             32,
         )
 
-        layout.setSpacing(
-            14
-        )
+        layout.setSpacing(14)
 
-        title = QLabel(
-            "Historial"
-        )
-
-        title.setObjectName(
-            "pageTitle"
-        )
+        title = QLabel("Historial")
+        title.setObjectName("pageTitle")
 
         subtitle = QLabel(
-            "Consulta operaciones aplicadas "
-            "en BigQuery. El historial es "
-            "inmutable y se muestra por modulo."
+            "Consulta operaciones confirmadas "
+            "en BigQuery, su auditoria y las "
+            "relaciones entre cambios y reversiones."
         )
 
         subtitle.setObjectName(
             "pageSubtitle"
         )
 
-        layout.addWidget(
-            title
-        )
-
-        layout.addWidget(
-            subtitle
-        )
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
 
         toolbar = QHBoxLayout()
 
-        self.status_combo = (
-            QComboBox()
-        )
+        self.status_combo = QComboBox()
 
         self.status_combo.addItem(
             "Aplicados",
@@ -270,28 +339,59 @@ class HistoryPage(QWidget):
             None,
         )
 
-        self.search_input = (
-            QLineEdit()
+        self.status_combo.addItem(
+            "Conflictos",
+            "CONFLICT",
         )
+
+        self.status_combo.addItem(
+            "Errores",
+            "FAILED",
+        )
+
+        self.status_combo.addItem(
+            "Pendientes",
+            "PENDING",
+        )
+
+        self.type_combo = QComboBox()
+
+        self.type_combo.addItem(
+            "Todos los tipos",
+            "ALL",
+        )
+
+        self.type_combo.addItem(
+            "Cambios",
+            "CHANGE",
+        )
+
+        self.type_combo.addItem(
+            "Revertidos",
+            "REVERTED",
+        )
+
+        self.type_combo.addItem(
+            "Reversiones",
+            "REVERSAL",
+        )
+
+        self.search_input = QLineEdit()
 
         self.search_input.setPlaceholderText(
-            "Buscar usuario, batch, estado..."
+            "Buscar usuario, batch, relacion..."
         )
 
-        self.detail_button = (
-            QPushButton(
-                "Ver detalle"
-            )
+        self.detail_button = QPushButton(
+            "Ver detalle"
         )
 
         self.detail_button.setEnabled(
             False
         )
 
-        self.reversal_button = (
-            QPushButton(
-                "Revertir"
-            )
+        self.reversal_button = QPushButton(
+            "Revertir"
         )
 
         self.reversal_button.setObjectName(
@@ -302,15 +402,8 @@ class HistoryPage(QWidget):
             False
         )
 
-        self.reversal_button.setToolTip(
-            "Crea un nuevo batch que restaura "
-            "los valores anteriores."
-        )
-
-        self.refresh_button = (
-            QPushButton(
-                "Actualizar historial"
-            )
+        self.refresh_button = QPushButton(
+            "Actualizar historial"
         )
 
         self.refresh_button.setObjectName(
@@ -318,13 +411,19 @@ class HistoryPage(QWidget):
         )
 
         toolbar.addWidget(
-            QLabel(
-                "Estado:"
-            )
+            QLabel("Estado:")
         )
 
         toolbar.addWidget(
             self.status_combo
+        )
+
+        toolbar.addWidget(
+            QLabel("Tipo:")
+        )
+
+        toolbar.addWidget(
+            self.type_combo
         )
 
         toolbar.addWidget(
@@ -344,9 +443,7 @@ class HistoryPage(QWidget):
             self.refresh_button
         )
 
-        layout.addLayout(
-            toolbar
-        )
+        layout.addLayout(toolbar)
 
         self.summary_label = QLabel(
             "Historial sin cargar"
@@ -360,14 +457,10 @@ class HistoryPage(QWidget):
             self.summary_label
         )
 
-        self.table = (
-            QTableWidget()
-        )
+        self.table = QTableWidget()
 
         self.table.setColumnCount(
-            len(
-                HISTORY_COLUMNS
-            )
+            len(HISTORY_COLUMNS)
         )
 
         self.table.setHorizontalHeaderLabels(
@@ -396,10 +489,6 @@ class HistoryPage(QWidget):
             .SingleSelection
         )
 
-        self.table.setSortingEnabled(
-            False
-        )
-
         self.table.verticalHeader().setVisible(
             False
         )
@@ -409,8 +498,7 @@ class HistoryPage(QWidget):
         )
 
         header = (
-            self.table
-            .horizontalHeader()
+            self.table.horizontalHeader()
         )
 
         header.setSectionResizeMode(
@@ -419,49 +507,24 @@ class HistoryPage(QWidget):
             .Interactive
         )
 
-        header.setDefaultSectionSize(
-            130
-        )
-
-        header.resizeSection(
-            0,
+        widths = (
             155,
-        )
-
-        header.resizeSection(
-            1,
             180,
-        )
-
-        header.resizeSection(
-            2,
-            100,
-        )
-
-        header.resizeSection(
-            3,
+            105,
+            115,
+            75,
             80,
+            275,
+            330,
         )
 
-        header.resizeSection(
-            4,
-            80,
-        )
-
-        header.resizeSection(
-            5,
-            280,
-        )
-
-        header.resizeSection(
-            6,
-            100,
-        )
-
-        header.resizeSection(
-            7,
-            280,
-        )
+        for index, width in enumerate(
+            widths
+        ):
+            header.resizeSection(
+                index,
+                width,
+            )
 
         layout.addWidget(
             self.table,
@@ -489,8 +552,12 @@ class HistoryPage(QWidget):
             self._reload_for_status
         )
 
+        self.type_combo.currentIndexChanged.connect(
+            self._apply_filters
+        )
+
         self.search_input.textChanged.connect(
-            self._apply_search
+            self._apply_filters
         )
 
         self.table.itemSelectionChanged.connect(
@@ -541,19 +608,14 @@ class HistoryPage(QWidget):
             "Consultando historial en BigQuery..."
         )
 
-        status = (
-            self.status_combo
-            .currentData()
-        )
-
-        self._worker = (
-            self._worker_factory(
-                self._module_config,
-                status=status,
-                limit=200,
-                offset=0,
-                parent=self,
-            )
+        self._worker = self._worker_factory(
+            self._module_config,
+            status=(
+                self.status_combo.currentData()
+            ),
+            limit=self.PAGE_LIMIT,
+            offset=0,
+            parent=self,
         )
 
         self._worker.loaded.connect(
@@ -598,20 +660,34 @@ class HistoryPage(QWidget):
 
         self._loaded_once = True
 
-        module_label = (
-            self._module_config
-            .label
+        changes = sum(
+            history_operation_code(batch)
+            == "CHANGE"
+            for batch in self._batches
+        )
+
+        reverted = sum(
+            history_operation_code(batch)
+            == "REVERTED"
+            for batch in self._batches
+        )
+
+        reversals = sum(
+            history_operation_code(batch)
+            == "REVERSAL"
+            for batch in self._batches
         )
 
         self.summary_label.setText(
-            f"{len(self._batches):,} "
-            f"operaciones | "
-            f"Modulo: {module_label}"
+            f"{len(self._batches):,} operaciones"
+            f" | Modulo: "
+            f"{self._module_config.label}"
+            f" | Cambios: {changes:,}"
+            f" | Revertidos: {reverted:,}"
+            f" | Reversiones: {reversals:,}"
         )
 
-        self.status_label.setText(
-            "Historial actualizado."
-        )
+        self._apply_filters()
 
     def _on_failed(
         self,
@@ -647,14 +723,30 @@ class HistoryPage(QWidget):
         )
 
         self.table.setRowCount(
-            len(
-                self._batches
-            )
+            len(self._batches)
         )
+
+        type_colors = {
+            "CHANGE": "#344054",
+            "REVERTED": "#92400E",
+            "REVERSAL": "#067647",
+        }
+
+        type_backgrounds = {
+            "CHANGE": "#F2F4F7",
+            "REVERTED": "#FFF4E5",
+            "REVERSAL": "#ECFDF3",
+        }
 
         for row_index, batch in enumerate(
             self._batches
         ):
+            operation_code = (
+                history_operation_code(
+                    batch
+                )
+            )
+
             values = (
                 format_history_datetime(
                     batch.created_at
@@ -663,38 +755,47 @@ class HistoryPage(QWidget):
                 format_history_status(
                     batch.status
                 ),
-                str(
-                    batch.row_count
+                format_history_operation(
+                    batch
                 ),
-                str(
-                    batch.field_count
-                ),
+                str(batch.row_count),
+                str(batch.field_count),
                 batch.batch_id,
-                (
-                    batch.app_version
-                    or ""
-                ),
-                (
-                    batch.reverted_batch_id
-                    or ""
+                format_history_relation(
+                    batch
                 ),
             )
 
-            for (
-                column_index,
-                value,
-            ) in enumerate(values):
-                item = (
-                    QTableWidgetItem(
-                        value
-                    )
+            for column_index, value in enumerate(
+                values
+            ):
+                item = QTableWidgetItem(
+                    str(value)
                 )
 
                 item.setData(
-                    Qt.ItemDataRole
-                    .UserRole,
-                    value,
+                    Qt.ItemDataRole.UserRole,
+                    operation_code,
                 )
+
+                if column_index == 3:
+                    item.setForeground(
+                        QColor(
+                            type_colors.get(
+                                operation_code,
+                                "#344054",
+                            )
+                        )
+                    )
+
+                    item.setBackground(
+                        QColor(
+                            type_backgrounds.get(
+                                operation_code,
+                                "#F2F4F7",
+                            )
+                        )
+                    )
 
                 self.table.setItem(
                     row_index,
@@ -706,23 +807,46 @@ class HistoryPage(QWidget):
             True
         )
 
-        self._apply_search(
-            self.search_input.text()
+    def _apply_filters(
+        self,
+        *_,
+    ):
+        query = (
+            self.search_input
+            .text()
+            .strip()
+            .casefold()
         )
 
-    def _apply_search(
-        self,
-        text,
-    ):
-        query = str(
-            text
-            if text is not None
-            else ""
-        ).strip().casefold()
+        selected_type = (
+            self.type_combo
+            .currentData()
+        )
+
+        visible_count = 0
 
         for row_index in range(
             self.table.rowCount()
         ):
+            type_item = self.table.item(
+                row_index,
+                3,
+            )
+
+            operation_code = (
+                type_item.data(
+                    Qt.ItemDataRole.UserRole
+                )
+                if type_item is not None
+                else ""
+            )
+
+            type_matches = (
+                selected_type == "ALL"
+                or operation_code
+                == selected_type
+            )
+
             values = []
 
             for column_index in range(
@@ -742,24 +866,35 @@ class HistoryPage(QWidget):
                 values
             ).casefold()
 
+            search_matches = (
+                not query
+                or query in blob
+            )
+
+            visible = (
+                type_matches
+                and search_matches
+            )
+
             self.table.setRowHidden(
                 row_index,
-                bool(
-                    query
-                    and query not in blob
-                ),
+                not visible,
             )
+
+            if visible:
+                visible_count += 1
+
+        self.status_label.setText(
+            f"Mostrando "
+            f"{visible_count:,} de "
+            f"{len(self._batches):,} "
+            "operaciones cargadas."
+        )
 
     def _update_detail_button(
         self,
     ):
-        batch = (
-            self.selected_batch()
-        )
-
-        detail_enabled = (
-            batch is not None
-        )
+        batch = self.selected_batch()
 
         detail_busy = (
             self._detail_worker
@@ -768,11 +903,9 @@ class HistoryPage(QWidget):
             .isRunning()
         )
 
-        if detail_busy:
-            detail_enabled = False
-
         self.detail_button.setEnabled(
-            detail_enabled
+            batch is not None
+            and not detail_busy
         )
 
         reversal_enabled = (
@@ -780,10 +913,8 @@ class HistoryPage(QWidget):
                 batch,
                 self._batches,
             )
+            and not detail_busy
         )
-
-        if detail_busy:
-            reversal_enabled = False
 
         self.reversal_button.setEnabled(
             reversal_enabled
@@ -791,7 +922,7 @@ class HistoryPage(QWidget):
 
         if batch is None:
             tooltip = (
-                "Selecciona un batch aplicado."
+                "Selecciona una operacion."
             )
 
         elif (
@@ -801,26 +932,39 @@ class HistoryPage(QWidget):
             != "APPLIED"
         ):
             tooltip = (
-                "Solo los batches APPLIED "
+                "Solo los batches APLICADOS "
                 "pueden revertirse."
             )
 
-        elif batch.reverted_batch_id:
+        elif getattr(
+            batch,
+            "reverted_batch_id",
+            None,
+        ):
             tooltip = (
-                "Este batch ya corresponde "
-                "a una reversi\u00f3n."
+                "Este batch ya es una reversion."
+            )
+
+        elif getattr(
+            batch,
+            "reversal_batch_id",
+            None,
+        ):
+            tooltip = (
+                "Este batch ya fue revertido por "
+                f"{batch.reversal_batch_id}."
             )
 
         elif not reversal_enabled:
             tooltip = (
                 "Este batch ya tiene una "
-                "reversi\u00f3n aplicada."
+                "reversion aplicada."
             )
 
         else:
             tooltip = (
-                "Crea un nuevo batch que "
-                "restaura los valores anteriores."
+                "Crea un nuevo batch compensatorio "
+                "que restaura los valores anteriores."
             )
 
         self.reversal_button.setToolTip(
@@ -830,9 +974,7 @@ class HistoryPage(QWidget):
     def _request_selected_reversal(
         self,
     ):
-        batch = (
-            self.selected_batch()
-        )
+        batch = self.selected_batch()
 
         if not can_revert_history_batch(
             batch,
@@ -854,10 +996,8 @@ class HistoryPage(QWidget):
             return
 
         if (
-            self._detail_worker
-            is not None
-            and self._detail_worker
-            .isRunning()
+            self._detail_worker is not None
+            and self._detail_worker.isRunning()
         ):
             return
 
@@ -926,41 +1066,33 @@ class HistoryPage(QWidget):
             self._detail_worker.deleteLater()
             self._detail_worker = None
 
+        self._apply_filters()
         self._update_detail_button()
 
     def selected_batch(
         self,
     ):
-        row = (
-            self.table
-            .currentRow()
-        )
+        row = self.table.currentRow()
 
         if row < 0:
             return None
 
         batch_item = self.table.item(
             row,
-            5,
+            6,
         )
 
         if batch_item is None:
             return None
 
-        batch_id = (
-            batch_item
-            .text()
-        )
+        batch_id = batch_item.text()
 
         return next(
             (
                 batch
-                for batch
-                in self._batches
-                if (
-                    batch.batch_id
-                    == batch_id
-                )
+                for batch in self._batches
+                if batch.batch_id
+                == batch_id
             ),
             None,
         )

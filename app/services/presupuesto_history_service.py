@@ -1,7 +1,8 @@
-﻿from app.models.budget_history import (
+from app.models.budget_history import (
     BudgetAuditChange,
     BudgetHistoryBatch,
     BudgetHistoryDetail,
+    BudgetHistoryRowContext,
 )
 
 
@@ -74,7 +75,65 @@ class PresupuestoHistoryService:
             in rows
         )
 
+        module_config = getattr(
+            self._repository,
+            "module_config",
+            None,
+        )
+
+        context_columns = tuple(
+            getattr(
+                module_config,
+                "change_detail_columns",
+                (),
+            )
+            or ()
+        )
+
+        row_contexts = ()
+
+        context_reader = getattr(
+            self._repository,
+            "get_history_row_context",
+            None,
+        )
+
+        if (
+            callable(context_reader)
+            and changes
+            and context_columns
+        ):
+            row_ids = tuple(
+                dict.fromkeys(
+                    change.row_id
+                    for change
+                    in changes
+                )
+            )
+
+            context_rows = (
+                context_reader(
+                    row_ids
+                )
+            )
+
+            row_contexts = tuple(
+                BudgetHistoryRowContext
+                .from_mapping(
+                    row,
+                    context_columns,
+                )
+                for row
+                in context_rows
+            )
+
         return BudgetHistoryDetail(
             batch=batch,
             changes=changes,
+            context_columns=(
+                context_columns
+            ),
+            row_contexts=(
+                row_contexts
+            ),
         )

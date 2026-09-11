@@ -48,6 +48,7 @@ class BudgetHistoryBatch:
     error_message: str | None
     budget_module: str
     reverted_batch_id: str | None = None
+    reversal_batch_id: str | None = None
 
     def __post_init__(
         self,
@@ -78,6 +79,15 @@ class BudgetHistoryBatch:
         ):
             raise ValueError(
                 "reverted_batch_id no puede "
+                "estar vacio."
+            )
+
+        if (
+            self.reversal_batch_id is not None
+            and not self.reversal_batch_id.strip()
+        ):
+            raise ValueError(
+                "reversal_batch_id no puede "
                 "estar vacio."
             )
 
@@ -162,6 +172,11 @@ class BudgetHistoryBatch:
             reverted_batch_id=_optional_text(
                 data.get(
                     "reverted_batch_id"
+                )
+            ),
+            reversal_batch_id=_optional_text(
+                data.get(
+                    "reversal_batch_id"
                 )
             ),
         )
@@ -300,12 +315,104 @@ class BudgetAuditChange:
     frozen=True,
     slots=True,
 )
+class BudgetHistoryRowContext:
+    row_id: str
+
+    values: tuple[
+        tuple[
+            str,
+            Any,
+        ],
+        ...,
+    ]
+
+    def __post_init__(
+        self,
+    ) -> None:
+        if not self.row_id.strip():
+            raise ValueError(
+                "row_id no puede estar vacio."
+            )
+
+        columns = [
+            column
+            for column, _
+            in self.values
+        ]
+
+        if (
+            len(columns)
+            != len(set(columns))
+        ):
+            raise ValueError(
+                "El contexto contiene "
+                "columnas duplicadas."
+            )
+
+    @classmethod
+    def from_mapping(
+        cls,
+        data,
+        columns,
+    ):
+        row_id = _required_text(
+            data.get("row_id"),
+            "row_id",
+        )
+
+        return cls(
+            row_id=row_id,
+            values=tuple(
+                (
+                    column,
+                    data.get(column),
+                )
+                for column in columns
+            ),
+        )
+
+    @property
+    def context_map(
+        self,
+    ) -> dict[
+        str,
+        Any,
+    ]:
+        return dict(
+            self.values
+        )
+
+    def value(
+        self,
+        column,
+        default=None,
+    ):
+        return self.context_map.get(
+            column,
+            default,
+        )
+
+
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class BudgetHistoryDetail:
     batch: BudgetHistoryBatch
     changes: tuple[
         BudgetAuditChange,
         ...,
     ]
+
+    context_columns: tuple[
+        str,
+        ...,
+    ] = ()
+
+    row_contexts: tuple[
+        BudgetHistoryRowContext,
+        ...,
+    ] = ()
 
     def __post_init__(
         self,
@@ -319,6 +426,48 @@ class BudgetHistoryDetail:
                     "El detalle contiene un "
                     "audit de otro batch."
                 )
+
+    def context_for(
+        self,
+        row_id: str,
+    ):
+        clean_row_id = str(
+            row_id
+            if row_id is not None
+            else ""
+        ).strip()
+
+        if not clean_row_id:
+            return None
+
+        return next(
+            (
+                context
+                for context
+                in self.row_contexts
+                if context.row_id
+                == clean_row_id
+            ),
+            None,
+        )
+
+    def context_value(
+        self,
+        row_id: str,
+        column: str,
+        default=None,
+    ):
+        context = self.context_for(
+            row_id
+        )
+
+        if context is None:
+            return default
+
+        return context.value(
+            column,
+            default,
+        )
 
     @property
     def audit_count(
