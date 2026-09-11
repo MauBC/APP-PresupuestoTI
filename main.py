@@ -1,18 +1,52 @@
-﻿import sys
-from pathlib import Path
+import sys
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import (
+    QIcon,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+)
 
-from app.config.settings import settings
-from app.ui.windows.main_window import MainWindow
+from app.config.settings import (
+    settings,
+)
+from app.ui.windows.main_window import (
+    MainWindow,
+)
+from app.utils.resources import (
+    resource_path,
+)
 
 
-def load_stylesheet(app: QApplication):
-    style_path = (
-        Path(__file__).parent
-        / "assets"
-        / "styles"
-        / "main.qss"
+APP_USER_MODEL_ID = (
+    "Ransa.PresupuestoTI"
+)
+
+APP_ICON_PATH = (
+    "assets/icons/app.ico"
+)
+
+
+def configure_windows_app_id():
+    if sys.platform != "win32":
+        return
+
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            APP_USER_MODEL_ID
+        )
+
+    except Exception:
+        pass
+
+
+def load_stylesheet(
+    app: QApplication,
+):
+    style_path = resource_path(
+        "assets/styles/main.qss"
     )
 
     if style_path.exists():
@@ -23,17 +57,57 @@ def load_stylesheet(app: QApplication):
         )
 
 
+def load_app_icon():
+    icon_path = resource_path(
+        APP_ICON_PATH
+    )
+
+    if not icon_path.exists():
+        return QIcon()
+
+    return QIcon(
+        str(icon_path)
+    )
+
+
 def main():
-    app = QApplication(sys.argv)
+    configure_windows_app_id()
 
-    app.setApplicationName(settings.APP_NAME)
+    app = QApplication(
+        sys.argv
+    )
 
-    load_stylesheet(app)
+    app.setApplicationName(
+        settings.APP_NAME
+    )
+
+    app.setOrganizationName(
+        "Ransa"
+    )
+
+    icon = load_app_icon()
+
+    if not icon.isNull():
+        app.setWindowIcon(
+            icon
+        )
+
+    load_stylesheet(
+        app
+    )
 
     window = MainWindow()
+
+    if not icon.isNull():
+        window.setWindowIcon(
+            icon
+        )
+
     window.show()
 
-    sys.exit(app.exec())
+    sys.exit(
+        app.exec()
+    )
 
 
 if __name__ == "__main__":

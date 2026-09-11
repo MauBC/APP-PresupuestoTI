@@ -51,3 +51,4 @@ scriptLimpieza/salidas/
 estado_*.txt
 codigo_gui_actual.txt
 main_window_actual.txt
+data_local/

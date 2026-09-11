@@ -15,8 +15,17 @@ class ResultTableModel(
         "#EEF8F1"
     )
 
-    def __init__(self, parent=None):
+    def __init__(
+        self,
+        parent=None,
+        *,
+        amount_columns=(),
+    ):
         super().__init__(parent)
+
+        self._amount_columns = set(
+            amount_columns
+        )
 
         self._rows = ()
         self._columns = ()
@@ -127,12 +136,18 @@ class ResultTableModel(
             return str(value)
 
         if role == Qt.ItemDataRole.UserRole:
+            if isinstance(
+                value,
+                Decimal,
+            ):
+                return float(value)
+
             return value
 
         if role == Qt.ItemDataRole.BackgroundRole:
             if (
-                column.endswith("_usd")
-                or column == "total_usd"
+                column
+                in self._amount_columns
             ):
                 return self.USD_BACKGROUND
 
@@ -147,7 +162,10 @@ class ResultTableModel(
                 )
 
         if role == Qt.ItemDataRole.ToolTipRole:
-            if column.endswith("_usd"):
+            if (
+                column
+                in self._amount_columns
+            ):
                 return (
                     "Doble clic para modificar "
                     "este total agrupado."

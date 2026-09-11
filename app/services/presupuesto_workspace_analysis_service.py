@@ -1,11 +1,11 @@
 from collections import defaultdict
-from decimal import Decimal
+from decimal import (
+    Decimal,
+    ROUND_HALF_UP,
+)
 
 from app.config.presupuesto_app_config import (
-    APP_COLUMNS,
-    GROUPABLE_COLUMNS,
     HABILITADO_COLUMN,
-    USD_COLUMNS,
 )
 from app.models.aggregation_result import (
     AggregationResult,
@@ -23,6 +23,7 @@ from app.services.presupuesto_workspace import (
 
 
 ZERO = Decimal("0")
+CENT = Decimal("0.01")
 
 
 class PresupuestoWorkspaceAnalysisService:
@@ -33,6 +34,21 @@ class PresupuestoWorkspaceAnalysisService:
         workspace: PresupuestoWorkspace,
     ):
         self._workspace = workspace
+        self._config = (
+            workspace.module_config
+        )
+
+        self._app_columns = (
+            *self._config.dimension_columns,
+            HABILITADO_COLUMN,
+            *self._config.amount_columns,
+        )
+
+    @property
+    def module_config(
+        self,
+    ):
+        return self._config
 
     @staticmethod
     def _decimal(value) -> Decimal:
@@ -60,11 +76,131 @@ class PresupuestoWorkspaceAnalysisService:
             )
         )
 
+    def _dashboard_country_value(
+        self,
+        row,
+    ) -> str:
+        column = (
+            self._config
+            .country_column
+        )
+
+        value = (
+            self._text(
+                row.get(column)
+            )
+            if column
+            else ""
+        )
+
+        return (
+            value
+            or "(Sin pais)"
+        )
+
+    def _dashboard_budgeter_value(
+        self,
+        row,
+    ) -> str:
+        column = (
+            self._config
+            .budgeter_column
+        )
+
+        value = (
+            self._text(
+                row.get(column)
+            )
+            if column
+            else ""
+        )
+
+        return (
+            value
+            or "(Sin presupuestador)"
+        )
+
+    def _matches_dashboard_filters(
+        self,
+        row,
+        *,
+        country_filter=None,
+        budgeter_filter=None,
+    ) -> bool:
+        country = self._text(
+            country_filter
+        )
+
+        budgeter = self._text(
+            budgeter_filter
+        )
+
+        if (
+            country
+            and self._dashboard_country_value(
+                row
+            ) != country
+        ):
+            return False
+
+        if (
+            budgeter
+            and self._dashboard_budgeter_value(
+                row
+            ) != budgeter
+        ):
+            return False
+
+        return True
+
+    def get_dashboard_filter_options(
+        self,
+    ) -> dict[
+        str,
+        tuple[str, ...],
+    ]:
+        countries = set()
+        budgeters = set()
+
+        for row in (
+            self._workspace.iter_rows()
+        ):
+            if not self._is_enabled(row):
+                continue
+
+            countries.add(
+                self._dashboard_country_value(
+                    row
+                )
+            )
+
+            budgeters.add(
+                self._dashboard_budgeter_value(
+                    row
+                )
+            )
+
+        return {
+            "countries": tuple(
+                sorted(
+                    countries,
+                    key=str.casefold,
+                )
+            ),
+            "budgeters": tuple(
+                sorted(
+                    budgeters,
+                    key=str.casefold,
+                )
+            ),
+        }
+
     def get_page(
         self,
         *,
         page_index: int,
         page_size: int,
+        enabled_filter: str = "all",
     ) -> PageResult:
         if page_index < 0:
             raise ValueError(
@@ -81,35 +217,92 @@ class PresupuestoWorkspaceAnalysisService:
                 "page_size no puede superar 1000."
             )
 
-        start = page_index * page_size
-        end = start + page_size
+        filter_value = str(
+            enabled_filter
+        ).strip().lower()
+
+        valid_filters = {
+            "all",
+            "enabled",
+            "disabled",
+        }
+
+        if filter_value not in valid_filters:
+            raise ValueError(
+                "enabled_filter no valido: "
+                f"{enabled_filter}"
+            )
+
+        start = (
+            page_index
+            * page_size
+        )
+
+        end = (
+            start
+            + page_size
+        )
 
         selected_rows = []
+        matched_rows = 0
 
-        for index, row in enumerate(
+        for row in (
             self._workspace.iter_rows()
         ):
-            if index < start:
+            enabled = (
+                self._is_enabled(
+                    row
+                )
+            )
+
+            if (
+                filter_value == "enabled"
+                and not enabled
+            ):
                 continue
 
-            if index >= end:
-                break
+            if (
+                filter_value == "disabled"
+                and enabled
+            ):
+                continue
+
+            current_position = (
+                matched_rows
+            )
+
+            matched_rows += 1
+
+            if (
+                current_position < start
+                or
+                current_position >= end
+            ):
+                continue
 
             item = {
-                column: row.get(column)
-                for column in APP_COLUMNS
+                column:
+                    row.get(column)
+                for column
+                in self._app_columns
             }
 
-            item[SESSION_ROW_ID] = row[
+            item[
+                SESSION_ROW_ID
+            ] = row[
                 SESSION_ROW_ID
             ]
 
-            selected_rows.append(item)
+            selected_rows.append(
+                item
+            )
 
         return PageResult(
-            rows=tuple(selected_rows),
-            columns=APP_COLUMNS,
-            total_rows=self._workspace.row_count,
+            rows=tuple(
+                selected_rows
+            ),
+            columns=self._app_columns,
+            total_rows=matched_rows,
             page_index=page_index,
             page_size=page_size,
         )
@@ -117,6 +310,9 @@ class PresupuestoWorkspaceAnalysisService:
     def get_grouped_totals(
         self,
         group_columns,
+        *,
+        country_filter=None,
+        budgeter_filter=None,
     ) -> AggregationResult:
         columns = tuple(group_columns)
 
@@ -145,7 +341,7 @@ class PresupuestoWorkspaceAnalysisService:
         invalid = [
             column
             for column in columns
-            if column not in GROUPABLE_COLUMNS
+            if column not in self._config.groupable_columns
         ]
 
         if invalid:
@@ -160,6 +356,13 @@ class PresupuestoWorkspaceAnalysisService:
             if not self._is_enabled(row):
                 continue
 
+            if not self._matches_dashboard_filters(
+                row,
+                country_filter=country_filter,
+                budgeter_filter=budgeter_filter,
+            ):
+                continue
+
             key = tuple(
                 row.get(column)
                 for column in columns
@@ -170,7 +373,7 @@ class PresupuestoWorkspaceAnalysisService:
                     "registros": 0,
                     **{
                         column: ZERO
-                        for column in USD_COLUMNS
+                        for column in self._config.amount_columns
                     },
                 }
 
@@ -178,10 +381,14 @@ class PresupuestoWorkspaceAnalysisService:
 
             group["registros"] += 1
 
-            for usd_column in USD_COLUMNS:
-                group[usd_column] += (
+            for amount_column in (
+                self._config.amount_columns
+            ):
+                group[amount_column] += (
                     self._decimal(
-                        row.get(usd_column)
+                        row.get(
+                            amount_column
+                        )
                     )
                 )
 
@@ -202,7 +409,9 @@ class PresupuestoWorkspaceAnalysisService:
 
         result_rows.sort(
             key=lambda row: self._decimal(
-                row.get("anio_usd")
+                row.get(
+                    self._config.annual_column
+                )
             ),
             reverse=True,
         )
@@ -212,19 +421,28 @@ class PresupuestoWorkspaceAnalysisService:
             columns=(
                 *columns,
                 "registros",
-                *USD_COLUMNS,
+                *self._config.amount_columns,
             ),
             group_columns=columns,
         )
 
     def get_dashboard(
         self,
+        *,
+        country_filter=None,
+        budgeter_filter=None,
     ) -> DashboardResult:
         total_usd = ZERO
         active_rows = 0
 
         countries = set()
         budgeters = set()
+
+        monthly_totals = {
+            column: ZERO
+            for column
+            in self._config.month_columns
+        }
 
         by_country = defaultdict(
             lambda: {
@@ -244,26 +462,44 @@ class PresupuestoWorkspaceAnalysisService:
             if not self._is_enabled(row):
                 continue
 
+            if not self._matches_dashboard_filters(
+                row,
+                country_filter=country_filter,
+                budgeter_filter=budgeter_filter,
+            ):
+                continue
+
             active_rows += 1
 
             amount = self._decimal(
-                row.get("anio_usd")
+                row.get(
+                    self._config.annual_column
+                )
             )
 
             total_usd += amount
 
-            country = (
-                self._text(
-                    row.get("pais")
+            for column in (
+                self._config.month_columns
+            ):
+                monthly_totals[
+                    column
+                ] += self._decimal(
+                    row.get(
+                        column
+                    )
                 )
-                or "(Sin pais)"
+
+            country = (
+                self._dashboard_country_value(
+                    row
+                )
             )
 
             budgeter = (
-                self._text(
-                    row.get("presupuestador")
+                self._dashboard_budgeter_value(
+                    row
                 )
-                or "(Sin presupuestador)"
             )
 
             if country != "(Sin pais)":
@@ -273,21 +509,31 @@ class PresupuestoWorkspaceAnalysisService:
                 budgeter
                 != "(Sin presupuestador)"
             ):
-                budgeters.add(budgeter)
+                budgeters.add(
+                    budgeter
+                )
 
-            by_country[country][
+            by_country[
+                country
+            ][
                 "registros"
             ] += 1
 
-            by_country[country][
+            by_country[
+                country
+            ][
                 "total_usd"
             ] += amount
 
-            by_budgeter[budgeter][
+            by_budgeter[
+                budgeter
+            ][
                 "registros"
             ] += 1
 
-            by_budgeter[budgeter][
+            by_budgeter[
+                budgeter
+            ][
                 "total_usd"
             ] += amount
 
@@ -314,7 +560,8 @@ class PresupuestoWorkspaceAnalysisService:
 
         budgeter_rows = [
             {
-                "presupuestador": budgeter,
+                "presupuestador":
+                    budgeter,
                 "registros": values[
                     "registros"
                 ],
@@ -333,13 +580,50 @@ class PresupuestoWorkspaceAnalysisService:
             reverse=True,
         )
 
+        if active_rows:
+            average_usd_per_row = (
+                total_usd
+                / Decimal(
+                    active_rows
+                )
+            ).quantize(
+                CENT,
+                rounding=ROUND_HALF_UP,
+            )
+        else:
+            average_usd_per_row = ZERO
+
+        monthly_rows = tuple(
+            {
+                "column": column,
+                "total_usd":
+                    monthly_totals[
+                        column
+                    ],
+            }
+            for column
+            in self._config.month_columns
+        )
+
         return DashboardResult(
             total_usd=total_usd,
             total_rows=active_rows,
-            total_countries=len(countries),
-            total_budgeters=len(budgeters),
-            by_country=tuple(country_rows),
+            total_countries=len(
+                countries
+            ),
+            total_budgeters=len(
+                budgeters
+            ),
+            by_country=tuple(
+                country_rows
+            ),
             by_budgeter=tuple(
                 budgeter_rows
+            ),
+            average_usd_per_row=(
+                average_usd_per_row
+            ),
+            monthly_totals=(
+                monthly_rows
             ),
         )

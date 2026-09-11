@@ -13,9 +13,6 @@ from PySide6.QtGui import QColor
 
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
-    USD_COLUMNS,
-    USD_MONTH_COLUMNS,
-    USD_TOTAL_COLUMN,
 )
 from app.models.page_result import (
     PageResult,
@@ -39,6 +36,10 @@ class PresupuestoTableModel(
         "#FFF1C7"
     )
 
+    NEW_ROW_BACKGROUND = QColor(
+        "#EAF7EE"
+    )
+
     DISABLED_BACKGROUND = QColor(
         "#F0F2F1"
     )
@@ -55,25 +56,40 @@ class PresupuestoTableModel(
         super().__init__(parent)
 
         self._workspace = workspace
+        self._config = (
+            workspace.module_config
+        )
 
         self._rows = []
         self._columns = ()
 
         self._original_rows = {}
+        self._new_row_ids = set()
 
-        self._usd_columns = set(
-            USD_COLUMNS
+        self._amount_columns = set(
+            self._config.amount_columns
         )
 
-        self._usd_month_columns = set(
-            USD_MONTH_COLUMNS
+        self._month_columns = set(
+            self._config.month_columns
         )
+
+        self._annual_column = (
+            self._config.annual_column
+        )
+
+        self._row_number_offset = 0
 
     def set_page(
         self,
         page: PageResult,
     ):
         self.beginResetModel()
+
+        self._row_number_offset = (
+            page.page_index
+            * page.page_size
+        )
 
         self._rows = [
             dict(row)
@@ -85,6 +101,7 @@ class PresupuestoTableModel(
         )
 
         self._original_rows = {}
+        self._new_row_ids = set()
 
         for row in self._rows:
             row_id = row.get(
@@ -101,6 +118,16 @@ class PresupuestoTableModel(
                 )
             )
 
+            if (
+                self._workspace
+                .is_new_row(
+                    row_id
+                )
+            ):
+                self._new_row_ids.add(
+                    row_id
+                )
+
         self.endResetModel()
 
     def clear(self):
@@ -109,6 +136,8 @@ class PresupuestoTableModel(
         self._rows = []
         self._columns = ()
         self._original_rows = {}
+        self._row_number_offset = 0
+        self._new_row_ids = set()
 
         self.endResetModel()
 
@@ -172,7 +201,7 @@ class PresupuestoTableModel(
             return str(value)
 
         if role == Qt.ItemDataRole.EditRole:
-            if column in self._usd_columns:
+            if column in self._amount_columns:
                 if value is None:
                     return ""
 
@@ -180,21 +209,25 @@ class PresupuestoTableModel(
 
             return value
 
-        if (
-            role
-            == Qt.ItemDataRole.CheckStateRole
-            and column == HABILITADO_COLUMN
-        ):
-            return (
-                Qt.CheckState.Checked
-                if enabled
-                else Qt.CheckState.Unchecked
-            )
-
         if role == Qt.ItemDataRole.UserRole:
+            if isinstance(
+                value,
+                Decimal,
+            ):
+                return float(value)
+
             return value
 
         if role == Qt.ItemDataRole.BackgroundRole:
+            row_id = row.get(
+                SESSION_ROW_ID
+            )
+
+            if row_id in self._new_row_ids:
+                return (
+                    self.NEW_ROW_BACKGROUND
+                )
+
             if self._is_modified(
                 row,
                 column,
@@ -208,7 +241,7 @@ class PresupuestoTableModel(
                     self.DISABLED_BACKGROUND
                 )
 
-            if column in self._usd_columns:
+            if column in self._amount_columns:
                 return self.USD_BACKGROUND
 
         if (
@@ -223,7 +256,7 @@ class PresupuestoTableModel(
         if (
             role
             == Qt.ItemDataRole.TextAlignmentRole
-            and column in self._usd_columns
+            and column in self._amount_columns
         ):
             return (
                 Qt.AlignmentFlag.AlignRight
@@ -233,18 +266,18 @@ class PresupuestoTableModel(
         if role == Qt.ItemDataRole.ToolTipRole:
             if column == HABILITADO_COLUMN:
                 return (
-                    "Desmarcar excluye el gasto de "
-                    "Dashboard y Agrupaciones sin "
-                    "eliminar sus importes."
+                    "Estado informativo. Usa el boton "
+                    "Deshabilitar/Reactivar fila para "
+                    "cambiarlo de forma controlada."
                 )
 
-            if column in self._usd_month_columns:
+            if column in self._month_columns:
                 return (
                     "Doble clic para modificar "
                     "el importe mensual en USD."
                 )
 
-            if column == USD_TOTAL_COLUMN:
+            if column == self._annual_column:
                 return (
                     "Doble clic para modificar el "
                     "total anual. Los meses se "
@@ -271,12 +304,7 @@ class PresupuestoTableModel(
             | Qt.ItemFlag.ItemIsSelectable
         )
 
-        if column == HABILITADO_COLUMN:
-            flags |= (
-                Qt.ItemFlag.ItemIsUserCheckable
-            )
-
-        if column in self._usd_columns:
+        if column in self._amount_columns:
             flags |= (
                 Qt.ItemFlag.ItemIsEditable
             )
@@ -316,27 +344,7 @@ class PresupuestoTableModel(
             changed = False
 
             if (
-                column == HABILITADO_COLUMN
-                and
-                role
-                == Qt.ItemDataRole.CheckStateRole
-            ):
-                enabled = value in (
-                    Qt.CheckState.Checked,
-                    Qt.CheckState.Checked.value,
-                    True,
-                )
-
-                changed = (
-                    self._workspace
-                    .set_enabled(
-                        row_id,
-                        enabled,
-                    )
-                )
-
-            elif (
-                column in self._usd_columns
+                column in self._amount_columns
                 and
                 role
                 in (
@@ -350,7 +358,7 @@ class PresupuestoTableModel(
                     )
                 )
 
-                if column == USD_TOTAL_COLUMN:
+                if column == self._annual_column:
                     changed = (
                         self._workspace
                         .edit_annual(
@@ -455,7 +463,36 @@ class PresupuestoTableModel(
                     .upper()
                 )
 
-        return section + 1
+        if (
+            orientation
+            == Qt.Orientation.Vertical
+            and
+            0 <= section < len(self._rows)
+        ):
+            return (
+                self._row_number_offset
+                + section
+                + 1
+            )
+
+        return None
+
+    def session_row_id(
+        self,
+        row_index: int,
+    ):
+        if (
+            row_index < 0
+            or
+            row_index >= len(self._rows)
+        ):
+            return None
+
+        return self._rows[
+            row_index
+        ].get(
+            SESSION_ROW_ID
+        )
 
     def _is_modified(
         self,

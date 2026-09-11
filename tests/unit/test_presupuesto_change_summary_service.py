@@ -6,6 +6,10 @@ from app.config.presupuesto_app_config import (
     USD_MONTH_COLUMNS,
 )
 from app.services.presupuesto_change_summary_service import (
+    CHANGE_TYPE_DISABLED,
+    CHANGE_TYPE_EDITED,
+    CHANGE_TYPE_NEW,
+    CHANGE_TYPE_REACTIVATED,
     PresupuestoChangeSummaryService,
 )
 from app.services.presupuesto_workspace import (
@@ -201,3 +205,141 @@ def test_disable_row_reduces_budget():
         summary.difference
         == Decimal("-40.00")
     )
+
+
+def test_disabled_row_has_financial_detail():
+    workspace = build_workspace()
+
+    workspace.set_enabled(
+        0,
+        False,
+    )
+
+    summary = (
+        PresupuestoChangeSummaryService(
+            workspace
+        ).build()
+    )
+
+    assert summary.disabled_rows == 1
+    assert summary.edited_rows == 0
+    assert summary.new_rows == 0
+    assert summary.reactivated_rows == 0
+
+    detail = next(
+        item
+        for item in summary.details
+        if item.column == "habilitado"
+    )
+
+    assert (
+        detail.change_type
+        == CHANGE_TYPE_DISABLED
+    )
+
+    assert (
+        detail.difference
+        == Decimal("-40.00")
+    )
+
+    assert (
+        detail.variation_percent
+        == Decimal("-100.00")
+    )
+
+
+def test_reactivated_row_is_classified():
+    workspace = PresupuestoWorkspace()
+
+    workspace.load(
+        [
+            make_row(
+                pais="PERU",
+                presupuestador="ANA",
+                gasto="A",
+                enero="10.00",
+                febrero="30.00",
+                habilitado=False,
+            )
+        ]
+    )
+
+    workspace.set_enabled(
+        0,
+        True,
+    )
+
+    summary = (
+        PresupuestoChangeSummaryService(
+            workspace
+        ).build()
+    )
+
+    assert summary.reactivated_rows == 1
+    assert summary.disabled_rows == 0
+
+    detail = next(
+        item
+        for item in summary.details
+        if item.column == "habilitado"
+    )
+
+    assert (
+        detail.change_type
+        == CHANGE_TYPE_REACTIVATED
+    )
+
+    assert (
+        detail.difference
+        == Decimal("40.00")
+    )
+
+    assert (
+        detail.variation_percent
+        is None
+    )
+
+
+def test_regular_edit_is_classified():
+    workspace = build_workspace()
+
+    workspace.edit_month(
+        0,
+        "enero_usd",
+        "25.00",
+    )
+
+    summary = (
+        PresupuestoChangeSummaryService(
+            workspace
+        ).build()
+    )
+
+    assert summary.edited_rows == 1
+    assert summary.disabled_rows == 0
+    assert summary.reactivated_rows == 0
+
+    assert all(
+        detail.change_type
+        == CHANGE_TYPE_EDITED
+        for detail in summary.details
+    )
+
+
+def test_new_row_classifier():
+    workspace = build_workspace()
+
+    service = (
+        PresupuestoChangeSummaryService(
+            workspace
+        )
+    )
+
+    result = service._change_type(
+        {},
+        {
+            "habilitado": True,
+        },
+    )
+
+    assert result == CHANGE_TYPE_NEW

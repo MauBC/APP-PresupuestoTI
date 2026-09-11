@@ -7,15 +7,15 @@ from decimal import (
 from typing import Any
 
 from app.config.presupuesto_app_config import (
-    GROUPABLE_COLUMNS,
     HABILITADO_COLUMN,
-    USD_COLUMNS,
-    USD_MONTH_COLUMNS,
-    USD_TOTAL_COLUMN,
 )
 from app.services.presupuesto_workspace import (
     SESSION_ROW_ID,
     PresupuestoWorkspace,
+)
+from app.services.proportional_allocation_service import (
+    ProportionalAllocationError,
+    ProportionalAllocationService,
 )
 
 
@@ -52,6 +52,9 @@ class PresupuestoGroupEditService:
         workspace: PresupuestoWorkspace,
     ):
         self._workspace = workspace
+        self._config = (
+            workspace.module_config
+        )
 
     def preview(
         self,
@@ -101,7 +104,10 @@ class PresupuestoGroupEditService:
             rounding=ROUND_HALF_UP,
         )
 
-        if column == USD_TOTAL_COLUMN:
+        if (
+            column
+            == self._config.annual_column
+        ):
             distribution_basis = sum(
                 (
                     self._row_month_total(
@@ -194,7 +200,10 @@ class PresupuestoGroupEditService:
         ):
             return preview
 
-        if column == USD_TOTAL_COLUMN:
+        if (
+            column
+            == self._config.annual_column
+        ):
             replacements = (
                 self._build_annual_replacements(
                     preview.row_ids,
@@ -231,6 +240,163 @@ class PresupuestoGroupEditService:
         )
 
         return preview
+
+    def get_group_row_ids(
+        self,
+        *,
+        group_columns,
+        group_values,
+        enabled=None,
+    ) -> tuple[int, ...]:
+        columns = tuple(
+            group_columns
+        )
+
+        values = tuple(
+            group_values
+        )
+
+        self._validate_group(
+            columns,
+            values,
+        )
+
+        if (
+            enabled is not None
+            and
+            not isinstance(
+                enabled,
+                bool,
+            )
+        ):
+            raise PresupuestoGroupEditError(
+                "enabled debe ser bool o None."
+            )
+
+        result = []
+
+        for row in (
+            self._workspace.iter_rows()
+        ):
+            matches = all(
+                row.get(column) == value
+                for column, value
+                in zip(
+                    columns,
+                    values,
+                )
+            )
+
+            if not matches:
+                continue
+
+            row_enabled = bool(
+                row.get(
+                    HABILITADO_COLUMN,
+                    True,
+                )
+            )
+
+            if (
+                enabled is not None
+                and
+                row_enabled != enabled
+            ):
+                continue
+
+            result.append(
+                row[
+                    SESSION_ROW_ID
+                ]
+            )
+
+        return tuple(
+            result
+        )
+
+    def set_group_enabled(
+        self,
+        *,
+        group_columns,
+        group_values,
+        enabled: bool,
+    ) -> int:
+        if not isinstance(
+            enabled,
+            bool,
+        ):
+            raise PresupuestoGroupEditError(
+                "enabled debe ser bool."
+            )
+
+        columns = tuple(
+            group_columns
+        )
+
+        values = tuple(
+            group_values
+        )
+
+        row_ids = (
+            self.get_group_row_ids(
+                group_columns=columns,
+                group_values=values,
+                enabled=not enabled,
+            )
+        )
+
+        if not row_ids:
+            return 0
+
+        replacements = {}
+
+        for row_id in row_ids:
+            updated = deepcopy(
+                self._workspace.get_row(
+                    row_id
+                )
+            )
+
+            updated[
+                HABILITADO_COLUMN
+            ] = enabled
+
+            replacements[
+                row_id
+            ] = updated
+
+        action = (
+            "Reactivar agrupacion"
+            if enabled
+            else "Deshabilitar agrupacion"
+        )
+
+        description = (
+            action
+            + " | "
+            + " / ".join(
+                f"{column}={value}"
+                for column, value
+                in zip(
+                    columns,
+                    values,
+                )
+            )
+        )
+
+        changed = (
+            self._workspace.apply_batch(
+                description=description,
+                replacements=replacements,
+            )
+        )
+
+        if not changed:
+            return 0
+
+        return len(
+            row_ids
+        )
 
     def _find_rows(
         self,
@@ -285,7 +451,9 @@ class PresupuestoGroupEditService:
             if value is None:
                 continue
 
-            amount = self._decimal(value)
+            amount = self._decimal(
+                value
+            )
 
             self._validate_existing_amount(
                 amount
@@ -306,7 +474,9 @@ class PresupuestoGroupEditService:
         replacements = {}
 
         for row_id, row in rows.items():
-            updated = deepcopy(row)
+            updated = deepcopy(
+                row
+            )
 
             if row_id in allocated:
                 updated[column] = (
@@ -314,12 +484,14 @@ class PresupuestoGroupEditService:
                 )
 
             updated[
-                USD_TOTAL_COLUMN
+                self._config.annual_column
             ] = self._row_month_total(
                 updated
             )
 
-            replacements[row_id] = updated
+            replacements[row_id] = (
+                updated
+            )
 
         return replacements
 
@@ -338,8 +510,12 @@ class PresupuestoGroupEditService:
         cells = []
 
         for row_id, row in rows.items():
-            for month in USD_MONTH_COLUMNS:
-                value = row.get(month)
+            for month in (
+                self._config.month_columns
+            ):
+                value = row.get(
+                    month
+                )
 
                 if value is None:
                     continue
@@ -370,9 +546,13 @@ class PresupuestoGroupEditService:
         replacements = {}
 
         for row_id, row in rows.items():
-            updated = deepcopy(row)
+            updated = deepcopy(
+                row
+            )
 
-            for month in USD_MONTH_COLUMNS:
+            for month in (
+                self._config.month_columns
+            ):
                 key = (
                     row_id,
                     month,
@@ -384,12 +564,14 @@ class PresupuestoGroupEditService:
                     )
 
             updated[
-                USD_TOTAL_COLUMN
+                self._config.annual_column
             ] = self._row_month_total(
                 updated
             )
 
-            replacements[row_id] = updated
+            replacements[row_id] = (
+                updated
+            )
 
         return replacements
 
@@ -398,97 +580,19 @@ class PresupuestoGroupEditService:
         values,
         target,
     ):
-        if not values:
-            if target == ZERO:
-                return {}
+        try:
+            return (
+                ProportionalAllocationService
+                .allocate(
+                    values,
+                    target,
+                )
+            )
 
+        except ProportionalAllocationError as exc:
             raise PresupuestoGroupEditError(
-                "No existen importes disponibles "
-                "para realizar la distribucion."
-            )
-
-        current_total = sum(
-            (
-                amount
-                for _, amount in values
-            ),
-            ZERO,
-        )
-
-        if (
-            current_total == ZERO
-            and
-            target > ZERO
-        ):
-            raise PresupuestoGroupEditError(
-                "No existe una distribucion "
-                "previa para repartir el nuevo "
-                "presupuesto."
-            )
-
-        if target == ZERO:
-            return {
-                key: ZERO
-                for key, _ in values
-            }
-
-        factor = (
-            target / current_total
-        )
-
-        result = {}
-
-        for key, amount in values:
-            result[key] = (
-                amount * factor
-            ).quantize(
-                CENT,
-                rounding=ROUND_HALF_UP,
-            )
-
-        allocated_total = sum(
-            result.values(),
-            ZERO,
-        )
-
-        residual = (
-            target - allocated_total
-        ).quantize(
-            CENT,
-            rounding=ROUND_HALF_UP,
-        )
-
-        if residual != ZERO:
-            residual_key = max(
-                values,
-                key=lambda item: abs(
-                    item[1]
-                ),
-            )[0]
-
-            result[residual_key] = (
-                result[residual_key]
-                + residual
-            ).quantize(
-                CENT,
-                rounding=ROUND_HALF_UP,
-            )
-
-        final_total = sum(
-            result.values(),
-            ZERO,
-        ).quantize(
-            CENT,
-            rounding=ROUND_HALF_UP,
-        )
-
-        if final_total != target:
-            raise PresupuestoGroupEditError(
-                "No fue posible ajustar la "
-                "distribucion al total objetivo."
-            )
-
-        return result
+                str(exc)
+            ) from exc
 
     def _validate_group(
         self,
@@ -526,7 +630,11 @@ class PresupuestoGroupEditService:
         invalid = [
             column
             for column in columns
-            if column not in GROUPABLE_COLUMNS
+            if (
+                column
+                not in
+                self._config.groupable_columns
+            )
         ]
 
         if invalid:
@@ -535,14 +643,18 @@ class PresupuestoGroupEditService:
                 + ", ".join(invalid)
             )
 
-    @staticmethod
     def _validate_usd_column(
+        self,
         column,
     ):
-        if column not in USD_COLUMNS:
+        if (
+            column
+            not in
+            self._config.amount_columns
+        ):
             raise PresupuestoGroupEditError(
                 f"La columna {column} "
-                "no es editable como USD."
+                "no es editable como importe."
             )
 
     @staticmethod
@@ -563,7 +675,10 @@ class PresupuestoGroupEditService:
         if value is None:
             return ZERO
 
-        if isinstance(value, Decimal):
+        if isinstance(
+            value,
+            Decimal,
+        ):
             return value
 
         return Decimal(
@@ -575,7 +690,9 @@ class PresupuestoGroupEditService:
         cls,
         value,
     ) -> Decimal:
-        amount = cls._decimal(value)
+        amount = cls._decimal(
+            value
+        )
 
         if amount < ZERO:
             raise PresupuestoGroupEditError(
@@ -588,17 +705,17 @@ class PresupuestoGroupEditService:
             rounding=ROUND_HALF_UP,
         )
 
-    @classmethod
     def _row_month_total(
-        cls,
+        self,
         row,
     ) -> Decimal:
         return sum(
             (
-                cls._decimal(
+                self._decimal(
                     row.get(month)
                 )
-                for month in USD_MONTH_COLUMNS
+                for month
+                in self._config.month_columns
             ),
             ZERO,
         ).quantize(

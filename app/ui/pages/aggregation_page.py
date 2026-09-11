@@ -12,16 +12,17 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QTableView,
     QVBoxLayout,
     QWidget,
 )
 
-from app.config.presupuesto_app_config import (
-    GROUPABLE_COLUMNS,
-    USD_COLUMNS,
+from app.services.dimension_allocation_service import (
+    DimensionAllocationService,
+)
+from app.services.group_monthly_distribution_service import (
+    GroupMonthlyDistributionService,
 )
 from app.services.presupuesto_change_summary_service import (
     PresupuestoChangeSummaryService,
@@ -30,11 +31,21 @@ from app.services.presupuesto_group_edit_service import (
     PresupuestoGroupEditError,
     PresupuestoGroupEditService,
 )
+from app.ui.dialogs.app_message_box import (
+    AppMessageBox,
+    ask_confirmation,
+)
 from app.ui.dialogs.change_summary_dialog import (
     ChangeSummaryDialog,
 )
 from app.ui.dialogs.group_edit_dialog import (
     GroupEditDialog,
+)
+from app.ui.dialogs.monthly_distribution_dialog import (
+    MonthlyDistributionDialog,
+)
+from app.ui.dialogs.dimension_allocation_dialog import (
+    DimensionAllocationDialog,
 )
 from app.ui.models.result_table_model import (
     ResultTableModel,
@@ -67,8 +78,20 @@ class AggregationPage(QWidget):
             )
         )
 
+        self._group_monthly_distribution_service = (
+            GroupMonthlyDistributionService(
+                workspace
+            )
+        )
+
         self._change_summary_service = (
             PresupuestoChangeSummaryService(
+                workspace
+            )
+        )
+
+        self._dimension_allocation_service = (
+            DimensionAllocationService(
                 workspace
             )
         )
@@ -132,10 +155,35 @@ class AggregationPage(QWidget):
             )
         )
 
-        self._set_combo_value(
-            self.group_1,
-            "presupuestador",
+        default_group = (
+            self._workspace
+            .module_config
+            .budgeter_column
         )
+
+        if (
+            default_group
+            not in self._workspace
+            .module_config
+            .groupable_columns
+        ):
+            groupable = (
+                self._workspace
+                .module_config
+                .groupable_columns
+            )
+
+            default_group = (
+                groupable[0]
+                if groupable
+                else None
+            )
+
+        if default_group is not None:
+            self._set_combo_value(
+                self.group_1,
+                default_group,
+            )
 
         self.group_button = QPushButton(
             "Aplicar agrupacion"
@@ -171,6 +219,64 @@ class AggregationPage(QWidget):
 
         layout.addLayout(
             group_layout
+        )
+
+        distribution_layout = (
+            QHBoxLayout()
+        )
+
+        distribution_layout.addWidget(
+            QLabel(
+                "Distribucion avanzada:"
+            )
+        )
+
+        self.distribute_group_months_button = (
+            QPushButton(
+                "Distribuir meses del grupo"
+            )
+        )
+
+        self.distribute_group_months_button.setEnabled(
+            False
+        )
+
+        self.distribute_ceco_button = (
+            QPushButton(
+                "Distribuir por CECO"
+            )
+        )
+
+        self.distribute_country_button = (
+            QPushButton(
+                "Distribuir por pais"
+            )
+        )
+
+        self.distribute_ceco_button.setEnabled(
+            False
+        )
+
+        self.distribute_country_button.setEnabled(
+            False
+        )
+
+        distribution_layout.addWidget(
+            self.distribute_group_months_button
+        )
+
+        distribution_layout.addWidget(
+            self.distribute_ceco_button
+        )
+
+        distribution_layout.addWidget(
+            self.distribute_country_button
+        )
+
+        distribution_layout.addStretch()
+
+        layout.addLayout(
+            distribution_layout
         )
 
         search_layout = QHBoxLayout()
@@ -219,6 +325,24 @@ class AggregationPage(QWidget):
             "}"
         )
 
+        self.group_state_button = QPushButton(
+            "Deshabilitar grupo"
+        )
+
+        self.group_state_button.setObjectName(
+            "warningButton"
+        )
+
+        self.group_state_button.setEnabled(
+            False
+        )
+
+        self.group_state_button.setToolTip(
+            "Deshabilita todas las filas "
+            "reales habilitadas que pertenecen "
+            "a la agrupacion seleccionada."
+        )
+
         self.go_start_button = QPushButton(
             "Ir al inicio"
         )
@@ -238,6 +362,10 @@ class AggregationPage(QWidget):
         navigation_layout.addWidget(
             self.selected_context_label,
             1,
+        )
+
+        navigation_layout.addWidget(
+            self.group_state_button
         )
 
         navigation_layout.addWidget(
@@ -327,7 +455,12 @@ class AggregationPage(QWidget):
         )
 
         self.model = ResultTableModel(
-            self
+            self,
+            amount_columns=(
+                self._workspace
+                .module_config
+                .amount_columns
+            ),
         )
 
         self.proxy_model = (
@@ -371,7 +504,7 @@ class AggregationPage(QWidget):
         )
 
         self.table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectItems
+            QAbstractItemView.SelectionBehavior.SelectRows
         )
 
         self.table.setSelectionMode(
@@ -395,7 +528,11 @@ class AggregationPage(QWidget):
         )
 
         self.table.verticalHeader().setMinimumWidth(
-            42
+            44
+        )
+
+        self.table.verticalHeader().setMaximumWidth(
+            44
         )
 
         header = (
@@ -436,12 +573,42 @@ class AggregationPage(QWidget):
             self.load_grouping
         )
 
+        self.distribute_group_months_button.clicked.connect(
+            self._show_group_month_distribution
+        )
+
+        self.distribute_ceco_button.clicked.connect(
+            lambda:
+                self._show_dimension_distribution(
+                    self._workspace
+                    .module_config
+                    .ceco_column
+                )
+        )
+
+        self.distribute_country_button.clicked.connect(
+            lambda:
+                self._show_dimension_distribution(
+                    self._workspace
+                    .module_config
+                    .country_column
+                )
+        )
+
         self.table.doubleClicked.connect(
             self._edit_group_cell
         )
 
         self.table.clicked.connect(
             self._update_selected_context
+        )
+
+        self.table.clicked.connect(
+            self._update_group_month_distribution_control
+        )
+
+        self.group_state_button.clicked.connect(
+            self.disable_selected_group
         )
 
         self.go_start_button.clicked.connect(
@@ -468,6 +635,7 @@ class AggregationPage(QWidget):
 
     def set_workspace_ready(self):
         self._workspace_ready = True
+        self._update_distribution_controls()
 
         self.group_button.setEnabled(
             True
@@ -484,6 +652,7 @@ class AggregationPage(QWidget):
         message: str,
     ):
         self._workspace_ready = False
+        self._update_distribution_controls()
 
         self.group_button.setEnabled(
             False
@@ -492,6 +661,10 @@ class AggregationPage(QWidget):
         self.status_label.setText(
             "Error al preparar presupuesto: "
             + message
+        )
+
+        self.group_state_button.setEnabled(
+            False
         )
 
     def invalidate(self):
@@ -509,7 +682,11 @@ class AggregationPage(QWidget):
                 None,
             )
 
-        for column in GROUPABLE_COLUMNS:
+        for column in (
+            self._workspace
+            .module_config
+            .groupable_columns
+        ):
             label = (
                 column
                 .replace("_", " ")
@@ -621,7 +798,11 @@ class AggregationPage(QWidget):
 
         total_usd = sum(
             (
-                row.get("anio_usd")
+                row.get(
+                    self._workspace
+                    .module_config
+                    .annual_column
+                )
                 or Decimal("0")
             )
             for row in result.rows
@@ -661,7 +842,10 @@ class AggregationPage(QWidget):
             "Fila seleccionada: ninguna"
         )
 
+        self._update_group_month_distribution_control()
         self._update_change_controls()
+
+        self._update_group_state_button()
 
     def _update_selected_context(
         self,
@@ -711,6 +895,260 @@ class AggregationPage(QWidget):
             "  |  ".join(parts)
         )
 
+        self._update_group_state_button()
+
+
+    def _selected_group_scope(
+        self,
+    ):
+        if self._current_result is None:
+            return None
+
+        proxy_index = (
+            self.table.currentIndex()
+        )
+
+        if not proxy_index.isValid():
+            return None
+
+        source_index = (
+            self.proxy_model.mapToSource(
+                proxy_index
+            )
+        )
+
+        if not source_index.isValid():
+            return None
+
+        row = (
+            self.model.row_dict(
+                source_index.row()
+            )
+        )
+
+        group_columns = tuple(
+            self._current_result
+            .group_columns
+        )
+
+        if not group_columns:
+            return None
+
+        group_values = tuple(
+            row.get(column)
+            for column
+            in group_columns
+        )
+
+        return (
+            row,
+            group_columns,
+            group_values,
+        )
+
+    def _update_group_state_button(
+        self,
+    ):
+        if not hasattr(
+            self,
+            "group_state_button",
+        ):
+            return
+
+        scope = (
+            self._selected_group_scope()
+        )
+
+        if (
+            not self._workspace_ready
+            or scope is None
+        ):
+            self.group_state_button.setEnabled(
+                False
+            )
+
+            self.group_state_button.setText(
+                "Deshabilitar grupo"
+            )
+
+            return
+
+        (
+            _,
+            group_columns,
+            group_values,
+        ) = scope
+
+        try:
+            row_ids = (
+                self._group_edit_service
+                .get_group_row_ids(
+                    group_columns=(
+                        group_columns
+                    ),
+                    group_values=(
+                        group_values
+                    ),
+                    enabled=True,
+                )
+            )
+
+        except Exception:
+            row_ids = ()
+
+        self.group_state_button.setEnabled(
+            bool(row_ids)
+        )
+
+        if row_ids:
+            self.group_state_button.setText(
+                "Deshabilitar grupo "
+                f"({len(row_ids):,})"
+            )
+
+        else:
+            self.group_state_button.setText(
+                "Deshabilitar grupo"
+            )
+
+    def disable_selected_group(
+        self,
+    ):
+        scope = (
+            self._selected_group_scope()
+        )
+
+        if scope is None:
+            return
+
+        (
+            row,
+            group_columns,
+            group_values,
+        ) = scope
+
+        try:
+            row_ids = (
+                self._group_edit_service
+                .get_group_row_ids(
+                    group_columns=(
+                        group_columns
+                    ),
+                    group_values=(
+                        group_values
+                    ),
+                    enabled=True,
+                )
+            )
+
+        except Exception as exc:
+            AppMessageBox.warning(
+                self,
+                "Deshabilitar grupo",
+                "No se pudo identificar "
+                "la agrupacion.\n\n"
+                f"{type(exc).__name__}: "
+                f"{exc}",
+            )
+            return
+
+        if not row_ids:
+            return
+
+        context_lines = []
+
+        for column, value in zip(
+            group_columns,
+            group_values,
+        ):
+            label = (
+                column
+                .replace("_", " ")
+                .title()
+            )
+
+            context_lines.append(
+                f"{label}: {value}"
+            )
+
+        context = "\n".join(
+            context_lines
+        )
+
+        annual_column = (
+            self._workspace
+            .module_config
+            .annual_column
+        )
+
+        total = (
+            row.get(
+                annual_column
+            )
+            or ZERO
+        )
+
+        confirmed = ask_confirmation(
+            self,
+            "Deshabilitar agrupacion",
+            f"{context}\n\n"
+            f"Filas reales afectadas: "
+            f"{len(row_ids):,}\n"
+            f"Total del grupo: "
+            f"US$ {total:,.2f}\n\n"
+            "Todas estas filas dejaran de "
+            "participar en Dashboard y "
+            "Agrupaciones.\n\n"
+            "Los importes NO se eliminaran. "
+            "El cambio permanecera local "
+            "hasta usar Aplicar cambios.",
+            confirm_text=(
+                "Deshabilitar grupo"
+            ),
+        )
+
+        if not confirmed:
+            return
+
+        try:
+            affected = (
+                self._group_edit_service
+                .set_group_enabled(
+                    group_columns=(
+                        group_columns
+                    ),
+                    group_values=(
+                        group_values
+                    ),
+                    enabled=False,
+                )
+            )
+
+        except Exception as exc:
+            AppMessageBox.warning(
+                self,
+                "Deshabilitar grupo",
+                "No se pudo deshabilitar "
+                "la agrupacion.\n\n"
+                f"{type(exc).__name__}: "
+                f"{exc}",
+            )
+            return
+
+        if not affected:
+            return
+
+        self.workspace_changed.emit()
+
+        self.load_grouping()
+
+        self.status_label.setText(
+            "Agrupacion deshabilitada "
+            "localmente: "
+            f"{affected:,} filas reales. "
+            "Los importes se conservaron."
+        )
+
     def _go_to_start(self):
         self._go_to_column_index(
             0
@@ -719,13 +1157,16 @@ class AggregationPage(QWidget):
     def _go_to_annual(self):
         column_index = (
             self._find_column_index(
-                "anio_usd"
+                self._workspace
+                .module_config
+                .annual_column
             )
         )
 
         if column_index is None:
             self.status_label.setText(
-                "No se encontro ANIO USD."
+                "No se encontro la columna "
+                "de total anual."
             )
             return
 
@@ -787,6 +1228,322 @@ class AggregationPage(QWidget):
 
         return None
 
+    def _update_distribution_controls(
+        self,
+    ):
+        config = (
+            self._workspace
+            .module_config
+        )
+
+        self._update_group_month_distribution_control()
+
+        self.distribute_ceco_button.setEnabled(
+            bool(
+                self._workspace_ready
+                and
+                config.ceco_column
+                and
+                config.capabilities
+                .ceco_distribution
+            )
+        )
+
+        self.distribute_country_button.setEnabled(
+            bool(
+                self._workspace_ready
+                and
+                config.country_column
+                and
+                config.capabilities
+                .country_distribution
+            )
+        )
+
+    def _update_group_month_distribution_control(
+        self,
+        *_,
+    ):
+        config = (
+            self._workspace
+            .module_config
+        )
+
+        enabled = (
+            self._workspace_ready
+            and
+            self._current_result
+            is not None
+            and
+            config.capabilities
+            .monthly_distribution
+            and
+            self.table.currentIndex()
+            .isValid()
+        )
+
+        self.distribute_group_months_button.setEnabled(
+            bool(
+                enabled
+            )
+        )
+
+    def _show_group_month_distribution(
+        self,
+    ):
+        if not self._workspace_ready:
+            return
+
+        if self._current_result is None:
+            return
+
+        proxy_index = (
+            self.table.currentIndex()
+        )
+
+        if not proxy_index.isValid():
+            AppMessageBox.information(
+                self,
+                "Distribucion mensual",
+                "Selecciona primero una fila "
+                "de la agrupacion.",
+            )
+            return
+
+        source_index = (
+            self.proxy_model
+            .mapToSource(
+                proxy_index
+            )
+        )
+
+        row = self.model.row_dict(
+            source_index.row()
+        )
+
+        group_columns = tuple(
+            self._current_result
+            .group_columns
+        )
+
+        group_values = tuple(
+            row.get(
+                column
+            )
+            for column
+            in group_columns
+        )
+
+        try:
+            dialog = (
+                MonthlyDistributionDialog(
+                    row=row,
+                    module_config=(
+                        self._workspace
+                        .module_config
+                    ),
+                    parent=self,
+                )
+            )
+
+            if not dialog.exec():
+                return
+
+            preview = (
+                self._group_monthly_distribution_service
+                .apply(
+                    group_columns=(
+                        group_columns
+                    ),
+                    group_values=(
+                        group_values
+                    ),
+                    percentages=(
+                        dialog.percentages()
+                    ),
+                    annual_total=(
+                        dialog.annual_total()
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            AppMessageBox.warning(
+                self,
+                "Distribucion mensual",
+                "No se pudo distribuir "
+                "el grupo.\n\n"
+                f"{type(exc).__name__}: {exc}",
+            )
+            return
+
+        self.workspace_changed.emit()
+
+        self.load_grouping()
+
+        self.status_label.setText(
+            "Distribucion mensual del grupo "
+            "aplicada localmente: "
+            f"{preview.row_count:,} registros | "
+            f"Total anual USD "
+            f"{preview.current_total:,.2f} -> "
+            f"{preview.target_total:,.2f}. "
+            "BigQuery no ha sido modificado."
+        )
+
+    def _dimension_scope(
+        self,
+        dimension,
+    ):
+        if self._current_result is None:
+            return (), ()
+
+        current = (
+            self.table.currentIndex()
+        )
+
+        if not current.isValid():
+            return (), ()
+
+        source_index = (
+            self.proxy_model
+            .mapToSource(
+                current
+            )
+        )
+
+        row = self.model.row_dict(
+            source_index.row()
+        )
+
+        columns = []
+        values = []
+
+        for column in (
+            self._current_result
+            .group_columns
+        ):
+            if column == dimension:
+                continue
+
+            columns.append(
+                column
+            )
+
+            values.append(
+                row.get(
+                    column
+                )
+            )
+
+        return (
+            tuple(columns),
+            tuple(values),
+        )
+
+    def _show_dimension_distribution(
+        self,
+        dimension,
+    ):
+        if not dimension:
+            return
+
+        if not self._workspace_ready:
+            return
+
+        (
+            scope_columns,
+            scope_values,
+        ) = self._dimension_scope(
+            dimension
+        )
+
+        config = (
+            self._workspace
+            .module_config
+        )
+
+        if dimension == config.ceco_column:
+            label = "CECO"
+
+        elif (
+            dimension
+            == config.country_column
+        ):
+            label = "Pais"
+
+        else:
+            label = (
+                dimension
+                .replace("_", " ")
+                .title()
+            )
+
+        try:
+            dialog = (
+                DimensionAllocationDialog(
+                    service=(
+                        self._dimension_allocation_service
+                    ),
+                    dimension=dimension,
+                    dimension_label=label,
+                    scope_columns=(
+                        scope_columns
+                    ),
+                    scope_values=(
+                        scope_values
+                    ),
+                    parent=self,
+                )
+            )
+
+        except Exception as exc:
+            self._show_edit_error(
+                exc
+            )
+            return
+
+        if not dialog.exec():
+            return
+
+        try:
+            preview = (
+                self._dimension_allocation_service
+                .apply(
+                    dimension=dimension,
+                    percentages=(
+                        dialog.percentages()
+                    ),
+                    scope_columns=(
+                        scope_columns
+                    ),
+                    scope_values=(
+                        scope_values
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            self._show_edit_error(
+                exc
+            )
+            return
+
+        self.workspace_changed.emit()
+
+        self.load_grouping()
+
+        self.status_label.setText(
+            "Distribucion por "
+            f"{label} aplicada localmente: "
+            f"{preview.row_count:,} registros | "
+            f"{preview.dimension_count:,} "
+            "grupos | "
+            f"US$ "
+            f"{preview.current_total:,.2f}. "
+            "BigQuery no ha sido modificado."
+        )
+
     def _edit_group_cell(
         self,
         proxy_index,
@@ -812,10 +1569,15 @@ class AggregationPage(QWidget):
             source_index.column()
         )
 
-        if column not in USD_COLUMNS:
+        if (
+            column
+            not in self._workspace
+            .module_config
+            .amount_columns
+        ):
             self.status_label.setText(
-                "Solo los importes USD "
-                "pueden modificarse."
+                "Solo los importes configurados "
+                "para el modulo pueden modificarse."
             )
             return
 
@@ -858,6 +1620,11 @@ class AggregationPage(QWidget):
         dialog = GroupEditDialog(
             initial_preview,
             self,
+            annual_column=(
+                self._workspace
+                .module_config
+                .annual_column
+            ),
         )
 
         if not dialog.exec():
@@ -915,7 +1682,7 @@ class AggregationPage(QWidget):
 
     def show_change_summary(self):
         if not self._workspace.has_changes:
-            QMessageBox.information(
+            AppMessageBox.information(
                 self,
                 "Resumen de cambios",
                 "No existen cambios pendientes.",
@@ -929,7 +1696,7 @@ class AggregationPage(QWidget):
             )
 
         except Exception as exc:
-            QMessageBox.warning(
+            AppMessageBox.warning(
                 self,
                 "Resumen de cambios",
                 f"No se pudo generar el resumen: "
@@ -940,6 +1707,11 @@ class AggregationPage(QWidget):
         dialog = ChangeSummaryDialog(
             summary,
             self,
+            module_label=(
+                self._workspace
+                .module_config
+                .label
+            ),
         )
 
         dialog.exec()
@@ -967,21 +1739,21 @@ class AggregationPage(QWidget):
         if not self._workspace.has_changes:
             return
 
-        result = QMessageBox.question(
+        result = AppMessageBox.question(
             self,
             "Descartar cambios",
             "Se descartaran todos los "
             "cambios de la simulacion local.\n\n"
             "¿Desea continuar?",
-            QMessageBox.StandardButton.Yes
+            AppMessageBox.StandardButton.Yes
             |
-            QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            AppMessageBox.StandardButton.No,
+            AppMessageBox.StandardButton.No,
         )
 
         if (
             result
-            != QMessageBox.StandardButton.Yes
+            != AppMessageBox.StandardButton.Yes
         ):
             return
 
@@ -1156,7 +1928,7 @@ class AggregationPage(QWidget):
             + message
         )
 
-        QMessageBox.warning(
+        AppMessageBox.warning(
             self,
             "Cambio no valido",
             message,

@@ -35,7 +35,11 @@ class WorkspaceLoadThread(QThread):
             bigquery = BigQueryService()
 
             repository = PresupuestoRepository(
-                bigquery
+                bigquery,
+                module_config=(
+                    self._workspace
+                    .module_config
+                ),
             )
 
             loader = PresupuestoWorkspaceLoader(

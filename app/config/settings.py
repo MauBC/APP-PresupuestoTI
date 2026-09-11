@@ -30,6 +30,11 @@ class Settings:
         "US",
     )
 
+    BIGQUERY_CAPEX_TABLE = os.getenv(
+        "BIGQUERY_CAPEX_TABLE",
+        "capex_2027",
+    )
+
     BIGQUERY_BATCH_TABLE = os.getenv(
         "BIGQUERY_BATCH_TABLE",
         "presupuesto_change_batches",
@@ -43,6 +48,72 @@ class Settings:
     BIGQUERY_STAGING_TABLE = os.getenv(
         "BIGQUERY_STAGING_TABLE",
         "presupuesto_change_staging",
+    )
+
+    # Microsoft Graph / SharePoint
+    MS_TENANT_ID = (
+        os.getenv(
+            "MS_TENANT_ID",
+            "",
+        )
+        .strip()
+    )
+
+    MS_CLIENT_ID = (
+        os.getenv(
+            "MS_CLIENT_ID",
+            "",
+        )
+        .strip()
+    )
+
+    MS_CLIENT_SECRET = (
+        os.getenv(
+            "MS_CLIENT_SECRET",
+            "",
+        )
+        .strip()
+    )
+
+    MS_GRAPH_SCOPE = (
+        os.getenv(
+            "MS_GRAPH_SCOPE",
+            "https://graph.microsoft.com/.default",
+        )
+        .strip()
+    )
+
+    SHAREPOINT_HOSTNAME = (
+        os.getenv(
+            "SHAREPOINT_HOSTNAME",
+            "",
+        )
+        .strip()
+    )
+
+    SHAREPOINT_SITE_PATH = (
+        os.getenv(
+            "SHAREPOINT_SITE_PATH",
+            "",
+        )
+        .strip()
+    )
+
+    SHAREPOINT_CAPEX_LIST_NAME = (
+        os.getenv(
+            "SHAREPOINT_CAPEX_LIST_NAME",
+            "Resumen_Capex",
+        )
+        .strip()
+    )
+
+
+    SHAREPOINT_OPEX_LIST_NAME = (
+        os.getenv(
+            "SHAREPOINT_OPEX_LIST_NAME",
+            "Resumen_Opex",
+        )
+        .strip()
     )
 
     WINDOW_WIDTH = 1280
