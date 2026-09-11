@@ -60,6 +60,116 @@ class BudgetExcelImportError(
     pass
 
 
+def _source_value_is_blank(
+    value,
+) -> bool:
+    if value is None:
+        return True
+
+    try:
+        if bool(
+            pd.isna(
+                value
+            )
+        ):
+            return True
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        pass
+
+    if isinstance(
+        value,
+        str,
+    ):
+        return (
+            value.strip()
+            in {
+                "",
+                "-",
+            }
+        )
+
+    return False
+
+
+def _drop_blank_source_rows(
+    dataframe,
+):
+    if dataframe.empty:
+        return (
+            dataframe.copy(
+                deep=True
+            ),
+            0,
+        )
+
+    blank_mask = (
+        dataframe.apply(
+            lambda row: all(
+                _source_value_is_blank(
+                    value
+                )
+                for value
+                in row.values
+            ),
+            axis=1,
+        )
+    )
+
+    ignored = int(
+        blank_mask.sum()
+    )
+
+    filtered = (
+        dataframe.loc[
+            ~blank_mask
+        ]
+        .copy(
+            deep=True
+        )
+    )
+
+    return (
+        filtered,
+        ignored,
+    )
+
+
+def _source_row_numbers(
+    dataframe,
+):
+    result = []
+
+    for fallback, row_index in enumerate(
+        dataframe.index,
+        start=2,
+    ):
+        try:
+            number = (
+                int(
+                    row_index
+                )
+                + 2
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            number = fallback
+
+        result.append(
+            number
+        )
+
+    return tuple(
+        result
+    )
+
+
 class BudgetExcelImportService:
     def __init__(
         self,
@@ -168,12 +278,25 @@ class BudgetExcelImportService:
                 sheet_name=sheet_name,
             )
 
+            source_column_count = len(
+                dataframe.columns
+            )
+
+            (
+                dataframe,
+                ignored_row_count,
+            ) = _drop_blank_source_rows(
+                dataframe
+            )
+
             source_row_count = len(
                 dataframe
             )
 
-            source_column_count = len(
-                dataframe.columns
+            source_row_numbers = (
+                _source_row_numbers(
+                    dataframe
+                )
             )
 
             cleaning = clean_dataframe(
@@ -273,6 +396,10 @@ class BudgetExcelImportService:
                 issues=tuple(
                     issues
                 ),
+                source_row_numbers=(),
+                ignored_row_count=(
+                    ignored_row_count
+                ),
             )
 
         try:
@@ -323,6 +450,12 @@ class BudgetExcelImportService:
             rows=rows,
             issues=tuple(
                 issues
+            ),
+            source_row_numbers=(
+                source_row_numbers
+            ),
+            ignored_row_count=(
+                ignored_row_count
             ),
         )
 
@@ -423,6 +556,11 @@ class BudgetExcelImportService:
                 ),
                 rows=(),
                 issues=issues,
+                source_row_numbers=(),
+                ignored_row_count=(
+                    import_result
+                    .ignored_empty_count
+                ),
             )
 
         records = [
@@ -479,6 +617,14 @@ class BudgetExcelImportService:
             ),
             rows=rows,
             issues=issues,
+            source_row_numbers=(
+                import_result
+                .valid_row_numbers
+            ),
+            ignored_row_count=(
+                import_result
+                .ignored_empty_count
+            ),
         )
 
     def _validate_prepared_rows(

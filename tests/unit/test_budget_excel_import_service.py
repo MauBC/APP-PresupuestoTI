@@ -385,3 +385,129 @@ def test_capex_same_project_different_ceco_is_allowed(
             "row_id"
         ]
     )
+
+def test_opex_import_ignores_ghost_rows(
+    tmp_path,
+):
+    path = (
+        tmp_path
+        / "opex_ghost_rows.xlsx"
+    )
+
+    ghost = {
+        column: "-"
+        for column
+        in LEGACY_EXPECTED_COLUMNS
+    }
+
+    dataframe = pd.concat(
+        (
+            pd.DataFrame(
+                [ghost],
+                columns=(
+                    LEGACY_EXPECTED_COLUMNS
+                ),
+            ),
+            make_opex_dataframe(),
+        ),
+        ignore_index=True,
+    )
+
+    dataframe.to_excel(
+        path,
+        index=False,
+    )
+
+    result = (
+        BudgetExcelImportService(
+            OPEX_MODULE_CONFIG
+        )
+        .prepare(
+            path,
+            actor="tester",
+            row_id_factory=(
+                id_factory(
+                    "ghost"
+                )
+            ),
+        )
+    )
+
+    assert result.is_valid
+
+    assert (
+        result.rows_read
+        == 1
+    )
+
+    assert (
+        result.importable_count
+        == 1
+    )
+
+    assert (
+        result.ignored_row_count
+        == 1
+    )
+
+    assert (
+        result.source_row_numbers
+        == (
+            3,
+        )
+    )
+
+
+def test_opex_zero_is_not_a_ghost_row(
+    tmp_path,
+):
+    path = (
+        tmp_path
+        / "opex_zero.xlsx"
+    )
+
+    dataframe = (
+        make_opex_dataframe()
+    )
+
+    dataframe.loc[
+        0,
+        "enero_usd",
+    ] = 0
+
+    dataframe.to_excel(
+        path,
+        index=False,
+    )
+
+    result = (
+        BudgetExcelImportService(
+            OPEX_MODULE_CONFIG
+        )
+        .prepare(
+            path,
+            actor="tester",
+            row_id_factory=(
+                id_factory(
+                    "zero"
+                )
+            ),
+        )
+    )
+
+    assert (
+        result.rows_read
+        == 1
+    )
+
+    assert (
+        result.ignored_row_count
+        == 0
+    )
+
+    assert (
+        result.source_row_numbers
+        == (
+            2,
+        )
+    )

@@ -47,6 +47,13 @@ class BudgetExcelImportResult:
         ...
     ] = ()
 
+    source_row_numbers: tuple[
+        int,
+        ...
+    ] = ()
+
+    ignored_row_count: int = 0
+
     @property
     def error_count(
         self,

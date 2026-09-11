@@ -43,6 +43,13 @@ class CapexExcelLoadResult:
         ...
     ]
 
+    row_numbers: tuple[
+        int,
+        ...
+    ] = ()
+
+    ignored_empty_count: int = 0
+
     @property
     def valid_results(
         self,
@@ -67,6 +74,36 @@ class CapexExcelLoadResult:
             result
             for result in self.results
             if not result.is_valid
+        )
+
+    @property
+    def valid_row_numbers(
+        self,
+    ) -> tuple[int, ...]:
+        numbers = (
+            self.row_numbers
+        )
+
+        if not numbers:
+            numbers = tuple(
+                range(
+                    self.header_row + 1,
+                    self.header_row
+                    + 1
+                    + len(
+                        self.results
+                    ),
+                )
+            )
+
+        return tuple(
+            row_number
+            for result, row_number
+            in zip(
+                self.results,
+                numbers,
+            )
+            if result.is_valid
         )
 
     @property
@@ -381,6 +418,8 @@ def load_capex_workbook(
         )
 
         results = []
+        row_numbers = []
+        ignored_empty_count = 0
 
         for (
             row_number,
@@ -406,6 +445,7 @@ def load_capex_workbook(
             if _row_is_empty(
                 raw_row
             ):
+                ignored_empty_count += 1
                 continue
 
             result = (
@@ -424,6 +464,10 @@ def load_capex_workbook(
                 result
             )
 
+            row_numbers.append(
+                row_number
+            )
+
         return CapexExcelLoadResult(
             source_path=str(
                 source.resolve()
@@ -435,6 +479,12 @@ def load_capex_workbook(
             ),
             results=tuple(
                 results
+            ),
+            row_numbers=tuple(
+                row_numbers
+            ),
+            ignored_empty_count=(
+                ignored_empty_count
             ),
         )
 
