@@ -38,6 +38,7 @@ from app.services.sharepoint_sync_queue import (
     SharePointSyncRequestQueue,
 )
 from app.ui.dialogs.app_message_box import (
+    ask_confirmation,
     show_error,
     show_info,
     show_warning,
@@ -128,6 +129,7 @@ class MainWindow(QMainWindow):
 
         self._sharepoint_sync_last_error = None
         self._sharepoint_sync_current_manual = False
+        self._sharepoint_large_delete_failure = None
 
         self._save_in_progress = False
         self._reversal_in_progress = False
@@ -887,6 +889,33 @@ class MainWindow(QMainWindow):
 
             return
 
+        if (
+            self._sharepoint_large_delete_failure
+            is not None
+        ):
+            failure = (
+                self._sharepoint_large_delete_failure
+            )
+
+            if not (
+                self._confirm_large_delete_sync(
+                    failure
+                )
+            ):
+                return
+
+            self._sharepoint_large_delete_failure = None
+
+            self._queue_sharepoint_sync(
+                source_batch_id=(
+                    failure.source_batch_id
+                ),
+                manual=True,
+                allow_large_delete=True,
+            )
+
+            return
+
         self._queue_sharepoint_sync(
             source_batch_id=None,
             manual=True,
@@ -897,6 +926,7 @@ class MainWindow(QMainWindow):
         *,
         source_batch_id=None,
         manual=False,
+        allow_large_delete=False,
     ):
         if not self._sharepoint_sync_is_capex():
             return
@@ -908,6 +938,9 @@ class MainWindow(QMainWindow):
                     source_batch_id
                 ),
                 manual=manual,
+                allow_large_delete=(
+                    allow_large_delete
+                ),
             )
         )
 
@@ -945,6 +978,10 @@ class MainWindow(QMainWindow):
                     request.source_batch_id
                 ),
                 parent=self,
+                allow_large_delete=(
+                    request
+                    .allow_large_delete
+                ),
             )
         )
 
@@ -973,6 +1010,7 @@ class MainWindow(QMainWindow):
         )
 
         self._sharepoint_sync_last_error = None
+        self._sharepoint_large_delete_failure = None
 
         result = (
             outcome.publish_result
@@ -1009,6 +1047,35 @@ class MainWindow(QMainWindow):
             failure.message
         )
 
+        if (
+            failure
+            .requires_large_delete_confirmation
+        ):
+            self._sharepoint_large_delete_failure = (
+                failure
+            )
+
+            self._update_sharepoint_sync_ui()
+
+            if (
+                self._confirm_large_delete_sync(
+                    failure
+                )
+            ):
+                self._sharepoint_large_delete_failure = None
+
+                self._queue_sharepoint_sync(
+                    source_batch_id=(
+                        failure.source_batch_id
+                    ),
+                    manual=True,
+                    allow_large_delete=True,
+                )
+
+            return
+
+        self._sharepoint_large_delete_failure = None
+
         self._update_sharepoint_sync_ui()
 
         show_warning(
@@ -1025,6 +1092,44 @@ class MainWindow(QMainWindow):
             "'Reintentar SharePoint'."
             "\n\n"
             f"Detalle: {failure.message}",
+        )
+
+    def _confirm_large_delete_sync(
+        self,
+        failure,
+    ) -> bool:
+        return ask_confirmation(
+            self,
+            "Confirmar eliminacion masiva",
+            "La proteccion de SharePoint "
+            "detecto una eliminacion masiva."
+            "\n\n"
+            f"Crear: "
+            f"{failure.create_count:,}\n"
+            f"Actualizar: "
+            f"{failure.update_count:,}\n"
+            f"Eliminar: "
+            f"{failure.delete_count:,}\n"
+            f"Sin cambios: "
+            f"{failure.unchanged_count:,}\n"
+            f"No administrados: "
+            f"{failure.unmanaged_count:,}\n"
+            f"Items actuales: "
+            f"{failure.current_item_count:,}\n"
+            f"Items objetivo: "
+            f"{failure.desired_item_count:,}"
+            "\n\n"
+            "BigQuery ya permanece guardado. "
+            "Esta autorizacion solo aplica "
+            "a este intento de sincronizacion "
+            "de Resumen_Capex."
+            "\n\n"
+            "Revisa las cantidades antes "
+            "de continuar.",
+            confirm_text=(
+                "Autorizar sincronizacion"
+            ),
+            cancel_text="Cancelar",
         )
 
     def _on_sharepoint_sync_finished(

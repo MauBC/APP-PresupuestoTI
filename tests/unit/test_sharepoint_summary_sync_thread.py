@@ -3,6 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.services.sharepoint_summary_publisher import (
+    SharePointLargeDeleteGuardError,
+)
 from app.ui.workers.sharepoint_summary_sync import (
     CapexSharePointSummarySyncThread,
     SharePointSummarySyncThreadFailure,
@@ -41,11 +44,13 @@ class FakeService:
         preparation,
         *,
         source_batch_id=None,
+        allow_large_delete=False,
     ):
         self.calls.append(
             (
                 "publish",
                 source_batch_id,
+                allow_large_delete,
             )
         )
 
@@ -102,6 +107,7 @@ def test_worker_completes():
         (
             "publish",
             "batch-1",
+            False,
         ),
     ]
 
@@ -123,6 +129,7 @@ def test_worker_allows_manual_sync_without_batch():
     assert service.calls[-1] == (
         "publish",
         None,
+        False,
     )
 
 
@@ -175,3 +182,77 @@ def test_worker_failure_is_separate_from_bigquery():
         "Synthetic SharePoint failure"
         in failure.message
     )
+
+def test_worker_passes_large_delete_authorization():
+    service = FakeService()
+
+    worker = CapexSharePointSummarySyncThread(
+        source_batch_id="batch-large",
+        allow_large_delete=True,
+        service_factory=(
+            lambda: service
+        ),
+    )
+
+    worker.run()
+
+    assert service.calls[-1] == (
+        "publish",
+        "batch-large",
+        True,
+    )
+
+
+def test_worker_exposes_large_delete_plan():
+    class GuardService:
+        def prepare(self):
+            return SimpleNamespace(
+                plan=SimpleNamespace(
+                    create_count=81,
+                    update_count=14,
+                    delete_count=141,
+                    unchanged_count=2,
+                    unmanaged_count=0,
+                    current_item_count=157,
+                    desired_item_count=97,
+                )
+            )
+
+        def publish(
+            self,
+            preparation,
+            *,
+            source_batch_id=None,
+            allow_large_delete=False,
+        ):
+            raise SharePointLargeDeleteGuardError(
+                "Se bloqueo una eliminacion masiva."
+            )
+
+    worker = CapexSharePointSummarySyncThread(
+        source_batch_id="batch-cutover",
+        service_factory=GuardService,
+    )
+
+    failures = []
+
+    worker.failed.connect(
+        failures.append
+    )
+
+    worker.run()
+
+    assert len(failures) == 1
+
+    failure = failures[0]
+
+    assert (
+        failure
+        .requires_large_delete_confirmation
+    )
+
+    assert failure.create_count == 81
+    assert failure.update_count == 14
+    assert failure.delete_count == 141
+    assert failure.current_item_count == 157
+    assert failure.desired_item_count == 97
