@@ -175,7 +175,7 @@ def test_prepare_capex_builds_final_contract(
 
     assert (
         result.business_column_count
-        == 50
+        == 51
     )
 
     assert (
@@ -185,7 +185,7 @@ def test_prepare_capex_builds_final_contract(
 
     assert (
         result.final_column_count
-        == 57
+        == 58
     )
 
     assert (

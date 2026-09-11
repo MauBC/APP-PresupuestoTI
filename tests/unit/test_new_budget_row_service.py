@@ -132,8 +132,10 @@ def test_capex_draft_uses_capex_dimensions():
     )
 
     assert (
-        "presupuestador"
-        not in draft.row
+        draft.row[
+            "presupuestador"
+        ]
+        is None
     )
 
     for column in (
@@ -157,7 +159,7 @@ def test_unknown_dimension_is_rejected():
     ):
         service.create_draft(
             {
-                "presupuestador":
+                "dimension_inexistente":
                     "No aplica",
             },
             actor="tester",
