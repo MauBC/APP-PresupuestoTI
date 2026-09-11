@@ -19,6 +19,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config.new_budget_row_form import (
+    get_new_budget_row_form,
+)
+
 
 SPECIAL_LABELS = {
     "anio": "Anio",
@@ -115,6 +119,12 @@ class NewBudgetRowDialog(
         self._inputs = {}
         self._dimensions = None
 
+        self._form_definition = (
+            get_new_budget_row_form(
+                module_config
+            )
+        )
+
         self.setObjectName(
             "newBudgetRowDialog"
         )
@@ -197,6 +207,18 @@ class NewBudgetRowDialog(
 
             QFrame#formContainer {
                 background-color: #FFFFFF;
+            }
+
+            QFrame#newRowSection {
+                background-color: #F8FAF9;
+                border: 1px solid #DCE6DF;
+                border-radius: 8px;
+            }
+
+            QLabel#newRowSectionTitle {
+                color: #155C3D;
+                font-size: 13px;
+                font-weight: 700;
             }
 
             QPushButton {
@@ -305,23 +327,21 @@ class NewBudgetRowDialog(
             "formContainer"
         )
 
-        form = QFormLayout(
-            form_container
+        form_container_layout = (
+            QVBoxLayout(
+                form_container
+            )
         )
 
-        form.setContentsMargins(
-            18,
-            18,
-            18,
-            18,
+        form_container_layout.setContentsMargins(
+            14,
+            14,
+            14,
+            14,
         )
 
-        form.setHorizontalSpacing(
-            18
-        )
-
-        form.setVerticalSpacing(
-            10
+        form_container_layout.setSpacing(
+            12
         )
 
         type_map = (
@@ -329,39 +349,119 @@ class NewBudgetRowDialog(
             .insert_type_map
         )
 
-        for column in (
-            self._config
-            .dimension_columns
+        default_map = (
+            self._form_definition
+            .default_map
+        )
+
+        for section in (
+            self._form_definition
+            .sections
         ):
-            value_type = (
-                type_map.get(
-                    column,
-                    "STRING",
+            section_frame = QFrame()
+
+            section_frame.setObjectName(
+                "newRowSection"
+            )
+
+            section_layout = (
+                QVBoxLayout(
+                    section_frame
                 )
             )
 
-            widget = (
-                self._create_input(
-                    column,
-                    value_type,
-                )
+            section_layout.setContentsMargins(
+                16,
+                12,
+                16,
+                14,
             )
 
-            self._inputs[
-                column
-            ] = widget
+            section_layout.setSpacing(
+                8
+            )
 
-            label = QLabel(
-                format_dimension_label(
+            section_title = QLabel(
+                section.title
+            )
+
+            section_title.setObjectName(
+                "newRowSectionTitle"
+            )
+
+            section_layout.addWidget(
+                section_title
+            )
+
+            form = QFormLayout()
+
+            form.setContentsMargins(
+                0,
+                4,
+                0,
+                0,
+            )
+
+            form.setHorizontalSpacing(
+                18
+            )
+
+            form.setVerticalSpacing(
+                10
+            )
+
+            for column in (
+                section.columns
+            ):
+                value_type = (
+                    type_map.get(
+                        column,
+                        "STRING",
+                    )
+                )
+
+                widget = (
+                    self._create_input(
+                        column,
+                        value_type,
+                    )
+                )
+
+                self._inputs[
                     column
+                ] = widget
+
+                if column in default_map:
+                    self._set_input_value(
+                        widget,
+                        default_map[
+                            column
+                        ],
+                    )
+
+                label = QLabel(
+                    format_dimension_label(
+                        column
+                    )
+                    + ":"
                 )
-                + ":"
+
+                form.addRow(
+                    label,
+                    widget,
+                )
+
+            section_layout.addLayout(
+                form
             )
 
-            form.addRow(
-                label,
-                widget,
+            form_container_layout.addWidget(
+                section_frame
             )
+
+        form_container_layout.addStretch(
+            1
+        )
 
         scroll.setWidget(
             form_container
@@ -514,6 +614,46 @@ class NewBudgetRowDialog(
         )
 
         return widget
+
+    @staticmethod
+    def _set_input_value(
+        widget,
+        value,
+    ):
+        if value is None:
+            return
+
+        text = str(
+            value
+        )
+
+        if isinstance(
+            widget,
+            QComboBox,
+        ):
+            index = (
+                widget.findText(
+                    text,
+                    Qt.MatchFlag
+                    .MatchFixedString,
+                )
+            )
+
+            if index >= 0:
+                widget.setCurrentIndex(
+                    index
+                )
+
+            else:
+                widget.setEditText(
+                    text
+                )
+
+            return
+
+        widget.setText(
+            text
+        )
 
     def dimensions(
         self,
