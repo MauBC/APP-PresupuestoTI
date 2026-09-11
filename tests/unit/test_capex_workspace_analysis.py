@@ -190,3 +190,76 @@ def test_capex_can_group_by_responsable():
             "50"
         ),
     }
+
+def test_capex_dashboard_exposes_advanced_metrics():
+    first = make_row(
+        row_id="row-1",
+        pais="PER",
+        responsable="Ana",
+        total="100",
+    )
+
+    second = make_row(
+        row_id="row-2",
+        pais="CHL",
+        responsable="Luis",
+        total="50",
+    )
+
+    first[
+        CAPEX_MODULE_CONFIG
+        .month_columns[0]
+    ] = Decimal("100")
+
+    second[
+        CAPEX_MODULE_CONFIG
+        .month_columns[0]
+    ] = Decimal("50")
+
+    workspace = (
+        PresupuestoWorkspace(
+            CAPEX_MODULE_CONFIG
+        )
+    )
+
+    workspace.load(
+        (
+            first,
+            second,
+        )
+    )
+
+    service = (
+        PresupuestoWorkspaceAnalysisService(
+            workspace
+        )
+    )
+
+    result = service.get_dashboard()
+
+    monthly = {
+        item["column"]:
+            item["total_usd"]
+        for item
+        in result.monthly_totals
+    }
+
+    assert (
+        result.average_usd_per_row
+        == Decimal("75.00")
+    )
+
+    assert (
+        monthly[
+            CAPEX_MODULE_CONFIG
+            .month_columns[0]
+        ]
+        == Decimal("150")
+    )
+
+    assert (
+        len(
+            result.monthly_totals
+        )
+        == 12
+    )

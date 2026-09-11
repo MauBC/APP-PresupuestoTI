@@ -241,3 +241,86 @@ def test_invalid_group_is_rejected():
         service.get_grouped_totals(
             ("vp",)
         )
+
+def test_dashboard_exposes_advanced_metrics():
+    workspace = build_workspace()
+
+    service = (
+        PresupuestoWorkspaceAnalysisService(
+            workspace
+        )
+    )
+
+    result = service.get_dashboard()
+
+    monthly = {
+        item["column"]:
+            item["total_usd"]
+        for item
+        in result.monthly_totals
+    }
+
+    assert (
+        result.average_usd_per_row
+        == Decimal("46.67")
+    )
+
+    assert (
+        len(
+            result.monthly_totals
+        )
+        == 12
+    )
+
+    assert (
+        monthly["enero_usd"]
+        == Decimal("80")
+    )
+
+    assert (
+        monthly["febrero_usd"]
+        == Decimal("60")
+    )
+
+    assert (
+        monthly["marzo_usd"]
+        == Decimal("0")
+    )
+
+
+def test_empty_dashboard_has_safe_advanced_metrics():
+    workspace = PresupuestoWorkspace()
+
+    workspace.load(
+        ()
+    )
+
+    service = (
+        PresupuestoWorkspaceAnalysisService(
+            workspace
+        )
+    )
+
+    result = service.get_dashboard()
+
+    assert result.total_usd == Decimal("0")
+    assert result.total_rows == 0
+
+    assert (
+        result.average_usd_per_row
+        == Decimal("0")
+    )
+
+    assert (
+        len(
+            result.monthly_totals
+        )
+        == 12
+    )
+
+    assert all(
+        item["total_usd"]
+        == Decimal("0")
+        for item
+        in result.monthly_totals
+    )

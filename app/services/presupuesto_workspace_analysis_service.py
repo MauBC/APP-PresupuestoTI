@@ -1,5 +1,8 @@
 from collections import defaultdict
-from decimal import Decimal
+from decimal import (
+    Decimal,
+    ROUND_HALF_UP,
+)
 
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
@@ -20,6 +23,7 @@ from app.services.presupuesto_workspace import (
 
 
 ZERO = Decimal("0")
+CENT = Decimal("0.01")
 
 
 class PresupuestoWorkspaceAnalysisService:
@@ -302,6 +306,12 @@ class PresupuestoWorkspaceAnalysisService:
         countries = set()
         budgeters = set()
 
+        monthly_totals = {
+            column: ZERO
+            for column
+            in self._config.month_columns
+        }
+
         by_country = defaultdict(
             lambda: {
                 "registros": 0,
@@ -329,6 +339,17 @@ class PresupuestoWorkspaceAnalysisService:
             )
 
             total_usd += amount
+
+            for column in (
+                self._config.month_columns
+            ):
+                monthly_totals[
+                    column
+                ] += self._decimal(
+                    row.get(
+                        column
+                    )
+                )
 
             country_column = (
                 self._config
@@ -377,21 +398,31 @@ class PresupuestoWorkspaceAnalysisService:
                 budgeter
                 != "(Sin presupuestador)"
             ):
-                budgeters.add(budgeter)
+                budgeters.add(
+                    budgeter
+                )
 
-            by_country[country][
+            by_country[
+                country
+            ][
                 "registros"
             ] += 1
 
-            by_country[country][
+            by_country[
+                country
+            ][
                 "total_usd"
             ] += amount
 
-            by_budgeter[budgeter][
+            by_budgeter[
+                budgeter
+            ][
                 "registros"
             ] += 1
 
-            by_budgeter[budgeter][
+            by_budgeter[
+                budgeter
+            ][
                 "total_usd"
             ] += amount
 
@@ -418,7 +449,8 @@ class PresupuestoWorkspaceAnalysisService:
 
         budgeter_rows = [
             {
-                "presupuestador": budgeter,
+                "presupuestador":
+                    budgeter,
                 "registros": values[
                     "registros"
                 ],
@@ -437,13 +469,50 @@ class PresupuestoWorkspaceAnalysisService:
             reverse=True,
         )
 
+        if active_rows:
+            average_usd_per_row = (
+                total_usd
+                / Decimal(
+                    active_rows
+                )
+            ).quantize(
+                CENT,
+                rounding=ROUND_HALF_UP,
+            )
+        else:
+            average_usd_per_row = ZERO
+
+        monthly_rows = tuple(
+            {
+                "column": column,
+                "total_usd":
+                    monthly_totals[
+                        column
+                    ],
+            }
+            for column
+            in self._config.month_columns
+        )
+
         return DashboardResult(
             total_usd=total_usd,
             total_rows=active_rows,
-            total_countries=len(countries),
-            total_budgeters=len(budgeters),
-            by_country=tuple(country_rows),
+            total_countries=len(
+                countries
+            ),
+            total_budgeters=len(
+                budgeters
+            ),
+            by_country=tuple(
+                country_rows
+            ),
             by_budgeter=tuple(
                 budgeter_rows
+            ),
+            average_usd_per_row=(
+                average_usd_per_row
+            ),
+            monthly_totals=(
+                monthly_rows
             ),
         )
