@@ -1,3 +1,22 @@
+from PySide6.QtCore import (
+    Qt,
+    QTimer,
+)
+from PySide6.QtGui import (
+    QColor,
+    QPainter,
+)
+from PySide6.QtCharts import (
+    QBarCategoryAxis,
+    QBarSeries,
+    QBarSet,
+    QChart,
+    QChartView,
+    QValueAxis,
+)
+from PySide6.QtWidgets import (
+    QGraphicsSimpleTextItem,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -13,9 +32,131 @@ from PySide6.QtWidgets import (
 from app.config.budget_module_config import (
     BudgetModule,
 )
+from math import ceil
+
 from app.ui.models.result_table_model import (
     ResultTableModel,
 )
+
+
+MONTHLY_CHART_STEP_K = 100.0
+
+
+MONTH_LABELS = {
+    "enero_usd": "Enero",
+    "febrero_usd": "Febrero",
+    "marzo_usd": "Marzo",
+    "abril_usd": "Abril",
+    "mayo_usd": "Mayo",
+    "junio_usd": "Junio",
+    "julio_usd": "Julio",
+    "agosto_usd": "Agosto",
+    "setiembre_usd": "Setiembre",
+    "septiembre_usd": "Septiembre",
+    "octubre_usd": "Octubre",
+    "noviembre_usd": "Noviembre",
+    "diciembre_usd": "Diciembre",
+}
+
+
+def dashboard_month_label(
+    column,
+):
+    value = str(
+        column
+        if column is not None
+        else ""
+    ).strip().lower()
+
+    if value in MONTH_LABELS:
+        return MONTH_LABELS[
+            value
+        ]
+
+    if value.endswith(
+        "_usd"
+    ):
+        value = value[:-4]
+
+    return (
+        value
+        .replace("_", " ")
+        .strip()
+        .title()
+    )
+
+
+def build_monthly_chart_data(
+    monthly_totals,
+):
+    labels = []
+    values_k = []
+
+    for item in monthly_totals:
+        labels.append(
+            dashboard_month_label(
+                item.get(
+                    "column"
+                )
+            )
+        )
+
+        value = item.get(
+            "total_usd"
+        )
+
+        raw_value = float(
+            value
+            if value is not None
+            else 0
+        )
+
+        values_k.append(
+            raw_value / 1000.0
+        )
+
+    return (
+        tuple(labels),
+        tuple(values_k),
+    )
+
+
+def monthly_chart_axis_max_k(
+    values_k,
+):
+    maximum = max(
+        values_k,
+        default=0.0,
+    )
+
+    if maximum <= 0:
+        return (
+            MONTHLY_CHART_STEP_K
+        )
+
+    rounded = (
+        ceil(
+            maximum
+            / MONTHLY_CHART_STEP_K
+        )
+        * MONTHLY_CHART_STEP_K
+    )
+
+    # Dejamos siempre 100k extra.
+    # Esto evita cortar las etiquetas
+    # que se dibujan sobre las barras.
+    return (
+        rounded
+        + MONTHLY_CHART_STEP_K
+    )
+
+
+def format_monthly_bar_label_k(
+    value_k,
+):
+    return (
+        f"{float(value_k):,.0f}k"
+    )
 
 
 class DashboardPage(QWidget):
@@ -162,10 +303,19 @@ class DashboardPage(QWidget):
             "personas",
         )
 
+        (
+            self.average_value,
+            average_card,
+        ) = self._create_card(
+            "Promedio por registro",
+            "USD por registro",
+        )
+
         cards.addWidget(total_card)
         cards.addWidget(rows_card)
         cards.addWidget(countries_card)
         cards.addWidget(budgeters_card)
+        cards.addWidget(average_card)
 
         layout.addLayout(cards)
 
@@ -339,6 +489,59 @@ class DashboardPage(QWidget):
                 extra_tables_layout,
                 1,
             )
+
+        monthly_container = QVBoxLayout()
+
+        monthly_title = QLabel(
+            "Distribucion mensual"
+        )
+
+        monthly_title.setObjectName(
+            "sectionTitle"
+        )
+
+        monthly_hint = QLabel(
+            "Presupuesto USD distribuido "
+            "entre enero y diciembre."
+        )
+
+        monthly_hint.setObjectName(
+            "pageSubtitle"
+        )
+
+        self.monthly_chart_view = (
+            QChartView(
+                self
+            )
+        )
+
+        self.monthly_chart_view.setRenderHint(
+            QPainter.RenderHint.Antialiasing
+        )
+
+        self.monthly_chart_view.setMinimumHeight(
+            350
+        )
+
+        self.monthly_chart_view.setMaximumHeight(
+            420
+        )
+
+        monthly_container.addWidget(
+            monthly_title
+        )
+
+        monthly_container.addWidget(
+            monthly_hint
+        )
+
+        monthly_container.addWidget(
+            self.monthly_chart_view
+        )
+
+        layout.addLayout(
+            monthly_container
+        )
 
         self.status_label = QLabel(
             "Esperando carga del presupuesto..."
@@ -557,6 +760,322 @@ class DashboardPage(QWidget):
             for row in result.rows
         )
 
+    def _position_monthly_labels(
+        self,
+        chart,
+        values_k,
+        labels,
+        upper_limit_k,
+    ):
+        plot_area = chart.plotArea()
+
+        count = len(
+            values_k
+        )
+
+        if (
+            count == 0
+            or plot_area.width() <= 0
+            or plot_area.height() <= 0
+            or upper_limit_k <= 0
+        ):
+            return
+
+        category_width = (
+            plot_area.width()
+            / count
+        )
+
+        for (
+            index,
+            (
+                value_k,
+                label,
+            ),
+        ) in enumerate(
+            zip(
+                values_k,
+                labels,
+            )
+        ):
+            center_x = (
+                plot_area.left()
+                + category_width
+                * (
+                    index
+                    + 0.5
+                )
+            )
+
+            ratio = max(
+                0.0,
+                min(
+                    float(value_k)
+                    / float(
+                        upper_limit_k
+                    ),
+                    1.0,
+                ),
+            )
+
+            bar_top_y = (
+                plot_area.bottom()
+                - plot_area.height()
+                * ratio
+            )
+
+            bounds = (
+                label.boundingRect()
+            )
+
+            x = (
+                center_x
+                - bounds.width()
+                / 2
+            )
+
+            y = (
+                bar_top_y
+                - bounds.height()
+                - 5
+            )
+
+            minimum_y = (
+                plot_area.top()
+                + 2
+            )
+
+            if y < minimum_y:
+                y = minimum_y
+
+            label.setPos(
+                x,
+                y,
+            )
+
+    def _update_monthly_chart(
+        self,
+        monthly_totals,
+    ):
+        (
+            labels,
+            values_k,
+        ) = build_monthly_chart_data(
+            monthly_totals
+        )
+
+        bar_set = QBarSet(
+            "Presupuesto mensual"
+        )
+
+        for value in values_k:
+            bar_set.append(
+                value
+            )
+
+        bar_set.setColor(
+            QColor(
+                "#08783E"
+            )
+        )
+
+        bar_set.setBorderColor(
+            QColor(
+                "#066333"
+            )
+        )
+
+        series = QBarSeries()
+
+        series.append(
+            bar_set
+        )
+
+        series.setBarWidth(
+            0.58
+        )
+
+        # Las etiquetas automaticas de
+        # QBarSeries pueden ocultarse por
+        # clipping o deteccion de solapamiento.
+        # Se dibujan manualmente mas abajo.
+        series.setLabelsVisible(
+            False
+        )
+
+        chart = QChart()
+
+        chart.addSeries(
+            series
+        )
+
+        chart.legend().hide()
+
+        chart.setAnimationOptions(
+            QChart.AnimationOption
+            .SeriesAnimations
+        )
+
+        chart.setBackgroundBrush(
+            QColor(
+                "#FFFFFF"
+            )
+        )
+
+        chart.setBackgroundRoundness(
+            10
+        )
+
+        chart.setTitle(
+            "Distribucion mensual (miles de USD)"
+        )
+
+        axis_x = QBarCategoryAxis()
+
+        axis_x.append(
+            list(
+                labels
+            )
+        )
+
+        axis_x.setLabelsAngle(
+            -35
+        )
+
+        axis_x.setLabelsColor(
+            QColor(
+                "#475467"
+            )
+        )
+
+        axis_y = QValueAxis()
+
+        axis_y.setTitleText(
+            "Miles de USD"
+        )
+
+        axis_y.setLabelFormat(
+            "%.0f"
+        )
+
+        axis_y.setLabelsColor(
+            QColor(
+                "#475467"
+            )
+        )
+
+        axis_y.setGridLineColor(
+            QColor(
+                "#E4E7EC"
+            )
+        )
+
+        axis_y.setTickType(
+            QValueAxis.TickType
+            .TicksDynamic
+        )
+
+        axis_y.setTickAnchor(
+            0.0
+        )
+
+        axis_y.setTickInterval(
+            MONTHLY_CHART_STEP_K
+        )
+
+        axis_y.setMinorTickCount(
+            0
+        )
+
+        upper_limit_k = (
+            monthly_chart_axis_max_k(
+                values_k
+            )
+        )
+
+        axis_y.setRange(
+            0.0,
+            upper_limit_k,
+        )
+
+        chart.addAxis(
+            axis_x,
+            Qt.AlignmentFlag.AlignBottom,
+        )
+
+        chart.addAxis(
+            axis_y,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+
+        series.attachAxis(
+            axis_x
+        )
+
+        series.attachAxis(
+            axis_y
+        )
+
+        value_labels = []
+
+        for value_k in values_k:
+            item = (
+                QGraphicsSimpleTextItem(
+                    format_monthly_bar_label_k(
+                        value_k
+                    ),
+                    chart,
+                )
+            )
+
+            item.setBrush(
+                QColor(
+                    "#344054"
+                )
+            )
+
+            item.setZValue(
+                10
+            )
+
+            value_labels.append(
+                item
+            )
+
+        def position_labels(
+            *args,
+        ):
+            self._position_monthly_labels(
+                chart,
+                values_k,
+                value_labels,
+                upper_limit_k,
+            )
+
+        chart.plotAreaChanged.connect(
+            position_labels
+        )
+
+        QTimer.singleShot(
+            0,
+            position_labels,
+        )
+
+        old_chart = (
+            self.monthly_chart_view
+            .chart()
+        )
+
+        self.monthly_chart_view.setChart(
+            chart
+        )
+
+        if (
+            old_chart is not None
+            and old_chart is not chart
+        ):
+            old_chart.deleteLater()
+
     def _on_loaded(
         self,
         result,
@@ -575,6 +1094,15 @@ class DashboardPage(QWidget):
 
         self.budgeters_value.setText(
             f"{result.total_budgeters:,}"
+        )
+
+        self.average_value.setText(
+            "US$ "
+            f"{result.average_usd_per_row:,.2f}"
+        )
+
+        self._update_monthly_chart(
+            result.monthly_totals
         )
 
         self.country_model.set_data(
