@@ -760,6 +760,16 @@ def test_transaction_sql_insert_contract_is_module_aware():
     )
 
     assert (
+        "`presupuestador`"
+        in sql
+    )
+
+    assert (
+        "$.presupuestador"
+        in sql
+    )
+
+    assert (
         "$.cantidad"
         in sql
     )

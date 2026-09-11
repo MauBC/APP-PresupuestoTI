@@ -123,9 +123,10 @@ CAPEX_MODULE_CONFIG = (
             )
         ),
         country_column="pais",
-        budgeter_column="responsable",
+        budgeter_column="presupuestador",
         ceco_column="codigo_ceco",
         change_detail_columns=(
+            "presupuestador",
             "responsable",
             "pais",
             "sociedad",

@@ -141,7 +141,7 @@ def test_catalog_keeps_cascade_filters():
     )
 
 
-def test_capex_uses_responsable_not_presupuestador():
+def test_capex_uses_presupuestador_as_budgeter():
     repository = FakeRepository(
         CAPEX_MODULE_CONFIG
     )
@@ -155,12 +155,12 @@ def test_capex_uses_responsable_not_presupuestador():
     )
 
     assert (
-        "responsable"
+        "presupuestador"
         in catalogs
     )
 
     assert (
-        "presupuestador"
+        "responsable"
         not in catalogs
     )
 
@@ -184,7 +184,7 @@ def test_invalid_catalog_column_is_rejected():
         match="no pertenece",
     ):
         service.values(
-            "presupuestador"
+            "campo_inventado"
         )
 
 

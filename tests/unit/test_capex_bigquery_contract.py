@@ -18,14 +18,14 @@ from database.bootstrap.capex_bigquery_contract import (
 pytestmark = pytest.mark.unit
 
 
-def test_capex_bigquery_schema_has_57_fields():
+def test_capex_bigquery_schema_has_58_fields():
     schema = (
         build_capex_bigquery_schema()
     )
 
     assert len(
         schema
-    ) == 57
+    ) == 58
 
     assert tuple(
         field.name
@@ -93,7 +93,7 @@ def test_capex_bootstrap_load_uses_explicit_schema():
         len(
             config.schema
         )
-        == 57
+        == 58
     )
 
     assert (
@@ -116,7 +116,7 @@ def test_capex_append_load_uses_write_append():
         len(
             config.schema
         )
-        == 57
+        == 58
     )
 
     assert (

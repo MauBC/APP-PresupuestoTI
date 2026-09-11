@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from app.config.capex_schema import (
     CAPEX_AMOUNT_COLUMNS,
@@ -16,12 +16,12 @@ from app.config.capex_schema import (
 pytestmark = pytest.mark.unit
 
 
-def test_capex_has_50_business_columns():
+def test_capex_has_51_business_columns():
     assert (
         len(
             CAPEX_BUSINESS_COLUMNS
         )
-        == 50
+        == 51
     )
 
     assert (
@@ -30,7 +30,7 @@ def test_capex_has_50_business_columns():
                 CAPEX_BUSINESS_COLUMNS
             )
         )
-        == 50
+        == 51
     )
 
 
@@ -39,7 +39,7 @@ def test_capex_type_groups_cover_contract():
         len(
             CAPEX_STRING_COLUMNS
         )
-        == 22
+        == 23
     )
 
     assert (
@@ -93,12 +93,12 @@ def test_capex_has_12_months_per_currency():
     )
 
 
-def test_excel_mapping_has_50_headers():
+def test_excel_mapping_has_51_headers():
     assert (
         len(
             CAPEX_RAW_TO_INTERNAL
         )
-        == 50
+        == 51
     )
 
     assert (
@@ -113,19 +113,19 @@ def test_excel_mapping_has_50_headers():
     )
 
 
-def test_future_bigquery_contract_has_57_columns():
+def test_future_bigquery_contract_has_58_columns():
     assert (
         len(
             CAPEX_EXPECTED_COLUMNS
         )
-        == 57
+        == 58
     )
 
     assert (
         len(
             CAPEX_EXPECTED_TYPES
         )
-        == 57
+        == 58
     )
 
 

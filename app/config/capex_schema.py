@@ -17,6 +17,7 @@ CAPEX_STRING_COLUMNS = (
     "pais",
     "sociedad",
     "responsable",
+    "presupuestador",
     "gerente_aprobador",
     "vp_aprobador",
     "tipo_activo",
@@ -77,6 +78,7 @@ CAPEX_BUSINESS_COLUMNS = (
     "sociedad",
     "anio",
     "responsable",
+    "presupuestador",
     "gerente_aprobador",
     "vp_aprobador",
     "tipo_activo",
@@ -114,6 +116,7 @@ CAPEX_GROUPABLE_COLUMNS = (
     "pais",
     "sociedad",
     "responsable",
+    "presupuestador",
     "gerente_aprobador",
     "nombre_inversion",
     "tipo_activo",
@@ -144,6 +147,8 @@ CAPEX_RAW_TO_INTERNAL = {
         "anio",
     "Responsable":
         "responsable",
+    "Presupuestador":
+        "presupuestador",
     "Gerente Aprobador":
         "gerente_aprobador",
     "VP Aprobador":

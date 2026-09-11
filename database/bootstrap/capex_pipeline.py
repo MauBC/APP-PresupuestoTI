@@ -204,7 +204,7 @@ def prepare_capex_bootstrap(
     ):
         raise CapexBootstrapPreparationError(
             "El DataFrame CAPEX final "
-            "no tiene las 57 columnas "
+            "no tiene las 58 columnas "
             "esperadas."
         )
 

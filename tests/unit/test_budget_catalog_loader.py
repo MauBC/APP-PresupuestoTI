@@ -38,10 +38,11 @@ def test_capex_catalog_columns():
 
     assert columns == (
         "pais",
-        "responsable",
+        "presupuestador",
         "codigo_ceco",
         "moneda_facturacion",
         "sociedad",
+        "responsable",
     )
 
 

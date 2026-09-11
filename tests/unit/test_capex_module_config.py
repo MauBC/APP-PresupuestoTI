@@ -21,12 +21,12 @@ from app.config.settings import (
 pytestmark = pytest.mark.unit
 
 
-def test_capex_has_24_dimensions():
+def test_capex_has_25_dimensions():
     assert (
         len(
             CAPEX_DIMENSION_COLUMNS
         )
-        == 24
+        == 25
     )
 
 
@@ -91,7 +91,7 @@ def test_capex_module_uses_real_schema():
 
     assert (
         CAPEX_MODULE_CONFIG.budgeter_column
-        == "responsable"
+        == "presupuestador"
     )
 
     assert (
@@ -120,6 +120,7 @@ def test_capex_expected_grouping_dimensions():
     assert {
         "pais",
         "responsable",
+        "presupuestador",
         "gerente_aprobador",
         "nombre_inversion",
         "sociedad",

@@ -1,4 +1,4 @@
-﻿from datetime import (
+from datetime import (
     datetime,
     timezone,
 )
@@ -125,7 +125,7 @@ def test_build_capex_load_plan():
     )
 
     assert plan.row_count == 2
-    assert plan.column_count == 57
+    assert plan.column_count == 58
 
     assert (
         plan.write_disposition

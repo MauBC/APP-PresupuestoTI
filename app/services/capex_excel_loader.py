@@ -306,10 +306,10 @@ def validate_capex_headers(
             )
         )
 
-    if len(actual) != 50:
+    if len(actual) != 51:
         raise CapexWorkbookError(
             "Se esperaban exactamente "
-            "50 columnas CAPEX de negocio."
+            "51 columnas CAPEX de negocio."
         )
 
 
