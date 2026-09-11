@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.config.new_budget_row_form import (
+    get_missing_required_new_row_columns,
     get_new_budget_row_form,
 )
 
@@ -286,8 +287,9 @@ class NewBudgetRowDialog(
 
         notice = QLabel(
             "Completa los datos de la nueva "
-            "fila. Al continuar podras definir "
-            "el presupuesto anual USD y su "
+            "fila. Los campos marcados con * "
+            "son obligatorios. Al continuar "
+            "podras definir los importes y su "
             "distribucion mensual antes de "
             "agregarla al Workspace. "
             "BigQuery no cambia hasta usar "
@@ -438,11 +440,21 @@ class NewBudgetRowDialog(
                         ],
                     )
 
-                label = QLabel(
+                label_text = (
                     format_dimension_label(
                         column
                     )
-                    + ":"
+                )
+
+                if (
+                    column
+                    in self._form_definition
+                    .required_columns
+                ):
+                    label_text += " *"
+
+                label = QLabel(
+                    label_text + ":"
                 )
 
                 form.addRow(
@@ -732,6 +744,27 @@ class NewBudgetRowDialog(
         except ValueError as exc:
             self._set_error(
                 str(exc)
+            )
+            return
+
+        missing_required = (
+            get_missing_required_new_row_columns(
+                self._form_definition,
+                result,
+            )
+        )
+
+        if missing_required:
+            self._set_error(
+                "Completa los campos obligatorios: "
+                + ", ".join(
+                    format_dimension_label(
+                        column
+                    )
+                    for column
+                    in missing_required
+                )
+                + "."
             )
             return
 

@@ -47,6 +47,7 @@ class BudgetHistoryBatch:
     app_version: str | None
     error_message: str | None
     budget_module: str
+    is_insert: bool = False
     reverted_batch_id: str | None = None
     reversal_batch_id: str | None = None
 
@@ -168,6 +169,12 @@ class BudgetHistoryBatch:
                     "budget_module"
                 ),
                 "budget_module",
+            ),
+            is_insert=bool(
+                data.get(
+                    "is_insert",
+                    False,
+                )
             ),
             reverted_batch_id=_optional_text(
                 data.get(

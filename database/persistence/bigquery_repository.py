@@ -340,6 +340,35 @@ class BigQueryPersistenceRepository:
 
                 GROUP BY
                     `{REVERTED_BATCH_ID_COLUMN}`
+            ),
+
+            batch_operations AS (
+                SELECT
+                    audit.batch_id,
+
+                    (
+                        COUNT(*) > 0
+                        AND COUNTIF(
+                            audit.version_before = 0
+                        ) = COUNT(*)
+                    ) AS is_insert
+
+                FROM `{self.audit_table_id}`
+                    AS audit
+
+                INNER JOIN `{self.batch_table_id}`
+                    AS audit_batch
+                    ON audit_batch.batch_id
+                        = audit.batch_id
+
+                WHERE
+                    COALESCE(
+                        audit_batch.`{BUDGET_MODULE_COLUMN}`,
+                        'OPEX'
+                    ) = @budget_module
+
+                GROUP BY
+                    audit.batch_id
             )
 
             SELECT
@@ -361,7 +390,12 @@ class BigQueryPersistenceRepository:
                 source.`{REVERTED_BATCH_ID_COLUMN}`
                     AS reverted_batch_id,
 
-                reversal.reversal_batch_id
+                reversal.reversal_batch_id,
+
+                COALESCE(
+                    operation.is_insert,
+                    FALSE
+                ) AS is_insert
 
             FROM `{self.batch_table_id}`
                 AS source
@@ -369,6 +403,11 @@ class BigQueryPersistenceRepository:
             LEFT JOIN applied_reversals
                 AS reversal
                 ON reversal.source_batch_id
+                    = source.batch_id
+
+            LEFT JOIN batch_operations
+                AS operation
+                ON operation.batch_id
                     = source.batch_id
 
             WHERE
@@ -521,6 +560,14 @@ class BigQueryPersistenceRepository:
                     "reversal_batch_id":
                         optional_value(
                             "reversal_batch_id"
+                        ),
+
+                    "is_insert":
+                        bool(
+                            optional_value(
+                                "is_insert"
+                            )
+                            or False
                         ),
                 }
             )

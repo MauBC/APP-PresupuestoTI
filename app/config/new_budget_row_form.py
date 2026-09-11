@@ -38,6 +38,11 @@ class NewBudgetRowFormDefinition:
         ...
     ] = ()
 
+    required_columns: tuple[
+        str,
+        ...
+    ] = ()
+
     @property
     def columns(
         self,
@@ -126,6 +131,15 @@ CAPEX_NEW_ROW_FORM = (
                 "cantidad",
                 1,
             ),
+        ),
+        required_columns=(
+            "nombre_inversion",
+            "vicepresidencia",
+            "pais",
+            "responsable",
+            "gerente_aprobador",
+            "anio",
+            "cantidad",
         ),
     )
 )
@@ -225,6 +239,74 @@ def _validate_definition(
                 )
             )
         )
+
+    required = tuple(
+        definition.required_columns
+    )
+
+    if len(required) != len(
+        set(required)
+    ):
+        raise ValueError(
+            "La configuracion del formulario "
+            "contiene campos obligatorios "
+            "duplicados."
+        )
+
+    invalid_required = (
+        set(required)
+        - set(expected)
+    )
+
+    if invalid_required:
+        raise ValueError(
+            "Campos obligatorios no validos "
+            f"para {module_config.label}: "
+            + ", ".join(
+                sorted(
+                    invalid_required
+                )
+            )
+        )
+
+
+def get_missing_required_new_row_columns(
+    definition,
+    values,
+) -> tuple[str, ...]:
+    supplied = dict(
+        values or {}
+    )
+
+    missing = []
+
+    for column in (
+        definition.required_columns
+    ):
+        value = supplied.get(
+            column
+        )
+
+        if value is None:
+            missing.append(
+                column
+            )
+            continue
+
+        if (
+            isinstance(
+                value,
+                str,
+            )
+            and not value.strip()
+        ):
+            missing.append(
+                column
+            )
+
+    return tuple(
+        missing
+    )
 
 
 def get_new_budget_row_form(

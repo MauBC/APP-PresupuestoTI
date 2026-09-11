@@ -23,6 +23,7 @@ def batch(
     status="APPLIED",
     reverted_batch_id=None,
     reversal_batch_id=None,
+    is_insert=False,
 ):
     return SimpleNamespace(
         batch_id=batch_id,
@@ -33,6 +34,7 @@ def batch(
         reversal_batch_id=(
             reversal_batch_id
         ),
+        is_insert=is_insert,
     )
 
 
@@ -63,6 +65,37 @@ def test_normal_batch_is_change():
 
     assert can_revert_history_batch(
         item
+    )
+
+
+def test_insert_batch_is_addition():
+    item = batch(
+        is_insert=True
+    )
+
+    assert (
+        format_history_operation(
+            item
+        )
+        == "ALTA"
+    )
+
+    assert can_revert_history_batch(
+        item
+    )
+
+
+def test_reverted_insert_keeps_reverted_priority():
+    item = batch(
+        is_insert=True,
+        reversal_batch_id="reversal-1",
+    )
+
+    assert (
+        format_history_operation(
+            item
+        )
+        == "REVERTIDO"
     )
 
 

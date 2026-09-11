@@ -44,6 +44,7 @@ def batch_row(
     status="APPLIED",
     row_count=1,
     field_count=2,
+    is_insert=False,
 ):
     return {
         "batch_id": batch_id,
@@ -61,6 +62,7 @@ def batch_row(
         "error_message": None,
         "budget_module": "OPEX",
         "reverted_batch_id": None,
+        "is_insert": is_insert,
     }
 
 
@@ -173,6 +175,19 @@ def test_history_batch_from_mapping():
         batch.reverted_batch_id
         is None
     )
+
+
+def test_history_batch_maps_insert_flag():
+    item = (
+        BudgetHistoryBatch
+        .from_mapping(
+            batch_row(
+                is_insert=True
+            )
+        )
+    )
+
+    assert item.is_insert is True
 
 
 def test_history_service_lists_typed_batches():
