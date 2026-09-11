@@ -633,7 +633,7 @@ def test_wrong_batch_type_is_rejected():
 
 
 
-def test_insert_batch_reversal_is_blocked():
+def test_insert_batch_reversal_reaches_service():
     (
         coordinator,
         history,
@@ -656,20 +656,37 @@ def test_insert_batch_reversal_is_blocked():
         )
     )
 
-    with pytest.raises(
-        PresupuestoReversalCoordinatorError,
-        match="altas nuevas",
-    ):
-        coordinator.revert_and_reload(
+    outcome = (
+        coordinator
+        .revert_and_reload(
             make_batch(),
             actor="PC\\Reversor",
         )
+    )
+
+    assert outcome.is_applied
+    assert outcome.was_reloaded
 
     assert len(
         history.calls
     ) == 1
 
-    assert reader.calls == []
-    assert reversal.calls == []
-    assert persistence.calls == []
-    assert loader.calls == []
+    assert reader.calls == [
+        (
+            "row-001",
+        )
+    ]
+
+    assert len(
+        reversal.calls
+    ) == 1
+
+    assert persistence.calls == [
+        reversal.proposal.batch
+    ]
+
+    assert loader.calls == [
+        (
+            "row-001",
+        )
+    ]

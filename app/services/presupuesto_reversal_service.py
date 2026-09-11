@@ -1,4 +1,4 @@
-﻿from copy import deepcopy
+from copy import deepcopy
 from datetime import (
     datetime,
     timezone,
@@ -12,6 +12,7 @@ from app.config.budget_modules import (
     get_budget_module_config,
 )
 from app.config.presupuesto_app_config import (
+    HABILITADO_COLUMN,
     ROW_ID_COLUMN,
     VERSION_COLUMN,
 )
@@ -649,7 +650,7 @@ class PresupuestoReversalService:
             )
 
             (
-                _,
+                version_before,
                 version_after,
             ) = (
                 _validate_row_versions(
@@ -660,8 +661,6 @@ class PresupuestoReversalService:
                     changes=changes,
                 )
             )
-
-            seen_columns = set()
 
             target_state = {}
 
@@ -687,126 +686,244 @@ class PresupuestoReversalService:
                 )
 
             inverse_changes = []
+            changed_columns = set()
 
-            for change in changes:
-                _validate_audit_column(
-                    change
+            # Una fila insertada no se elimina.
+            # Su reversion es una baja logica.
+            if version_before == 0:
+                enabled_type = (
+                    EDITABLE_VALUE_TYPES[
+                        HABILITADO_COLUMN
+                    ]
                 )
 
-                column = (
-                    change
-                    .column_name
+                current_enabled = (
+                    _typed_value(
+                        current.get(
+                            HABILITADO_COLUMN
+                        ),
+                        enabled_type,
+                        field_name=(
+                            f"{HABILITADO_COLUMN}"
+                            ".actual"
+                        ),
+                    )
                 )
 
-                if column in (
-                    seen_columns
-                ):
+                if current_enabled is not True:
+                    raise (
+                        PresupuestoReversalError(
+                            "La fila insertada no "
+                            "puede revertirse por "
+                            "baja logica porque ya "
+                            "esta deshabilitada. "
+                            f"row_id={row_id}"
+                        )
+                    )
+
+                enabled_audits = tuple(
+                    change
+                    for change in changes
+                    if (
+                        change.column_name
+                        == HABILITADO_COLUMN
+                    )
+                )
+
+                if len(
+                    enabled_audits
+                ) > 1:
                     raise (
                         PresupuestoReversalError(
                             "Existe auditoria "
                             "duplicada para "
-                            f"{row_id}.{column}."
+                            f"{row_id}."
+                            f"{HABILITADO_COLUMN}."
                         )
                     )
 
-                seen_columns.add(
-                    column
-                )
-
-                value_type = (
-                    EDITABLE_VALUE_TYPES[
-                        column
-                    ]
-                )
-
-                audited_after = (
-                    _typed_value(
-                        change.after_value,
-                        value_type,
-                        field_name=(
-                            f"{column}.after"
-                        ),
+                if enabled_audits:
+                    enabled_change = (
+                        enabled_audits[0]
                     )
-                )
 
-                current_value = (
-                    _typed_value(
-                        current.get(
-                            column
-                        ),
-                        value_type,
-                        field_name=(
-                            f"{column}.actual"
-                        ),
+                    _validate_audit_column(
+                        enabled_change
                     )
-                )
 
-                if (
-                    current_value
-                    != audited_after
-                ):
-                    raise (
-                        PresupuestoReversalConflictError(
-                            "El valor actual ya "
-                            "no coincide con el "
-                            "resultado del batch. "
-                            f"row_id={row_id}, "
-                            f"column={column}, "
-                            f"batch={audited_after}, "
-                            f"actual={current_value}."
+                    audited_enabled = (
+                        _typed_value(
+                            enabled_change
+                            .after_value,
+                            enabled_type,
+                            field_name=(
+                                f"{HABILITADO_COLUMN}"
+                                ".after"
+                            ),
                         )
                     )
 
-                target_value = (
-                    _typed_value(
-                        change.before_value,
-                        value_type,
-                        field_name=(
-                            f"{column}.before"
-                        ),
-                    )
-                )
-
-                if (
-                    target_value
-                    == current_value
-                ):
-                    raise (
-                        PresupuestoReversalError(
-                            "La auditoria no "
-                            "representa un cambio "
-                            "real para "
-                            f"{row_id}.{column}."
+                    if (
+                        audited_enabled
+                        is not True
+                    ):
+                        raise (
+                            PresupuestoReversalError(
+                                "La alta original "
+                                "no dejo la fila "
+                                "habilitada. "
+                                f"row_id={row_id}"
+                            )
                         )
-                    )
 
                 target_state[
-                    column
-                ] = deepcopy(
-                    target_value
+                    HABILITADO_COLUMN
+                ] = False
+
+                changed_columns.add(
+                    HABILITADO_COLUMN
                 )
 
                 inverse_changes.append(
                     PersistenceFieldChange(
-                        column=column,
-                        before=deepcopy(
-                            current_value
+                        column=(
+                            HABILITADO_COLUMN
                         ),
-                        after=deepcopy(
-                            target_value
-                        ),
+                        before=True,
+                        after=False,
                         value_type=(
-                            value_type
+                            enabled_type
                         ),
                     )
                 )
+
+            else:
+                seen_columns = set()
+
+                for change in changes:
+                    _validate_audit_column(
+                        change
+                    )
+
+                    column = (
+                        change
+                        .column_name
+                    )
+
+                    if column in (
+                        seen_columns
+                    ):
+                        raise (
+                            PresupuestoReversalError(
+                                "Existe auditoria "
+                                "duplicada para "
+                                f"{row_id}."
+                                f"{column}."
+                            )
+                        )
+
+                    seen_columns.add(
+                        column
+                    )
+
+                    changed_columns.add(
+                        column
+                    )
+
+                    value_type = (
+                        EDITABLE_VALUE_TYPES[
+                            column
+                        ]
+                    )
+
+                    audited_after = (
+                        _typed_value(
+                            change.after_value,
+                            value_type,
+                            field_name=(
+                                f"{column}.after"
+                            ),
+                        )
+                    )
+
+                    current_value = (
+                        _typed_value(
+                            current.get(
+                                column
+                            ),
+                            value_type,
+                            field_name=(
+                                f"{column}.actual"
+                            ),
+                        )
+                    )
+
+                    if (
+                        current_value
+                        != audited_after
+                    ):
+                        raise (
+                            PresupuestoReversalConflictError(
+                                "El valor actual ya "
+                                "no coincide con el "
+                                "resultado del batch. "
+                                f"row_id={row_id}, "
+                                f"column={column}, "
+                                f"batch={audited_after}, "
+                                f"actual={current_value}."
+                            )
+                        )
+
+                    target_value = (
+                        _typed_value(
+                            change.before_value,
+                            value_type,
+                            field_name=(
+                                f"{column}.before"
+                            ),
+                        )
+                    )
+
+                    if (
+                        target_value
+                        == current_value
+                    ):
+                        raise (
+                            PresupuestoReversalError(
+                                "La auditoria no "
+                                "representa un cambio "
+                                "real para "
+                                f"{row_id}.{column}."
+                            )
+                        )
+
+                    target_state[
+                        column
+                    ] = deepcopy(
+                        target_value
+                    )
+
+                    inverse_changes.append(
+                        PersistenceFieldChange(
+                            column=column,
+                            before=deepcopy(
+                                current_value
+                            ),
+                            after=deepcopy(
+                                target_value
+                            ),
+                            value_type=(
+                                value_type
+                            ),
+                        )
+                    )
 
             _validate_annual_consistency(
                 target_state=(
                     target_state
                 ),
                 changed_columns=(
-                    seen_columns
+                    changed_columns
                 ),
                 budget_module=(
                     budget_module
@@ -909,13 +1026,13 @@ class PresupuestoReversalService:
                 "no conserva row_count."
             )
 
-        if (
-            persistence_batch.field_count
-            != detail.batch.field_count
+        if any(
+            row.field_count < 1
+            for row in persistence_batch.rows
         ):
             raise PresupuestoReversalError(
                 "La propuesta de reversion "
-                "no conserva field_count."
+                "contiene una fila sin cambios."
             )
 
         return BudgetReversalProposal(
