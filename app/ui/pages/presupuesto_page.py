@@ -23,6 +23,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config.budget_module_config import (
+    BudgetModule,
+)
+from app.config.capex_schema import (
+    CAPEX_ML_TOTAL_COLUMN,
+    CAPEX_USD_TOTAL_COLUMN,
+)
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
 )
@@ -32,6 +39,9 @@ from app.services.current_actor_service import (
 )
 from app.services.budget_excel_import_service import (
     BudgetExcelImportService,
+)
+from app.services.capex_new_row_amount_service import (
+    CapexNewRowAmountService,
 )
 from app.services.new_budget_row_service import (
     NewBudgetRowService,
@@ -45,6 +55,9 @@ from app.ui.dialogs.app_message_box import (
 )
 from app.ui.dialogs.budget_excel_import_dialog import (
     BudgetExcelImportDialog,
+)
+from app.ui.dialogs.capex_amounts_dialog import (
+    CapexAmountsDialog,
 )
 from app.ui.dialogs.change_summary_dialog import (
     ChangeSummaryDialog,
@@ -1702,6 +1715,41 @@ class PresupuestoPage(QWidget):
             )
 
             if (
+                module_config.module
+                == BudgetModule.CAPEX
+            ):
+                amount_dialog = (
+                    CapexAmountsDialog(
+                        row=draft.row,
+                        parent=self,
+                    )
+                )
+
+                if not (
+                    amount_dialog.exec()
+                ):
+                    self.status_label.setText(
+                        "Alta CAPEX cancelada. "
+                        "No se realizaron cambios."
+                    )
+                    return
+
+                draft = (
+                    CapexNewRowAmountService()
+                    .apply(
+                        draft,
+                        ml_values=(
+                            amount_dialog
+                            .ml_values()
+                        ),
+                        usd_values=(
+                            amount_dialog
+                            .usd_values()
+                        ),
+                    )
+                )
+
+            elif (
                 module_config
                 .capabilities
                 .monthly_distribution
@@ -1776,21 +1824,50 @@ class PresupuestoPage(QWidget):
             session_row_id
         )
 
-        annual_value = (
-            draft.row.get(
-                module_config
-                .annual_column
+        if (
+            module_config.module
+            == BudgetModule.CAPEX
+        ):
+            ml_total = (
+                draft.row.get(
+                    CAPEX_ML_TOTAL_COLUMN
+                )
+                or Decimal("0.00")
             )
-            or Decimal("0.00")
-        )
 
-        self.status_label.setText(
-            "Nueva fila creada localmente. "
-            f"Total anual USD: "
-            f"US$ {annual_value:,.2f}. "
-            "BigQuery todavia no ha sido "
-            "modificado."
-        )
+            usd_total = (
+                draft.row.get(
+                    CAPEX_USD_TOTAL_COLUMN
+                )
+                or Decimal("0.00")
+            )
+
+            self.status_label.setText(
+                "Nueva fila CAPEX creada "
+                "localmente. "
+                f"Total ML: {ml_total:,.2f}. "
+                f"Total USD: "
+                f"US$ {usd_total:,.2f}. "
+                "BigQuery todavia no ha sido "
+                "modificado."
+            )
+
+        else:
+            annual_value = (
+                draft.row.get(
+                    module_config
+                    .annual_column
+                )
+                or Decimal("0.00")
+            )
+
+            self.status_label.setText(
+                "Nueva fila creada localmente. "
+                f"Total anual USD: "
+                f"US$ {annual_value:,.2f}. "
+                "BigQuery todavia no ha sido "
+                "modificado."
+            )
 
         self.workspace_changed.emit()
 
