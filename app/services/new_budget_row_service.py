@@ -16,6 +16,10 @@ from app.config.budget_module_config import (
 from app.models.new_budget_row import (
     NewBudgetRowDraft,
 )
+from app.services.usd_allocation_service import (
+    UsdAllocationError,
+    UsdAllocationService,
+)
 
 
 ZERO = Decimal("0.00")
@@ -181,6 +185,60 @@ class NewBudgetRowService:
                 .value
             ),
             row=row,
+        )
+
+    def with_monthly_distribution(
+        self,
+        draft: NewBudgetRowDraft,
+        *,
+        percentages,
+        annual_total,
+    ) -> NewBudgetRowDraft:
+        if (
+            draft.module
+            != self._config.module.value
+        ):
+            raise NewBudgetRowError(
+                "El draft pertenece a un "
+                "modulo diferente."
+            )
+
+        if not (
+            self._config
+            .capabilities
+            .monthly_distribution
+        ):
+            raise NewBudgetRowError(
+                "El modulo activo no permite "
+                "distribucion mensual."
+            )
+
+        try:
+            distributed = (
+                UsdAllocationService
+                .set_percentage_distribution(
+                    draft.row,
+                    percentages,
+                    total=annual_total,
+                    month_columns=(
+                        self._config
+                        .month_columns
+                    ),
+                    annual_column=(
+                        self._config
+                        .annual_column
+                    ),
+                )
+            )
+
+        except UsdAllocationError as exc:
+            raise NewBudgetRowError(
+                str(exc)
+            ) from exc
+
+        return NewBudgetRowDraft(
+            module=draft.module,
+            row=distributed,
         )
 
     @staticmethod

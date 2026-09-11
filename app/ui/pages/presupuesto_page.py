@@ -1593,16 +1593,65 @@ class PresupuestoPage(QWidget):
             return
 
         try:
-            draft = (
+            module_config = (
+                self._workspace
+                .module_config
+            )
+
+            row_service = (
                 NewBudgetRowService(
-                    self._workspace
-                    .module_config
+                    module_config
                 )
+            )
+
+            draft = (
+                row_service
                 .create_draft(
                     dialog.dimensions(),
                     actor=actor,
                 )
             )
+
+            if (
+                module_config
+                .capabilities
+                .monthly_distribution
+            ):
+                distribution_dialog = (
+                    MonthlyDistributionDialog(
+                        row=draft.row,
+                        module_config=(
+                            module_config
+                        ),
+                        parent=self,
+                        start_equal=True,
+                    )
+                )
+
+                if not (
+                    distribution_dialog
+                    .exec()
+                ):
+                    self.status_label.setText(
+                        "Alta cancelada. "
+                        "No se realizaron cambios."
+                    )
+                    return
+
+                draft = (
+                    row_service
+                    .with_monthly_distribution(
+                        draft,
+                        percentages=(
+                            distribution_dialog
+                            .percentages()
+                        ),
+                        annual_total=(
+                            distribution_dialog
+                            .annual_total()
+                        ),
+                    )
+                )
 
             session_row_id = (
                 self._workspace
@@ -1638,12 +1687,20 @@ class PresupuestoPage(QWidget):
             session_row_id
         )
 
+        annual_value = (
+            draft.row.get(
+                module_config
+                .annual_column
+            )
+            or Decimal("0.00")
+        )
+
         self.status_label.setText(
             "Nueva fila creada localmente. "
-            "Los importes iniciales son 0. "
-            "Puedes editar USD o usar "
-            "Distribuir meses. BigQuery "
-            "todavia no ha sido modificado."
+            f"Total anual USD: "
+            f"US$ {annual_value:,.2f}. "
+            "BigQuery todavia no ha sido "
+            "modificado."
         )
 
         self.workspace_changed.emit()

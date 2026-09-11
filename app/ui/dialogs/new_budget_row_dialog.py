@@ -285,12 +285,11 @@ class NewBudgetRowDialog(
         )
 
         notice = QLabel(
-            "Este es el formulario base. "
-            "Todavia no contiene las reglas "
-            "automaticas del negocio. "
-            "Los importes se crean en 0 y "
-            "pueden editarse despues desde "
-            "la tabla o Distribuir meses. "
+            "Completa los datos de la nueva "
+            "fila. Al continuar podras definir "
+            "el presupuesto anual USD y su "
+            "distribucion mensual antes de "
+            "agregarla al Workspace. "
             "BigQuery no cambia hasta usar "
             "Aplicar cambios."
         )
@@ -498,7 +497,7 @@ class NewBudgetRowDialog(
         )
 
         create_button = QPushButton(
-            "Crear fila local"
+            "Continuar"
         )
 
         create_button.setObjectName(
