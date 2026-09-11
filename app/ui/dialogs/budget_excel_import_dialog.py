@@ -54,6 +54,13 @@ class BudgetExcelImportDialog(
         self._models = []
         self._proxies = []
 
+        self._preview_model = None
+        self._preview_proxy = None
+        self._preview_table = None
+        self._preview_selection_label = None
+        self._status_label = None
+        self._import_button = None
+
         self.setObjectName(
             "budgetExcelImportDialog"
         )
@@ -283,6 +290,10 @@ class BudgetExcelImportDialog(
 
         status = QLabel()
 
+        self._status_label = (
+            status
+        )
+
         status.setWordWrap(
             True
         )
@@ -395,6 +406,10 @@ class BudgetExcelImportDialog(
             "importButton"
         )
 
+        self._import_button = (
+            import_button
+        )
+
         import_button.setEnabled(
             self._result.is_valid
         )
@@ -418,6 +433,8 @@ class BudgetExcelImportDialog(
         layout.addLayout(
             buttons
         )
+
+        self._update_import_selection()
 
     def _build_cards(
         self,
@@ -449,6 +466,11 @@ class BudgetExcelImportDialog(
                 "INFORMATIVOS",
                 self._result
                 .info_count,
+            ),
+            (
+                "IGNORADAS",
+                self._result
+                .ignored_row_count,
             ),
         )
 
@@ -518,10 +540,30 @@ class BudgetExcelImportDialog(
             10,
         )
 
+        controls = QHBoxLayout()
+
         search = QLineEdit()
 
         search.setPlaceholderText(
             "Buscar dentro del preview..."
+        )
+
+        include_all_button = (
+            QPushButton(
+                "Incluir todas"
+            )
+        )
+
+        exclude_button = (
+            QPushButton(
+                "Excluir seleccionadas"
+            )
+        )
+
+        selection_label = QLabel()
+
+        self._preview_selection_label = (
+            selection_label
         )
 
         model = (
@@ -532,14 +574,26 @@ class BudgetExcelImportDialog(
                 module_config=(
                     self._config
                 ),
+                source_row_numbers=(
+                    self._result
+                    .source_row_numbers
+                ),
                 parent=self,
             )
+        )
+
+        self._preview_model = (
+            model
         )
 
         proxy = (
             QSortFilterProxyModel(
                 self
             )
+        )
+
+        self._preview_proxy = (
+            proxy
         )
 
         proxy.setSourceModel(
@@ -562,6 +616,10 @@ class BudgetExcelImportDialog(
 
         table = QTableView()
 
+        self._preview_table = (
+            table
+        )
+
         table.setModel(
             proxy
         )
@@ -579,6 +637,18 @@ class BudgetExcelImportDialog(
             .setFilterFixedString
         )
 
+        include_all_button.clicked.connect(
+            self._include_all_preview_rows
+        )
+
+        exclude_button.clicked.connect(
+            self._exclude_selected_preview_rows
+        )
+
+        model.dataChanged.connect(
+            self._update_import_selection
+        )
+
         self._models.append(
             model
         )
@@ -587,8 +657,25 @@ class BudgetExcelImportDialog(
             proxy
         )
 
-        layout.addWidget(
-            search
+        controls.addWidget(
+            search,
+            1,
+        )
+
+        controls.addWidget(
+            include_all_button
+        )
+
+        controls.addWidget(
+            exclude_button
+        )
+
+        controls.addWidget(
+            selection_label
+        )
+
+        layout.addLayout(
+            controls
         )
 
         layout.addWidget(
@@ -596,7 +683,156 @@ class BudgetExcelImportDialog(
             1,
         )
 
+        self._update_import_selection()
+
         return widget
+
+    def rows_to_import(
+        self,
+    ):
+        if (
+            self._preview_model
+            is None
+        ):
+            return tuple(
+                self._result.rows
+            )
+
+        return (
+            self._preview_model
+            .included_rows()
+        )
+
+    def _include_all_preview_rows(
+        self,
+    ):
+        if (
+            self._preview_model
+            is None
+        ):
+            return
+
+        self._preview_model.include_all()
+
+        self._update_import_selection()
+
+    def _exclude_selected_preview_rows(
+        self,
+    ):
+        if (
+            self._preview_model
+            is None
+            or
+            self._preview_proxy
+            is None
+            or
+            self._preview_table
+            is None
+        ):
+            return
+
+        selection = (
+            self._preview_table
+            .selectionModel()
+        )
+
+        if selection is None:
+            return
+
+        source_rows = set()
+
+        for proxy_index in (
+            selection.selectedRows()
+        ):
+            source_index = (
+                self._preview_proxy
+                .mapToSource(
+                    proxy_index
+                )
+            )
+
+            if (
+                source_index
+                .isValid()
+            ):
+                source_rows.add(
+                    source_index.row()
+                )
+
+        for row_index in (
+            source_rows
+        ):
+            self._preview_model.set_included(
+                row_index,
+                False,
+            )
+
+        self._update_import_selection()
+
+    def _update_import_selection(
+        self,
+        *_,
+    ):
+        included = (
+            self._result
+            .importable_count
+        )
+
+        excluded = 0
+
+        if (
+            self._preview_model
+            is not None
+        ):
+            included = (
+                self._preview_model
+                .included_count
+            )
+
+            excluded = (
+                self._preview_model
+                .excluded_count
+            )
+
+        if (
+            self._preview_selection_label
+            is not None
+        ):
+            self._preview_selection_label.setText(
+                f"Incluidas: "
+                f"{included:,} | "
+                f"Excluidas: "
+                f"{excluded:,}"
+            )
+
+        if (
+            self._import_button
+            is not None
+        ):
+            self._import_button.setText(
+                "Agregar "
+                f"{included:,} filas"
+            )
+
+            self._import_button.setEnabled(
+                bool(
+                    self._result.is_valid
+                    and included > 0
+                )
+            )
+
+        if (
+            self._status_label
+            is not None
+            and self._result.is_valid
+        ):
+            self._status_label.setText(
+                "Archivo valido. "
+                f"{included:,} filas "
+                "estan seleccionadas "
+                "para agregarse "
+                "al Workspace."
+            )
 
     def _build_issue_tab(
         self,

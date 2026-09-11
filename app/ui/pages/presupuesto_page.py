@@ -1328,6 +1328,22 @@ class PresupuestoPage(QWidget):
             self._excel_import_path = None
             return
 
+        rows_to_import = (
+            dialog.rows_to_import()
+        )
+
+        if not rows_to_import:
+            self.status_label.setText(
+                "Importacion cancelada: "
+                "no quedaron filas "
+                "incluidas."
+            )
+
+            self._excel_import_actor = None
+            self._excel_import_path = None
+
+            return
+
         source_name = (
             Path(
                 result.source_path
@@ -1339,7 +1355,7 @@ class PresupuestoPage(QWidget):
             session_ids = (
                 self._workspace
                 .add_new_rows(
-                    result.rows,
+                    rows_to_import,
                     description=(
                         "Importar Excel "
                         f"{source_name}"
