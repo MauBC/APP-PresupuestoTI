@@ -376,6 +376,87 @@ class PresupuestoRepository:
             ).strip()
         )
 
+    def get_dimension_snapshot(
+        self,
+        *,
+        enabled_only: bool = True,
+    ) -> tuple[dict, ...]:
+        columns = (
+            *self._module_config
+            .dimension_columns,
+            "habilitado",
+        )
+
+        table_ref = (
+            self._bigquery
+            .get_table_reference(
+                self._module_config
+                .main_table
+            )
+        )
+
+        select_sql = (
+            ",\n                "
+            .join(
+                f"`{column}`"
+                for column
+                in columns
+            )
+        )
+
+        where_sql = (
+            "\n            WHERE "
+            "COALESCE(`habilitado`, TRUE)"
+            if enabled_only
+            else ""
+        )
+
+        sql = f"""
+            SELECT
+                {select_sql}
+
+            FROM `{table_ref}`
+            {where_sql}
+        """
+
+        rows = (
+            self._bigquery
+            .client
+            .query(
+                sql,
+                location=(
+                    self._bigquery
+                    .client
+                    .location
+                    if getattr(
+                        self._bigquery
+                        .client,
+                        "location",
+                        None,
+                    )
+                    else None
+                ),
+            )
+            .result()
+        )
+
+        return tuple(
+            {
+                column:
+                    values.get(
+                        column
+                    )
+                for column
+                in columns
+            }
+            for values in (
+                dict(
+                    row.items()
+                )
+                for row in rows
+            )
+        )
+
     def get_page(
         self,
         *,
