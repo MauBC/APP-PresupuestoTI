@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -54,6 +54,150 @@ def format_reversal_datetime(
 
     return value.strftime(
         "%d/%m/%Y %H:%M:%S"
+    )
+
+
+def build_reversal_safety_text(
+) -> str:
+    return (
+        "Esta operacion NO elimina el "
+        "historial original y NO realiza "
+        "DELETE fisico.\n\n"
+        "- Si el batch modifico filas "
+        "existentes, se intentaran restaurar "
+        "sus valores anteriores.\n"
+        "- Si el batch creo filas nuevas, "
+        "esas filas se conservaran y se "
+        "DESHABILITARAN mediante baja logica.\n"
+        "- Si alguna fila fue modificada "
+        "despues, la reversion se bloqueara "
+        "por concurrencia."
+    )
+
+
+def build_reversal_summary(
+    batch,
+) -> str:
+    return (
+        f"<b>Batch:</b> "
+        f"{batch.batch_id}<br>"
+        f"<b>Fecha:</b> "
+        f"{format_reversal_datetime(batch.created_at)}"
+        f"<br>"
+        f"<b>Usuario original:</b> "
+        f"{batch.actor}<br>"
+        f"<b>Modulo:</b> "
+        f"{batch.budget_module}<br>"
+        f"<b>Filas afectadas:</b> "
+        f"{batch.row_count:,}<br>"
+        f"<b>Cambios registrados:</b> "
+        f"{batch.field_count:,}"
+    )
+
+
+def build_reversal_applied_impact(
+    detail,
+    result,
+) -> str:
+    changes = tuple(
+        getattr(
+            detail,
+            "changes",
+            (),
+        )
+        or ()
+    )
+
+    inserted_row_ids = {
+        str(
+            getattr(
+                change,
+                "row_id",
+                "",
+            )
+            or ""
+        ).strip()
+        for change in changes
+        if (
+            getattr(
+                change,
+                "version_before",
+                None,
+            )
+            == 0
+        )
+        and str(
+            getattr(
+                change,
+                "row_id",
+                "",
+            )
+            or ""
+        ).strip()
+    }
+
+    disabled_count = len(
+        inserted_row_ids
+    )
+
+    total_rows = int(
+        getattr(
+            result,
+            "row_count",
+            0,
+        )
+        or 0
+    )
+
+    restored_count = max(
+        total_rows
+        - disabled_count,
+        0,
+    )
+
+    field_count = int(
+        getattr(
+            result,
+            "field_count",
+            0,
+        )
+        or 0
+    )
+
+    lines = [
+        f"Filas procesadas: "
+        f"{total_rows:,}",
+    ]
+
+    if restored_count:
+        lines.append(
+            "Filas con valores "
+            "restaurados: "
+            f"{restored_count:,}"
+        )
+
+    if disabled_count:
+        lines.append(
+            "Filas nuevas "
+            "deshabilitadas: "
+            f"{disabled_count:,}"
+        )
+
+    lines.append(
+        "Cambios compensatorios: "
+        f"{field_count:,}"
+    )
+
+    if disabled_count:
+        lines.append("")
+        lines.append(
+            "Las filas nuevas NO fueron "
+            "eliminadas fisicamente; "
+            "quedaron deshabilitadas."
+        )
+
+    return "\n".join(
+        lines
     )
 
 
@@ -206,10 +350,7 @@ class ReversalConfirmDialog(
         )
 
         warning = QLabel(
-            "Esta operación NO elimina el "
-            "historial original. Se creará un "
-            "nuevo batch que intentará restaurar "
-            "los valores anteriores."
+            build_reversal_safety_text()
         )
 
         warning.setObjectName(
@@ -225,7 +366,9 @@ class ReversalConfirmDialog(
         )
 
         summary = QLabel(
-            self._summary_text()
+            build_reversal_summary(
+                self._batch
+            )
         )
 
         summary.setObjectName(
@@ -246,11 +389,14 @@ class ReversalConfirmDialog(
         )
 
         help_label = QLabel(
-            "La reversión solo se aplicará si "
-            "las filas conservan las versiones "
-            "esperadas. Si hubo modificaciones "
-            "posteriores, se bloqueará por "
-            "concurrencia.\n\n"
+            "La operacion es compensatoria: "
+            "el batch original permanece en "
+            "el historial y se crea un nuevo "
+            "batch auditado.\n\n"
+            "Si existe un conflicto de version, "
+            "la reversion se bloqueara y los "
+            "datos vigentes no seran reemplazados."
+            "\n\n"
             "Para continuar escribe "
             "<b>REVERTIR</b>:"
         )
@@ -330,22 +476,8 @@ class ReversalConfirmDialog(
     def _summary_text(
         self,
     ) -> str:
-        batch = self._batch
-
-        return (
-            f"<b>Batch:</b> "
-            f"{batch.batch_id}<br>"
-            f"<b>Fecha:</b> "
-            f"{format_reversal_datetime(batch.created_at)}"
-            f"<br>"
-            f"<b>Usuario original:</b> "
-            f"{batch.actor}<br>"
-            f"<b>Módulo:</b> "
-            f"{batch.budget_module}<br>"
-            f"<b>Filas:</b> "
-            f"{batch.row_count:,}<br>"
-            f"<b>Campos:</b> "
-            f"{batch.field_count:,}"
+        return build_reversal_summary(
+            self._batch
         )
 
     def _update_confirmation(

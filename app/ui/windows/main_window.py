@@ -47,6 +47,7 @@ from app.ui.dialogs.apply_changes_dialog import (
 )
 from app.ui.dialogs.reversal_confirm_dialog import (
     ReversalConfirmDialog,
+    build_reversal_applied_impact,
 )
 from app.ui.pages.aggregation_page import (
     AggregationPage,
@@ -1836,19 +1837,23 @@ class MainWindow(QMainWindow):
 
             self._update_workspace_banner()
 
+            impact = (
+                build_reversal_applied_impact(
+                    outcome.detail,
+                    result,
+                )
+            )
+
             show_info(
                 self,
-                "Reversi\u00f3n aplicada",
-                "La reversi\u00f3n se aplic\u00f3 "
+                "Reversion aplicada",
+                "La reversion se aplico "
                 "correctamente en BigQuery.\n\n"
                 f"Batch original: "
                 f"{outcome.source_batch.batch_id}\n"
                 f"Nuevo batch: "
-                f"{result.batch_id}\n"
-                f"Filas revertidas: "
-                f"{result.row_count:,}\n"
-                f"Campos revertidos: "
-                f"{result.field_count:,}",
+                f"{result.batch_id}\n\n"
+                f"{impact}",
             )
 
             return
