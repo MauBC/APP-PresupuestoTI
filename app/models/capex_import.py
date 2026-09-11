@@ -23,6 +23,7 @@ class CapexImportIssue:
     message: str
     severity: CapexIssueSeverity
     raw_value: Any = None
+    expected_value: Any = None
 
 
 @dataclass(

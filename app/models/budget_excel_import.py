@@ -24,6 +24,8 @@ class BudgetImportIssue:
     message: str
     severity: BudgetImportIssueSeverity
     raw_value: Any = None
+    context: str = ""
+    expected_value: Any = None
 
 
 @dataclass(

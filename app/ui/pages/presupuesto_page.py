@@ -30,6 +30,9 @@ from app.services.current_actor_service import (
     CurrentActorError,
     resolve_current_actor,
 )
+from app.services.budget_excel_import_service import (
+    BudgetExcelImportService,
+)
 from app.services.new_budget_row_service import (
     NewBudgetRowService,
 )
@@ -1297,31 +1300,101 @@ class PresupuestoPage(QWidget):
         self,
         result,
     ):
-        dialog = (
-            BudgetExcelImportDialog(
-                result=result,
-                module_config=(
-                    self._workspace
-                    .module_config
-                ),
-                parent=self,
+        corrections = {}
+
+        current_result = result
+
+        while True:
+            dialog = (
+                BudgetExcelImportDialog(
+                    result=(
+                        current_result
+                    ),
+                    module_config=(
+                        self._workspace
+                        .module_config
+                    ),
+                    corrections=(
+                        corrections
+                    ),
+                    parent=self,
+                )
             )
-        )
 
-        accepted = (
-            dialog.exec()
-        )
-
-        if not accepted:
-            self.status_label.setText(
-                "Importacion cancelada. "
-                "No se agregaron filas."
+            dialog_code = (
+                dialog.exec()
             )
 
-            self._excel_import_actor = None
-            self._excel_import_path = None
+            corrections = (
+                dialog.corrections()
+            )
 
-            return
+            if (
+                dialog_code
+                ==
+                BudgetExcelImportDialog
+                .REVALIDATE_CODE
+            ):
+                self.status_label.setText(
+                    "Revalidando correcciones "
+                    "del Excel..."
+                )
+
+                try:
+                    current_result = (
+                        BudgetExcelImportService(
+                            self._workspace
+                            .module_config
+                        )
+                        .prepare(
+                            current_result
+                            .source_path,
+                            actor=(
+                                self._excel_import_actor
+                            ),
+                            overrides=(
+                                corrections
+                            ),
+                        )
+                    )
+
+                except Exception as exc:
+                    AppMessageBox.warning(
+                        self,
+                        "No se pudo revalidar",
+                        "La correccion no pudo "
+                        "ser revalidada. "
+                        "El Excel original no "
+                        "fue modificado.\n\n"
+                        f"{type(exc).__name__}: "
+                        f"{exc}",
+                    )
+
+                continue
+
+            if (
+                dialog_code
+                != int(
+                    QDialog
+                    .DialogCode
+                    .Accepted
+                )
+            ):
+                self.status_label.setText(
+                    "Importacion cancelada. "
+                    "No se agregaron filas."
+                )
+
+                self._excel_import_actor = None
+                self._excel_import_path = None
+
+                return
+
+            result = (
+                current_result
+            )
+
+            break
 
         if not result.is_valid:
             self._excel_import_actor = None

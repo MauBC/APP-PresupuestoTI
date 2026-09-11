@@ -9,6 +9,7 @@ from openpyxl import load_workbook
 from app.config.capex_schema import (
     CAPEX_EXCEL_SHEET,
     CAPEX_HEADER_ALIASES,
+    CAPEX_INTERNAL_TO_RAW,
     CAPEX_RAW_TO_INTERNAL,
 )
 from app.models.capex_import import (
@@ -366,6 +367,7 @@ def load_capex_workbook(
     *,
     expected_year: int | None,
     sheet_name: str = CAPEX_EXCEL_SHEET,
+    overrides=None,
 ) -> CapexExcelLoadResult:
     source = Path(
         source_path
@@ -375,6 +377,11 @@ def load_capex_workbook(
         raise CapexWorkbookError(
             f"No existe el archivo: {source}"
         )
+
+    override_values = dict(
+        overrides
+        or {}
+    )
 
     workbook = load_workbook(
         source,
@@ -441,6 +448,55 @@ def load_capex_workbook(
                 )
                 if header
             }
+
+            for (
+                override_key,
+                override_value,
+            ) in override_values.items():
+                try:
+                    (
+                        override_row,
+                        override_column,
+                    ) = override_key
+
+                except (
+                    TypeError,
+                    ValueError,
+                ) as exc:
+                    raise CapexWorkbookError(
+                        "Correccion CAPEX "
+                        "invalida."
+                    ) from exc
+
+                if (
+                    int(
+                        override_row
+                    )
+                    != row_number
+                ):
+                    continue
+
+                internal_column = str(
+                    override_column
+                ).strip().lower()
+
+                raw_header = (
+                    CAPEX_INTERNAL_TO_RAW
+                    .get(
+                        internal_column
+                    )
+                )
+
+                if raw_header is None:
+                    raise CapexWorkbookError(
+                        "No existe la columna "
+                        "CAPEX interna "
+                        f"{internal_column!r}."
+                    )
+
+                raw_row[
+                    raw_header
+                ] = override_value
 
             if _row_is_empty(
                 raw_row

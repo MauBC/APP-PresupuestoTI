@@ -4,6 +4,7 @@ from decimal import Decimal
 from PySide6.QtCore import (
     QAbstractTableModel,
     QModelIndex,
+    QSortFilterProxyModel,
     Qt,
 )
 
@@ -515,6 +516,10 @@ class BudgetImportIssueModel(
             "FILA",
         ),
         (
+            "context",
+            "CONTEXTO",
+        ),
+        (
             "severity",
             "TIPO",
         ),
@@ -534,6 +539,10 @@ class BudgetImportIssueModel(
             "raw_value",
             "VALOR",
         ),
+        (
+            "expected_value",
+            "ESPERADO",
+        ),
     )
 
     def __init__(
@@ -549,6 +558,23 @@ class BudgetImportIssueModel(
         self._issues = tuple(
             issues
         )
+
+    def issue_at(
+        self,
+        row_index,
+    ):
+        if not (
+            0
+            <= row_index
+            < len(
+                self._issues
+            )
+        ):
+            return None
+
+        return self._issues[
+            row_index
+        ]
 
     def rowCount(
         self,
@@ -606,10 +632,8 @@ class BudgetImportIssueModel(
             == Qt.ItemDataRole
             .DisplayRole
         ):
-            return (
-                ""
-                if value is None
-                else str(value)
+            return format_import_value(
+                value
             )
 
         if (
@@ -656,3 +680,108 @@ class BudgetImportIssueModel(
                 )
 
         return section + 1
+
+class BudgetImportIssueFilterProxyModel(
+    QSortFilterProxyModel
+):
+    def __init__(
+        self,
+        parent=None,
+    ):
+        super().__init__(
+            parent
+        )
+
+        self._search_text = ""
+        self._severity = None
+
+    def set_search_text(
+        self,
+        value,
+    ):
+        self._search_text = str(
+            value
+            if value is not None
+            else ""
+        ).strip().casefold()
+
+        self.invalidate()
+
+    def set_severity(
+        self,
+        value,
+    ):
+        if value is None:
+            self._severity = None
+
+        else:
+            raw = getattr(
+                value,
+                "value",
+                value,
+            )
+
+            self._severity = str(
+                raw
+            ).strip().upper() or None
+
+        self.invalidate()
+
+    def filterAcceptsRow(
+        self,
+        source_row,
+        source_parent,
+    ):
+        source = self.sourceModel()
+
+        if source is None:
+            return False
+
+        issue = source.issue_at(
+            source_row
+        )
+
+        if issue is None:
+            return False
+
+        severity = getattr(
+            issue.severity,
+            "value",
+            issue.severity,
+        )
+
+        if (
+            self._severity
+            and str(
+                severity
+            ).strip().upper()
+            != self._severity
+        ):
+            return False
+
+        if not self._search_text:
+            return True
+
+        values = (
+            issue.row_number,
+            issue.context,
+            severity,
+            issue.code,
+            issue.column,
+            issue.message,
+            issue.raw_value,
+            issue.expected_value,
+        )
+
+        haystack = " ".join(
+            ""
+            if value is None
+            else str(value)
+            for value
+            in values
+        ).casefold()
+
+        return (
+            self._search_text
+            in haystack
+        )
