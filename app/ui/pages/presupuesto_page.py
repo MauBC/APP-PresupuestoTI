@@ -56,8 +56,14 @@ from app.ui.dialogs.app_message_box import (
     AppMessageBox,
     ask_confirmation,
 )
+from app.config.budget_insert_modes import (
+    BudgetInsertMode,
+)
 from app.ui.dialogs.budget_excel_import_dialog import (
     BudgetExcelImportDialog,
+)
+from app.ui.dialogs.budget_insert_mode_dialog import (
+    BudgetInsertModeDialog,
 )
 from app.ui.dialogs.capex_amounts_dialog import (
     CapexAmountsDialog,
@@ -236,6 +242,25 @@ class PresupuestoPage(QWidget):
             False
         )
 
+        # Los handlers anteriores se conservan.
+        # Visualmente se usa un unico acceso.
+        self.insert_button = QPushButton(
+            "INSERTAR"
+        )
+
+        self.insert_button.setObjectName(
+            "primaryButton"
+        )
+
+        self.insert_button.setEnabled(
+            False
+        )
+
+        self.insert_button.setToolTip(
+            "Selecciona la forma de insertar "
+            "informacion en el presupuesto."
+        )
+
         self.distribute_months_button = (
             QPushButton(
                 "Distribuir meses"
@@ -282,11 +307,7 @@ class PresupuestoPage(QWidget):
         )
 
         toolbar.addWidget(
-            self.new_row_button
-        )
-
-        toolbar.addWidget(
-            self.import_excel_button
+            self.insert_button
         )
 
         toolbar.addWidget(
@@ -516,6 +537,10 @@ class PresupuestoPage(QWidget):
 
         self.import_excel_button.clicked.connect(
             self.show_excel_import
+        )
+
+        self.insert_button.clicked.connect(
+            self.show_insert_dialog
         )
 
         self.distribute_months_button.clicked.connect(
@@ -1194,6 +1219,35 @@ class PresupuestoPage(QWidget):
             bool(enabled)
         )
 
+    def _update_insert_button(
+        self,
+    ):
+        if not hasattr(
+            self,
+            "insert_button",
+        ):
+            return
+
+        enabled = (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+            and
+            not self.is_busy
+        )
+
+        self.insert_button.setEnabled(
+            bool(enabled)
+        )
+
+        self.insert_button.setText(
+            (
+                "PROCESANDO..."
+                if self.is_busy
+                else "INSERTAR"
+            )
+        )
+
     def _update_import_excel_button(
         self,
     ):
@@ -1230,6 +1284,8 @@ class PresupuestoPage(QWidget):
             self.import_excel_button.setText(
                 "Importar Excel"
             )
+
+        self._update_insert_button()
 
     def show_excel_import(
         self,
@@ -1569,6 +1625,73 @@ class PresupuestoPage(QWidget):
             self.new_row_button.setText(
                 "Nueva fila"
             )
+
+    def show_insert_dialog(
+        self,
+    ):
+        if not (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+        ):
+            return
+
+        if self.is_busy:
+            return
+
+        dialog = BudgetInsertModeDialog(
+            module_config=(
+                self._workspace
+                .module_config
+            ),
+            parent=self,
+        )
+
+        if not dialog.exec():
+            return
+
+        mode = dialog.selected_mode()
+
+        if (
+            mode
+            == BudgetInsertMode.MANUAL
+        ):
+            self.show_new_row_dialog()
+            return
+
+        if (
+            mode
+            == BudgetInsertMode.TEMPLATE
+        ):
+            self.show_excel_import()
+            return
+
+        if (
+            mode
+            == BudgetInsertMode.INTELLIGENT
+        ):
+            self.show_intelligent_insert()
+            return
+
+        AppMessageBox.warning(
+            self,
+            "Insercion no disponible",
+            "El tipo de insercion seleccionado "
+            "no esta configurado.",
+        )
+
+    def show_intelligent_insert(
+        self,
+    ):
+        AppMessageBox.information(
+            self,
+            "Insercion inteligente OPEX",
+            "La insercion inteligente esta "
+            "en construccion. El parser y el "
+            "motor de distribucion ya estan "
+            "implementados. Falta conectar "
+            "maestros y enriquecimiento.",
+        )
 
     def show_new_row_dialog(
         self,
