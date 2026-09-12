@@ -34,7 +34,7 @@ def test_capex_required_columns_cover_summary_contract():
     )
 
 
-def test_opex_does_not_gain_capex_requirements():
+def test_opex_uses_its_own_required_business_fields():
     definition = (
         get_new_budget_row_form(
             OPEX_MODULE_CONFIG
@@ -43,7 +43,15 @@ def test_opex_does_not_gain_capex_requirements():
 
     assert (
         definition.required_columns
-        == ()
+        == (
+            "presupuestador",
+            "pais",
+            "compania",
+            "ceco",
+            "nombre_gasto",
+            "moneda_facturacion",
+            "periodo",
+        )
     )
 
 

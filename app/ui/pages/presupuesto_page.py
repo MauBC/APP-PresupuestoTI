@@ -43,6 +43,9 @@ from app.services.budget_excel_import_service import (
 from app.services.capex_new_row_amount_service import (
     CapexNewRowAmountService,
 )
+from app.services.opex_new_row_amount_service import (
+    OpexNewRowAmountService,
+)
 from app.services.new_budget_row_service import (
     NewBudgetRowService,
 )
@@ -58,6 +61,9 @@ from app.ui.dialogs.budget_excel_import_dialog import (
 )
 from app.ui.dialogs.capex_amounts_dialog import (
     CapexAmountsDialog,
+)
+from app.ui.dialogs.opex_amounts_dialog import (
+    OpexAmountsDialog,
 )
 from app.ui.dialogs.change_summary_dialog import (
     ChangeSummaryDialog,
@@ -1745,6 +1751,37 @@ class PresupuestoPage(QWidget):
                         usd_values=(
                             amount_dialog
                             .usd_values()
+                        ),
+                    )
+                )
+
+            elif (
+                module_config.module
+                == BudgetModule.OPEX
+            ):
+                amount_dialog = (
+                    OpexAmountsDialog(
+                        row=draft.row,
+                        parent=self,
+                    )
+                )
+
+                if not (
+                    amount_dialog.exec()
+                ):
+                    self.status_label.setText(
+                        "Alta OPEX cancelada. "
+                        "No se realizaron cambios."
+                    )
+                    return
+
+                draft = (
+                    OpexNewRowAmountService()
+                    .apply(
+                        draft,
+                        monthly_values=(
+                            amount_dialog
+                            .monthly_values()
                         ),
                     )
                 )

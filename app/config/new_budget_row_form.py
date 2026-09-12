@@ -68,6 +68,64 @@ class NewBudgetRowFormDefinition:
         )
 
 
+OPEX_NEW_ROW_FORM = (
+    NewBudgetRowFormDefinition(
+        sections=(
+            NewBudgetRowSection(
+                title="Datos generales",
+                columns=(
+                    "origen",
+                    "periodo",
+                    "presupuestador",
+                    "pais",
+                    "compania",
+                    "moneda_facturacion",
+                ),
+            ),
+            NewBudgetRowSection(
+                title="Imputacion contable",
+                columns=(
+                    "ceco",
+                    "centro_beneficio",
+                    "numero_cuenta",
+                    "nombre_cuenta",
+                    "gyp",
+                ),
+            ),
+            NewBudgetRowSection(
+                title="Centro de gestion",
+                columns=(
+                    "desc_cebe",
+                    "macroservicio_cg",
+                    "tipo_servicio_cg",
+                    "sede_cg",
+                    "region_cg",
+                ),
+            ),
+            NewBudgetRowSection(
+                title="Gasto y clasificacion",
+                columns=(
+                    "nombre_gasto",
+                    "proveedor",
+                    "categoria_gasto",
+                    "atributo_2",
+                    "segmentacion",
+                ),
+            ),
+        ),
+        required_columns=(
+            "presupuestador",
+            "pais",
+            "compania",
+            "ceco",
+            "nombre_gasto",
+            "moneda_facturacion",
+            "periodo",
+        ),
+    )
+)
+
+
 CAPEX_NEW_ROW_FORM = (
     NewBudgetRowFormDefinition(
         sections=(
@@ -320,12 +378,15 @@ def get_new_budget_row_form(
             CAPEX_NEW_ROW_FORM
         )
 
+    elif (
+        module_config.module
+        == BudgetModule.OPEX
+    ):
+        definition = (
+            OPEX_NEW_ROW_FORM
+        )
+
     else:
-        #
-        # OPEX sigue usando el mismo motor.
-        # Su layout especifico se agregara
-        # en el siguiente bloque dedicado.
-        #
         definition = (
             _generic_definition(
                 module_config
