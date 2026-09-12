@@ -71,6 +71,9 @@ from app.ui.dialogs.capex_amounts_dialog import (
 from app.ui.dialogs.opex_amounts_dialog import (
     OpexAmountsDialog,
 )
+from app.ui.dialogs.opex_smart_import_dialog import (
+    OpexSmartImportDialog,
+)
 from app.ui.dialogs.change_summary_dialog import (
     ChangeSummaryDialog,
 )
@@ -1683,15 +1686,113 @@ class PresupuestoPage(QWidget):
     def show_intelligent_insert(
         self,
     ):
-        AppMessageBox.information(
-            self,
-            "Insercion inteligente OPEX",
-            "La insercion inteligente esta "
-            "en construccion. El parser y el "
-            "motor de distribucion ya estan "
-            "implementados. Falta conectar "
-            "maestros y enriquecimiento.",
+        if (
+            self._workspace
+            .module_config
+            .module
+            != BudgetModule.OPEX
+        ):
+            AppMessageBox.warning(
+                self,
+                "Insercion inteligente",
+                "La insercion inteligente "
+                "solo esta disponible para OPEX.",
+            )
+            return
+
+        try:
+            actor = (
+                resolve_current_actor()
+            )
+
+        except CurrentActorError as exc:
+            AppMessageBox.warning(
+                self,
+                "Usuario no identificado",
+                str(exc),
+            )
+            return
+
+        dialog = (
+            OpexSmartImportDialog(
+                actor=actor,
+                parent=self,
+            )
         )
+
+        if not dialog.exec():
+            self.status_label.setText(
+                "Insercion inteligente cancelada. "
+                "No se agregaron filas."
+            )
+            return
+
+        rows = dialog.rows()
+
+        if not rows:
+            self.status_label.setText(
+                "Insercion inteligente cancelada: "
+                "no se generaron filas."
+            )
+            return
+
+        source_name = (
+            dialog.source_name()
+            or "plantilla OPEX"
+        )
+
+        try:
+            session_ids = (
+                self._workspace
+                .add_new_rows(
+                    rows,
+                    description=(
+                        "Insercion inteligente "
+                        "OPEX 2027 - "
+                        f"{source_name}"
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            AppMessageBox.warning(
+                self,
+                "No se pudo importar",
+                "La plantilla fue preparada "
+                "correctamente, pero las filas "
+                "no pudieron agregarse al "
+                "Workspace.\n\n"
+                f"{type(exc).__name__}: {exc}",
+            )
+            return
+
+        last_page = max(
+            0,
+            (
+                self._workspace.row_count
+                - 1
+            )
+            // self._page_size,
+        )
+
+        self._load_page(
+            last_page
+        )
+
+        if session_ids:
+            self._select_session_row(
+                session_ids[-1]
+            )
+
+        self.status_label.setText(
+            f"{len(session_ids):,} filas OPEX "
+            "2027 agregadas localmente desde "
+            f"{source_name}. "
+            "BigQuery todavia no ha sido "
+            "modificado."
+        )
+
+        self.workspace_changed.emit()
 
     def show_new_row_dialog(
         self,

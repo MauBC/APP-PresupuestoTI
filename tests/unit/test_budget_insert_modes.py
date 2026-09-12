@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from app.config.budget_insert_modes import (
     BudgetInsertMode,
@@ -78,7 +78,7 @@ def test_manual_and_template_are_enabled():
         )
 
 
-def test_intelligent_is_visible_but_not_enabled_yet():
+def test_intelligent_is_visible_and_enabled():
     options = (
         get_budget_insert_options(
             OPEX_MODULE_CONFIG
@@ -95,7 +95,7 @@ def test_intelligent_is_visible_but_not_enabled_yet():
     )
 
     assert intelligent.title == "Inteligente"
-    assert intelligent.enabled is False
+    assert intelligent.enabled is True
 
 
 def test_capex_does_not_expose_intelligent_mode():

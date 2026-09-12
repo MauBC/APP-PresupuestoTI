@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+from dataclasses import dataclass
 from enum import Enum
 
 from app.config.budget_module_config import (
@@ -64,7 +64,7 @@ def get_budget_insert_options(
                 "simplificado por gasto, "
                 "CECO y distribucion."
             ),
-            enabled=False,
+            enabled=True,
         )
 
         return (
