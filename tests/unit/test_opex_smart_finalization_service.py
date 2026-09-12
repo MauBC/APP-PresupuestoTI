@@ -17,11 +17,17 @@ from app.config.presupuesto_schema import (
 from app.models.opex_smart_enrichment import (
     OpexSmartEnrichedRow,
 )
+from app.models.opex_fx import (
+    OpexFxTable,
+)
 from app.models.opex_smart_finalization import (
     OpexSmartInsertionContext,
 )
 from app.services.new_budget_row_service import (
     NewBudgetRowService,
+)
+from app.services.opex_fx_service import (
+    OpexFxService,
 )
 from app.services.opex_smart_finalization_service import (
     OpexSmartFinalizationError,
@@ -47,7 +53,7 @@ def enrichment(
     ceco="001234",
 ):
     return SimpleNamespace(
-        pais="PER",
+        pais="PE",
         compania="RANSA PERU",
         ceco=ceco,
         centro_beneficio="001230",
@@ -250,7 +256,7 @@ def test_builds_2027_business_dimensions():
 
     assert (
         value["pais"]
-        == "PER"
+        == "PE"
     )
 
     assert (
@@ -594,4 +600,92 @@ def test_technical_metadata_comes_from_new_row_service():
     assert (
         result["updated_by"]
         == "tester"
+    )
+
+def test_real_fx_provider_integrates_with_finalization():
+    fx = OpexFxService(
+        OpexFxTable(
+            year=2027,
+            currency_per_usd={
+                "USD":
+                    Decimal("1"),
+                "PEN":
+                    Decimal("3.40"),
+            },
+            local_currency_by_country={
+                "PE":
+                    "PEN",
+            },
+        )
+    )
+
+    ids = iter(
+        (
+            "fx-row-001",
+        )
+    )
+
+    value = (
+        OpexSmartFinalizationService(
+            state_service=(
+                FakeStateService(
+                    (
+                        row(
+                            tipo="MENSUAL",
+                            monto_ceco="100",
+                        ),
+                    )
+                )
+            ),
+            amount_provider=(
+                fx.monthly_values
+            ),
+            row_service=(
+                NewBudgetRowService(
+                    OPEX_MODULE_CONFIG,
+                    row_id_factory=(
+                        lambda: next(ids)
+                    ),
+                )
+            ),
+        )
+    )
+
+    result = (
+        value.build_rows(
+            object(),
+            context=context(),
+            actor="tester",
+            timestamp=NOW,
+        )[0]
+    )
+
+    assert (
+        result["enero_mf"]
+        == Decimal("100.00")
+    )
+
+    assert (
+        result["enero_usd"]
+        == Decimal("100.00")
+    )
+
+    assert (
+        result["enero_ml"]
+        == Decimal("340.00")
+    )
+
+    assert (
+        result["anio_mf"]
+        == Decimal("1200.00")
+    )
+
+    assert (
+        result["anio_usd"]
+        == Decimal("1200.00")
+    )
+
+    assert (
+        result["anio_ml"]
+        == Decimal("4080.00")
     )
