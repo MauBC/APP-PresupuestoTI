@@ -7,6 +7,7 @@ from app.models.opex_master_data import (
     OpexRecoverableMasterRecord,
 )
 from app.models.opex_master_enrichment import (
+    OpexCecoMasterEnrichment,
     OpexMasterEnrichment,
 )
 from app.services.opex_master_data_loader import (
@@ -585,20 +586,14 @@ class OpexMasterEnrichmentService:
 
         return record
 
-    def enrich(
+    def enrich_ceco(
         self,
-        *,
-        numero_cuenta,
         ceco,
-    ) -> OpexMasterEnrichment:
+    ) -> OpexCecoMasterEnrichment:
         normalized_ceco = (
             self.normalize_ceco(
                 ceco
             )
-        )
-
-        account = self.resolve_account(
-            numero_cuenta
         )
 
         gyp = self.derive_gyp_from_ceco(
@@ -622,28 +617,7 @@ class OpexMasterEnrichmentService:
             centro_beneficio
         )
 
-        return OpexMasterEnrichment(
-            numero_cuenta=(
-                account.numero_cuenta
-            ),
-            nombre_cuenta=self._required(
-                account.nombre_cuenta,
-                code="ACCOUNT_DATA_MISSING",
-                field="Nombre Cuenta",
-                key=account.numero_cuenta,
-            ),
-            categoria_gasto=self._required(
-                account.categoria_gasto,
-                code="ACCOUNT_DATA_MISSING",
-                field="Categoria de Gasto",
-                key=account.numero_cuenta,
-            ),
-            atributo_2=self._required(
-                account.atributo_2,
-                code="ACCOUNT_DATA_MISSING",
-                field="Atributo 2",
-                key=account.numero_cuenta,
-            ),
+        return OpexCecoMasterEnrichment(
             ceco_prefix=prefix,
             sociedad=self._required(
                 recoverable.sociedad,
@@ -703,5 +677,64 @@ class OpexMasterEnrichmentService:
                 code="CEBE_DATA_MISSING",
                 field="Seg Rs",
                 key=centro_beneficio,
+            ),
+        )
+
+    def enrich(
+        self,
+        *,
+        numero_cuenta,
+        ceco,
+    ) -> OpexMasterEnrichment:
+        account = self.resolve_account(
+            numero_cuenta
+        )
+
+        ceco_data = self.enrich_ceco(
+            ceco
+        )
+
+        return OpexMasterEnrichment(
+            numero_cuenta=(
+                account.numero_cuenta
+            ),
+            nombre_cuenta=self._required(
+                account.nombre_cuenta,
+                code="ACCOUNT_DATA_MISSING",
+                field="Nombre Cuenta",
+                key=account.numero_cuenta,
+            ),
+            categoria_gasto=self._required(
+                account.categoria_gasto,
+                code="ACCOUNT_DATA_MISSING",
+                field="Categoria de Gasto",
+                key=account.numero_cuenta,
+            ),
+            atributo_2=self._required(
+                account.atributo_2,
+                code="ACCOUNT_DATA_MISSING",
+                field="Atributo 2",
+                key=account.numero_cuenta,
+            ),
+            ceco_prefix=ceco_data.ceco_prefix,
+            sociedad=ceco_data.sociedad,
+            compania=ceco_data.compania,
+            pais=ceco_data.pais,
+            ceco=ceco_data.ceco,
+            centro_beneficio=(
+                ceco_data.centro_beneficio
+            ),
+            gyp=ceco_data.gyp,
+            desc_cebe=ceco_data.desc_cebe,
+            macroservicio_cg=(
+                ceco_data.macroservicio_cg
+            ),
+            tipo_servicio_cg=(
+                ceco_data.tipo_servicio_cg
+            ),
+            region_cg=ceco_data.region_cg,
+            sede_cg=ceco_data.sede_cg,
+            segmentacion=(
+                ceco_data.segmentacion
             ),
         )

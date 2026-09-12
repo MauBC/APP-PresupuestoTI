@@ -48,6 +48,37 @@ class OpexSmartEnrichmentService:
             )
         )
 
+        account_options = (
+            self._master_service
+            .account_options(
+                budget.numero_cuenta
+            )
+        )
+
+        budget_issues = []
+
+        try:
+            (
+                self._master_service
+                .resolve_account(
+                    budget.numero_cuenta
+                )
+            )
+        except (
+            OpexMasterEnrichmentError
+        ) as exc:
+            budget_issues.append(
+                OpexSmartEnrichmentIssue(
+                    sheet_name=(
+                        budget.sheet_name
+                    ),
+                    excel_row=None,
+                    ceco=None,
+                    code=exc.code,
+                    message=str(exc),
+                )
+            )
+
         drafts = []
         issues = []
 
@@ -57,13 +88,8 @@ class OpexSmartEnrichmentService:
             try:
                 enrichment = (
                     self._master_service
-                    .enrich(
-                        numero_cuenta=(
-                            budget.numero_cuenta
-                        ),
-                        ceco=(
-                            distribution.ceco
-                        ),
+                    .enrich_ceco(
+                        distribution.ceco
                     )
                 )
             except (
@@ -131,6 +157,12 @@ class OpexSmartEnrichmentService:
                 budget.sheet_name
             ),
             distribution_status=status,
+            account_options=(
+                account_options
+            ),
+            budget_issues=tuple(
+                budget_issues
+            ),
             drafts=tuple(
                 drafts
             ),

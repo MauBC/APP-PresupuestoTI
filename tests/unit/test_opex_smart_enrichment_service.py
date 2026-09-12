@@ -1,4 +1,4 @@
-﻿from decimal import Decimal
+from decimal import Decimal
 
 import pytest
 
@@ -256,3 +256,221 @@ def test_workbook_analysis_preserves_source():
 
     assert result.source_path == "demo.xlsx"
     assert len(result.budgets) == 1
+
+def test_ambiguous_account_is_budget_issue_not_one_issue_per_ceco():
+    base = snapshot()
+
+    option_a = (
+        OpexAccountMasterRecord(
+            numero_cuenta="600000001",
+            categoria_gasto="EQUIPO",
+            nombre_cuenta="ADM",
+            atributo_2="A",
+        )
+    )
+
+    option_b = (
+        OpexAccountMasterRecord(
+            numero_cuenta="600000001",
+            categoria_gasto="EQUIPO",
+            nombre_cuenta="VTAS",
+            atributo_2="B",
+        )
+    )
+
+    from app.models.opex_master_data import (
+        OpexMasterConflict,
+    )
+
+    ambiguous = (
+        OpexMasterDataSnapshot(
+            accounts={},
+            cebes=base.cebes,
+            recoverables=(
+                base.recoverables
+            ),
+            account_conflicts={
+                "600000001": (
+                    OpexMasterConflict(
+                        key="600000001",
+                        locations=(
+                            "Sheet1:2",
+                            "Sheet1:3",
+                        ),
+                        records=(
+                            option_a,
+                            option_b,
+                        ),
+                    )
+                )
+            },
+            cebe_conflicts={},
+            recoverable_conflicts={},
+            account_source=SOURCE,
+            cebe_source=SOURCE,
+            recoverable_source=SOURCE,
+        )
+    )
+
+    smart = (
+        OpexSmartEnrichmentService(
+            OpexMasterEnrichmentService(
+                ambiguous
+            )
+        )
+    )
+
+    result = smart.analyze_budget(
+        budget()
+    )
+
+    assert len(
+        result.budget_issues
+    ) == 1
+
+    assert (
+        result.budget_issues[0].code
+        == "ACCOUNT_AMBIGUOUS"
+    )
+
+    assert len(
+        result.account_options
+    ) == 2
+
+    assert len(
+        result.drafts
+    ) == 2
+
+    assert not result.issues
+
+
+def test_ceco_problem_remains_row_level_when_account_is_ambiguous():
+    base = snapshot()
+
+    from app.models.opex_master_data import (
+        OpexMasterConflict,
+    )
+
+    account_a = valid_account = (
+        OpexAccountMasterRecord(
+            numero_cuenta="600000001",
+            categoria_gasto="EQUIPO",
+            nombre_cuenta="ADM",
+            atributo_2="A",
+        )
+    )
+
+    account_b = (
+        OpexAccountMasterRecord(
+            numero_cuenta="600000001",
+            categoria_gasto="EQUIPO",
+            nombre_cuenta="VTAS",
+            atributo_2="B",
+        )
+    )
+
+    cebe_a = (
+        OpexCebeMasterRecord(
+            centro_beneficio=(
+                "04WF2EAF90"
+            ),
+            desc_cebe="A",
+            macroservicio_cg="MACRO",
+            tipo_servicio_cg="TIPO",
+            region_cg="REGION",
+            sede_cg="SEDE",
+            segmentacion="SEG",
+        )
+    )
+
+    cebe_b = (
+        OpexCebeMasterRecord(
+            centro_beneficio=(
+                "04WF2EAF90"
+            ),
+            desc_cebe="B",
+            macroservicio_cg="MACRO",
+            tipo_servicio_cg="TIPO",
+            region_cg="REGION",
+            sede_cg="SEDE",
+            segmentacion="SEG",
+        )
+    )
+
+    ambiguous = (
+        OpexMasterDataSnapshot(
+            accounts={},
+            cebes={
+                "291ACC9900":
+                    base.cebes[
+                        "291ACC9900"
+                    ],
+            },
+            recoverables=(
+                base.recoverables
+            ),
+            account_conflicts={
+                "600000001": (
+                    OpexMasterConflict(
+                        key="600000001",
+                        locations=(
+                            "A",
+                            "B",
+                        ),
+                        records=(
+                            account_a,
+                            account_b,
+                        ),
+                    )
+                )
+            },
+            cebe_conflicts={
+                "04WF2EAF90": (
+                    OpexMasterConflict(
+                        key="04WF2EAF90",
+                        locations=(
+                            "A",
+                            "B",
+                        ),
+                        records=(
+                            cebe_a,
+                            cebe_b,
+                        ),
+                    )
+                )
+            },
+            recoverable_conflicts={},
+            account_source=SOURCE,
+            cebe_source=SOURCE,
+            recoverable_source=SOURCE,
+        )
+    )
+
+    smart = (
+        OpexSmartEnrichmentService(
+            OpexMasterEnrichmentService(
+                ambiguous
+            )
+        )
+    )
+
+    result = smart.analyze_budget(
+        budget()
+    )
+
+    assert len(
+        result.budget_issues
+    ) == 1
+
+    assert len(
+        result.drafts
+    ) == 1
+
+    assert len(
+        result.issues
+    ) == 1
+
+    assert (
+        result.issues[0].code
+        == "CEBE_AMBIGUOUS"
+    )

@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from app.models.opex_master_data import (
+    OpexAccountMasterRecord,
+)
 from app.models.opex_master_enrichment import (
+    OpexCecoMasterEnrichment,
     OpexMasterEnrichment,
 )
 from app.services.opex_template_distribution_service import (
@@ -37,7 +41,7 @@ class OpexSmartEnrichmentDraft:
     ceco: str
     percentage: Decimal | None
     input_amount: Decimal | None
-    enrichment: OpexMasterEnrichment
+    enrichment: OpexCecoMasterEnrichment
 
 
 @dataclass(
@@ -65,8 +69,22 @@ class OpexSmartEnrichedRow:
 class OpexSmartBudgetAnalysis:
     sheet_name: str
     distribution_status: OpexTemplateDistributionStatus
-    drafts: tuple[OpexSmartEnrichmentDraft, ...]
-    issues: tuple[OpexSmartEnrichmentIssue, ...]
+    account_options: tuple[
+        OpexAccountMasterRecord,
+        ...,
+    ]
+    budget_issues: tuple[
+        OpexSmartEnrichmentIssue,
+        ...,
+    ]
+    drafts: tuple[
+        OpexSmartEnrichmentDraft,
+        ...,
+    ]
+    issues: tuple[
+        OpexSmartEnrichmentIssue,
+        ...,
+    ]
 
 
 @dataclass(
