@@ -52,3 +52,9 @@ estado_*.txt
 codigo_gui_actual.txt
 main_window_actual.txt
 data_local/
+
+# Local diagnostic artifacts
+ESTRUCTURA_PROYECTO.txt
+INSPECCION_*.txt
+RESOLUCION_*.txt
+RADIOGRAFIA_PROYECTO/
