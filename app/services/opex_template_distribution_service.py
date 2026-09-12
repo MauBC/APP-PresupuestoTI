@@ -246,8 +246,15 @@ class OpexTemplateDistributionService:
         amount_valid = (
             has_all_amounts
             and
-            amount_total
-            == target
+            amount_total is not None
+            and
+            amount_total > ZERO
+            and
+            all(
+                value is not None
+                and value >= ZERO
+                for value in amounts
+            )
         )
 
         modes = []
@@ -463,24 +470,18 @@ class OpexTemplateDistributionService:
             supplied,
         )
 
-        normalized = {}
+        normalized = []
 
         for ceco in (
             cls._expected_cecos(
                 budget
             )
         ):
-            amount = (
-                cls._decimal(
-                    supplied[ceco],
-                    label=(
-                        f"Importe de {ceco}"
-                    ),
-                )
-                .quantize(
-                    CENT,
-                    rounding=ROUND_HALF_UP,
-                )
+            amount = cls._decimal(
+                supplied[ceco],
+                label=(
+                    f"Importe de {ceco}"
+                ),
             )
 
             if amount < ZERO:
@@ -489,45 +490,42 @@ class OpexTemplateDistributionService:
                     "ser negativos."
                 )
 
-            normalized[
-                ceco
-            ] = amount
+            normalized.append(
+                (
+                    ceco,
+                    amount,
+                )
+            )
 
-        total = sum(
-            normalized.values(),
+        total_weight = sum(
+            (
+                amount
+                for _ceco, amount
+                in normalized
+            ),
             ZERO,
-        ).quantize(
-            CENT,
-            rounding=ROUND_HALF_UP,
         )
 
-        target = (
-            cls._decimal(
-                budget.monto,
-                label="MONTO",
-            )
-            .quantize(
-                CENT,
-                rounding=ROUND_HALF_UP,
-            )
-        )
-
-        if total != target:
-            difference = (
-                target
-                - total
-            ).quantize(
-                CENT,
-                rounding=ROUND_HALF_UP,
-            )
-
+        if total_weight <= ZERO:
             raise OpexTemplateDistributionError(
-                "La suma de importes es "
-                f"{total:,.2f} y MONTO es "
-                f"{target:,.2f}. "
-                "Diferencia: "
-                f"{difference:,.2f}."
+                "La suma de importes debe ser "
+                "mayor que 0 para calcular "
+                "la distribucion."
             )
+
+        try:
+            allocated = (
+                ProportionalAllocationService
+                .allocate(
+                    normalized,
+                    budget.monto,
+                )
+            )
+
+        except ProportionalAllocationError as exc:
+            raise OpexTemplateDistributionError(
+                str(exc)
+            ) from exc
 
         return (
             OpexTemplateResolvedDistribution(
@@ -535,7 +533,7 @@ class OpexTemplateDistributionService:
                 amounts=tuple(
                     (
                         ceco,
-                        normalized[ceco],
+                        allocated[ceco],
                     )
                     for ceco
                     in cls._expected_cecos(

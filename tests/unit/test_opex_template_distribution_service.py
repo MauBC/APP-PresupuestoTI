@@ -1,4 +1,4 @@
-﻿from decimal import Decimal
+from decimal import Decimal
 
 import pytest
 
@@ -144,8 +144,9 @@ def test_percentage_must_equal_100():
         )
 
 
-def test_amount_distribution_must_equal_monto():
+def test_amount_distribution_uses_importes_as_weights():
     value = budget(
+        monto="30000",
         rows=(
             item(
                 "A",
@@ -158,17 +159,56 @@ def test_amount_distribution_must_equal_monto():
         )
     )
 
+    result = (
+        OpexTemplateDistributionService
+        .resolve_amounts(
+            value,
+            {
+                "A": "100",
+                "B": "200",
+            },
+        )
+    )
+
+    assert result.amount_map() == {
+        "A":
+            Decimal("10000.00"),
+        "B":
+            Decimal("20000.00"),
+    }
+
+    assert (
+        result.total
+        == Decimal("30000.00")
+    )
+
+
+def test_amount_distribution_rejects_zero_weight():
+    value = budget(
+        monto="30000",
+        rows=(
+            item(
+                "A",
+                amount="0",
+            ),
+            item(
+                "B",
+                amount="0",
+            ),
+        )
+    )
+
     with pytest.raises(
         OpexTemplateDistributionError,
-        match="Diferencia",
+        match="mayor que 0",
     ):
         (
             OpexTemplateDistributionService
             .resolve_amounts(
                 value,
                 {
-                    "A": "100",
-                    "B": "200",
+                    "A": "0",
+                    "B": "0",
                 },
             )
         )
@@ -282,7 +322,7 @@ def test_residual_never_loses_money():
     )
 
 
-def test_inspect_detects_example_mismatch():
+def test_inspect_accepts_amount_weights_when_raw_total_differs():
     value = budget(
         rows=(
             item(
@@ -325,12 +365,12 @@ def test_inspect_detects_example_mismatch():
 
     assert (
         result.amount_valid
-        is False
+        is True
     )
 
     assert (
         result.requires_correction
-        is True
+        is False
     )
 
 
