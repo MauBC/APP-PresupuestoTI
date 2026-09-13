@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
 )
@@ -19,6 +18,9 @@ from app.services.opex_smart_import_preparation_service import (
 )
 from app.ui.dialogs.app_message_box import (
     AppMessageBox,
+)
+from app.ui.dialogs.opex_smart_decision_dialog import (
+    OpexSmartDecisionDialog,
 )
 from app.ui.workers.opex_smart_import_worker import (
     OpexSmartImportWorker,
@@ -45,6 +47,7 @@ class OpexSmartImportDialog(
         ).strip()
 
         self._result = None
+        self._result_before_run = None
         self._worker = None
 
         self._masters_directory = (
@@ -67,7 +70,7 @@ class OpexSmartImportDialog(
         )
 
         self.setMinimumHeight(
-            600
+            520
         )
 
         self._apply_style()
@@ -191,15 +194,6 @@ class OpexSmartImportDialog(
             QPushButton#secondaryButton:disabled {
                 color: #98A2B3;
                 background-color: #F2F4F7;
-            }
-
-            QPlainTextEdit {
-                background-color: #F8FAF9;
-                border: 1px solid #D7E5DD;
-                border-radius: 7px;
-                padding: 8px;
-                font-family: Consolas;
-                font-size: 11px;
             }
             """
         )
@@ -462,25 +456,7 @@ class OpexSmartImportDialog(
         )
 
         layout.addWidget(
-            summary_card
-        )
-
-        self.details = QPlainTextEdit()
-
-        self.details.setReadOnly(
-            True
-        )
-
-        self.details.setVisible(
-            False
-        )
-
-        self.details.setMinimumHeight(
-            170
-        )
-
-        layout.addWidget(
-            self.details,
+            summary_card,
             1,
         )
 
@@ -531,7 +507,7 @@ class OpexSmartImportDialog(
         )
 
         self.review_button.clicked.connect(
-            self._toggle_details
+            self._review_decisions
         )
 
         self.import_button.clicked.connect(
@@ -609,6 +585,7 @@ class OpexSmartImportDialog(
             return
 
         self._result = None
+        self._result_before_run = None
 
         self.import_button.setEnabled(
             False
@@ -616,16 +593,6 @@ class OpexSmartImportDialog(
 
         self.review_button.setEnabled(
             False
-        )
-
-        self.details.clear()
-
-        self.details.setVisible(
-            False
-        )
-
-        self.review_button.setText(
-            "Revisar decisiones"
         )
 
         self.summary_label.setText(
@@ -715,6 +682,15 @@ class OpexSmartImportDialog(
     def _analyze(
         self,
     ):
+        self._start_analysis(
+            overrides=None
+        )
+
+    def _start_analysis(
+        self,
+        *,
+        overrides,
+    ):
         try:
             (
                 source,
@@ -738,25 +714,25 @@ class OpexSmartImportDialog(
         ):
             return
 
+        self._result_before_run = (
+            self._result
+        )
+
         self._result = None
 
-        self.summary_label.setText(
-            "Analizando plantilla, maestros "
-            "y tipo de cambio..."
-        )
+        if overrides:
+            self.summary_label.setText(
+                "Aplicando decisiones y "
+                "recalculando importes..."
+            )
+        else:
+            self.summary_label.setText(
+                "Analizando plantilla, maestros "
+                "y tipo de cambio..."
+            )
 
         self.total_usd_label.setText(
             "Equivalente total USD: calculando..."
-        )
-
-        self.details.clear()
-
-        self.details.setVisible(
-            False
-        )
-
-        self.review_button.setText(
-            "Revisar decisiones"
         )
 
         self._set_busy(
@@ -778,6 +754,7 @@ class OpexSmartImportDialog(
                 origin=origin,
                 budgeter=budgeter,
                 actor=self._actor,
+                overrides=overrides,
                 parent=self,
             )
         )
@@ -804,6 +781,14 @@ class OpexSmartImportDialog(
     ):
         self._result = result
 
+        self._render_result(
+            result
+        )
+
+    def _render_result(
+        self,
+        result,
+    ):
         self.summary_label.setText(
             "✓ "
             f"{result.budget_count} "
@@ -825,12 +810,6 @@ class OpexSmartImportDialog(
             f"US$ {result.total_usd:,.2f}"
         )
 
-        self.details.setPlainText(
-            self._decision_details(
-                result
-            )
-        )
-
         self.review_button.setEnabled(
             True
         )
@@ -848,22 +827,34 @@ class OpexSmartImportDialog(
         self,
         message,
     ):
-        self._result = None
-
-        self.summary_label.setText(
-            "El analisis fallo. "
-            "No se agregaron filas."
+        previous = (
+            self._result_before_run
         )
 
-        self.total_usd_label.setText(
-            "Equivalente total USD: -"
-        )
+        if previous is not None:
+            self._result = previous
+
+            self._render_result(
+                previous
+            )
+
+        else:
+            self._result = None
+
+            self.summary_label.setText(
+                "El analisis fallo. "
+                "No se agregaron filas."
+            )
+
+            self.total_usd_label.setText(
+                "Equivalente total USD: -"
+            )
 
         AppMessageBox.warning(
             self,
-            "No se pudo analizar la plantilla",
-            "La importacion inteligente "
-            "no pudo prepararse.\n\n"
+            "No se pudo preparar la importacion",
+            "No se pudieron aplicar "
+            "las decisiones.\n\n"
             f"{message}",
         )
 
@@ -874,142 +865,48 @@ class OpexSmartImportDialog(
             False
         )
 
+        if self._result is not None:
+            self.review_button.setEnabled(
+                True
+            )
+
+            self.import_button.setEnabled(
+                True
+            )
+
         worker = self._worker
 
         self._worker = None
+        self._result_before_run = None
 
         if worker is not None:
             worker.deleteLater()
 
-    @staticmethod
-    def _decision_details(
-        result,
-    ) -> str:
-        lines = [
-            "RESOLUCIONES AUTOMATICAS",
-            "=" * 64,
-            "",
-        ]
-
-        for decision in (
-            result.decisions
-        ):
-            lines.extend(
-                [
-                    f"[{decision.sheet_name}]",
-                    (
-                        "Cuenta: "
-                        f"{decision.account_name}"
-                    ),
-                    (
-                        "Atributo 2: "
-                        f"{decision.atributo_2}"
-                    ),
-                    (
-                        "Distribucion: "
-                        f"{decision.distribution_mode}"
-                    ),
-                ]
-            )
-
-            if decision.cebe_decisions:
-                lines.append(
-                    "CEBE:"
-                )
-
-                for cebe in (
-                    decision.cebe_decisions
-                ):
-                    lines.append(
-                        "  "
-                        f"{cebe.centro_beneficio}"
-                        " -> "
-                        f"{cebe.tipo_servicio_cg}"
-                    )
-
-            else:
-                lines.append(
-                    "CEBE: sin ambiguedades"
-                )
-
-            lines.append(
-                ""
-            )
-
-        lines.extend(
-            [
-                "RESUMEN",
-                "=" * 64,
-                (
-                    "Total equivalente USD: "
-                    f"US$ {result.total_usd:,.2f}"
-                ),
-                "",
-                "Filas por pais:",
-            ]
-        )
-
-        for (
-            key,
-            value,
-        ) in result.country_counts:
-            lines.append(
-                f"  {key}: {value:,}"
-            )
-
-        lines.append(
-            ""
-        )
-
-        lines.append(
-            "Moneda de facturacion:"
-        )
-
-        for (
-            key,
-            value,
-        ) in (
-            result
-            .invoice_currency_counts
-        ):
-            lines.append(
-                f"  {key}: {value:,} filas"
-            )
-
-        lines.extend(
-            [
-                "",
-                "Nota:",
-                (
-                    "Los valores fueron preparados "
-                    "en memoria. BigQuery aun no "
-                    "ha sido modificado."
-                ),
-            ]
-        )
-
-        return "\n".join(
-            lines
-        )
-
-    def _toggle_details(
+    def _review_decisions(
         self,
     ):
-        visible = (
-            self.details
-            .isVisible()
-        )
+        if self._result is None:
+            return
 
-        self.details.setVisible(
-            not visible
-        )
-
-        self.review_button.setText(
-            (
-                "Ocultar decisiones"
-                if not visible
-                else "Revisar decisiones"
+        dialog = (
+            OpexSmartDecisionDialog(
+                result=self._result,
+                parent=self,
             )
+        )
+
+        if not dialog.exec():
+            return
+
+        overrides = (
+            dialog.overrides()
+        )
+
+        if not overrides:
+            return
+
+        self._start_analysis(
+            overrides=overrides
         )
 
     def _accept_import(

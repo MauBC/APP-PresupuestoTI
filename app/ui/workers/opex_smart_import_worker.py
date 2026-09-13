@@ -23,6 +23,7 @@ class OpexSmartImportWorker(
         origin,
         budgeter,
         actor,
+        overrides=None,
         parent=None,
     ):
         super().__init__(
@@ -34,6 +35,10 @@ class OpexSmartImportWorker(
         self._origin = origin
         self._budgeter = budgeter
         self._actor = actor
+        self._overrides = tuple(
+            overrides
+            or ()
+        )
 
     def run(
         self,
@@ -48,6 +53,9 @@ class OpexSmartImportWorker(
                     origin=self._origin,
                     budgeter=self._budgeter,
                     actor=self._actor,
+                    overrides=(
+                        self._overrides
+                    ),
                 )
             )
 

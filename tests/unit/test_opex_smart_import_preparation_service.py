@@ -225,6 +225,7 @@ def test_build_result_creates_business_summary(
                 workbook_state
             ),
             rows=rows,
+            review_options=(),
         )
     )
 

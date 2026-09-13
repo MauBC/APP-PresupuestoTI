@@ -6,9 +6,14 @@ from app.models.opex_smart_finalization import (
     OpexSmartInsertionContext,
 )
 from app.models.opex_smart_import import (
+    OpexSmartImportAccountChoice,
+    OpexSmartImportCebeChoice,
     OpexSmartImportCebeDecision,
+    OpexSmartImportCebeOption,
     OpexSmartImportDecision,
     OpexSmartImportPreparation,
+    OpexSmartImportSheetOverride,
+    OpexSmartImportSheetReview,
 )
 from app.services.opex_fx_loader import (
     OpexFxLoader,
@@ -42,6 +47,9 @@ from app.services.opex_smart_resolution_state_service import (
 )
 from app.services.opex_smart_template_loader import (
     OpexSmartTemplateLoader,
+)
+from app.services.opex_template_distribution_service import (
+    OpexTemplateDistributionService,
 )
 
 
@@ -221,6 +229,462 @@ class OpexSmartImportPreparationService:
             str(value)
         )
 
+    @staticmethod
+    def _cebe_option(
+        centro_beneficio,
+        record,
+    ) -> OpexSmartImportCebeOption:
+        return (
+            OpexSmartImportCebeOption(
+                centro_beneficio=str(
+                    centro_beneficio
+                ),
+                desc_cebe=str(
+                    record.desc_cebe
+                    or ""
+                ),
+                macroservicio_cg=str(
+                    record.macroservicio_cg
+                    or ""
+                ),
+                tipo_servicio_cg=str(
+                    record.tipo_servicio_cg
+                    or ""
+                ),
+                region_cg=str(
+                    record.region_cg
+                    or ""
+                ),
+                sede_cg=str(
+                    record.sede_cg
+                    or ""
+                ),
+                segmentacion=str(
+                    record.segmentacion
+                    or ""
+                ),
+            )
+        )
+
+    @classmethod
+    def _build_review_options(
+        cls,
+        *,
+        workbook_state,
+        state_service,
+    ) -> tuple[
+        OpexSmartImportSheetReview,
+        ...,
+    ]:
+        result = []
+
+        for (
+            sheet_name,
+            state,
+        ) in (
+            workbook_state
+            .budgets
+            .items()
+        ):
+            plan = (
+                state_service
+                .plan(
+                    state
+                )
+            )
+
+            account_options = []
+
+            for group in (
+                plan.account_groups
+            ):
+                for atributo in (
+                    group.atributos_2
+                ):
+                    account_options.append(
+                        OpexSmartImportAccountChoice(
+                            categoria_gasto=str(
+                                group.categoria_gasto
+                            ),
+                            nombre_cuenta=str(
+                                group.nombre_cuenta
+                            ),
+                            atributo_2=str(
+                                atributo
+                            ),
+                        )
+                    )
+
+            modes = []
+
+            if (
+                plan
+                .distribution_status
+                .amount_valid
+            ):
+                modes.append(
+                    "IMPORTE"
+                )
+
+            if (
+                plan
+                .distribution_status
+                .percentage_valid
+            ):
+                modes.append(
+                    "PORCENTAJE"
+                )
+
+            cebe_choices = []
+
+            for requirement in (
+                plan.cebe_requirements
+            ):
+                cebe_choices.append(
+                    OpexSmartImportCebeChoice(
+                        centro_beneficio=str(
+                            requirement
+                            .centro_beneficio
+                        ),
+                        options=tuple(
+                            cls._cebe_option(
+                                requirement
+                                .centro_beneficio,
+                                record,
+                            )
+                            for record
+                            in requirement.options
+                        ),
+                    )
+                )
+
+            result.append(
+                OpexSmartImportSheetReview(
+                    sheet_name=str(
+                        sheet_name
+                    ),
+                    account_options=tuple(
+                        account_options
+                    ),
+                    distribution_modes=tuple(
+                        modes
+                    ),
+                    cebe_choices=tuple(
+                        cebe_choices
+                    ),
+                )
+            )
+
+        return tuple(
+            result
+        )
+
+    @staticmethod
+    def _override_map(
+        overrides,
+    ):
+        result = {}
+
+        for override in (
+            overrides
+            or ()
+        ):
+            if not isinstance(
+                override,
+                OpexSmartImportSheetOverride,
+            ):
+                raise (
+                    OpexSmartImportPreparationError(
+                        "Override OPEX invalido."
+                    )
+                )
+
+            key = str(
+                override.sheet_name
+            ).strip()
+
+            if not key:
+                raise (
+                    OpexSmartImportPreparationError(
+                        "El override no tiene "
+                        "nombre de hoja."
+                    )
+                )
+
+            if key in result:
+                raise (
+                    OpexSmartImportPreparationError(
+                        "Existe mas de un override "
+                        f"para {key}."
+                    )
+                )
+
+            result[key] = override
+
+        return result
+
+    @classmethod
+    def _apply_overrides(
+        cls,
+        *,
+        workbook_state,
+        state_service,
+        overrides,
+    ):
+        override_map = (
+            cls._override_map(
+                overrides
+            )
+        )
+
+        unknown = (
+            set(
+                override_map
+            )
+            -
+            set(
+                workbook_state
+                .budgets
+            )
+        )
+
+        if unknown:
+            raise (
+                OpexSmartImportPreparationError(
+                    "Existen overrides para hojas "
+                    "desconocidas: "
+                    + ", ".join(
+                        sorted(
+                            unknown
+                        )
+                    )
+                )
+            )
+
+        for (
+            sheet_name,
+            override,
+        ) in override_map.items():
+            state = (
+                workbook_state
+                .budgets[
+                    sheet_name
+                ]
+            )
+
+            if override.account is not None:
+                (
+                    state_service
+                    .select_account(
+                        state,
+                        categoria_gasto=(
+                            override
+                            .account
+                            .categoria_gasto
+                        ),
+                        nombre_cuenta=(
+                            override
+                            .account
+                            .nombre_cuenta
+                        ),
+                        atributo_2=(
+                            override
+                            .account
+                            .atributo_2
+                        ),
+                    )
+                )
+
+            if override.cebe_selections:
+                plan = (
+                    state_service
+                    .plan(
+                        state
+                    )
+                )
+
+                requirements = {
+                    str(
+                        item
+                        .centro_beneficio
+                    ):
+                        item
+                    for item
+                    in plan.cebe_requirements
+                }
+
+                used = set()
+
+                for selection in (
+                    override
+                    .cebe_selections
+                ):
+                    key = str(
+                        selection
+                        .centro_beneficio
+                    )
+
+                    if key in used:
+                        raise (
+                            OpexSmartImportPreparationError(
+                                "CEBE repetido en "
+                                "override: "
+                                f"{key}."
+                            )
+                        )
+
+                    used.add(
+                        key
+                    )
+
+                    requirement = (
+                        requirements.get(
+                            key
+                        )
+                    )
+
+                    if requirement is None:
+                        raise (
+                            OpexSmartImportPreparationError(
+                                "El CEBE "
+                                f"{key} no requiere "
+                                "una decision para "
+                                f"{sheet_name}."
+                            )
+                        )
+
+                    matches = [
+                        record
+                        for record
+                        in requirement.options
+                        if (
+                            cls._cebe_option(
+                                key,
+                                record,
+                            )
+                            == selection
+                        )
+                    ]
+
+                    if len(matches) != 1:
+                        raise (
+                            OpexSmartImportPreparationError(
+                                "La seleccion para "
+                                f"CEBE {key} no coincide "
+                                "con una opcion oficial."
+                            )
+                        )
+
+                    (
+                        state_service
+                        .select_cebe(
+                            state,
+                            key,
+                            matches[0],
+                        )
+                    )
+
+            if (
+                override
+                .distribution_mode
+                is not None
+            ):
+                mode = str(
+                    override
+                    .distribution_mode
+                ).strip().upper()
+
+                plan = (
+                    state_service
+                    .plan(
+                        state
+                    )
+                )
+
+                status = (
+                    plan
+                    .distribution_status
+                )
+
+                if mode == "IMPORTE":
+                    if not status.amount_valid:
+                        raise (
+                            OpexSmartImportPreparationError(
+                                "IMPORTE no es una "
+                                "distribucion valida "
+                                f"para {sheet_name}."
+                            )
+                        )
+
+                    resolved = (
+                        OpexTemplateDistributionService
+                        .resolve_amounts(
+                            state.budget,
+                            (
+                                OpexTemplateDistributionService
+                                .amount_inputs(
+                                    state.budget
+                                )
+                            ),
+                        )
+                    )
+
+                elif mode == "PORCENTAJE":
+                    if not (
+                        status
+                        .percentage_valid
+                    ):
+                        raise (
+                            OpexSmartImportPreparationError(
+                                "PORCENTAJE no es una "
+                                "distribucion valida "
+                                f"para {sheet_name}."
+                            )
+                        )
+
+                    resolved = (
+                        OpexTemplateDistributionService
+                        .resolve_percentages(
+                            state.budget,
+                            (
+                                OpexTemplateDistributionService
+                                .percentage_inputs(
+                                    state.budget
+                                )
+                            ),
+                        )
+                    )
+
+                else:
+                    raise (
+                        OpexSmartImportPreparationError(
+                            "Modo de distribucion "
+                            f"invalido: {mode}."
+                        )
+                    )
+
+                (
+                    state_service
+                    .set_distribution(
+                        state,
+                        resolved,
+                    )
+                )
+
+        if not (
+            state_service
+            .workbook_ready(
+                workbook_state
+            )
+        ):
+            raise (
+                OpexSmartImportPreparationError(
+                    "El libro no quedo listo "
+                    "despues de aplicar las "
+                    "decisiones del usuario."
+                )
+            )
+
     @classmethod
     def _build_result(
         cls,
@@ -229,6 +693,7 @@ class OpexSmartImportPreparationService:
         workbook,
         workbook_state,
         rows,
+        review_options=(),
     ) -> OpexSmartImportPreparation:
         normalized_rows = tuple(
             rows
@@ -392,6 +857,9 @@ class OpexSmartImportPreparationService:
                         if key
                     )
                 ),
+                review_options=tuple(
+                    review_options
+                ),
                 decisions=tuple(
                     decisions
                 ),
@@ -405,6 +873,7 @@ class OpexSmartImportPreparationService:
         origin,
         budgeter,
         actor,
+        overrides=None,
     ) -> OpexSmartImportPreparation:
         (
             source,
@@ -452,6 +921,27 @@ class OpexSmartImportPreparationService:
             .apply_workbook_defaults(
                 workbook_state
             )
+        )
+
+        review_options = (
+            self._build_review_options(
+                workbook_state=(
+                    workbook_state
+                ),
+                state_service=(
+                    state_service
+                ),
+            )
+        )
+
+        self._apply_overrides(
+            workbook_state=(
+                workbook_state
+            ),
+            state_service=(
+                state_service
+            ),
+            overrides=overrides,
         )
 
         fx_table = (
@@ -505,4 +995,7 @@ class OpexSmartImportPreparationService:
                 workbook_state
             ),
             rows=rows,
+            review_options=(
+                review_options
+            ),
         )
