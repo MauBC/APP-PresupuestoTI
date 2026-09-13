@@ -927,15 +927,38 @@ class OpexSmartImportDialog(
 
         self.accept()
 
+    def _analysis_running(
+        self,
+    ) -> bool:
+        return (
+            self._worker is not None
+            and
+            self._worker.isRunning()
+        )
+
+    def reject(
+        self,
+    ):
+        if self._analysis_running():
+            self.summary_label.setText(
+                "Analisis en curso. "
+                "Espera a que termine antes "
+                "de cerrar."
+            )
+            return
+
+        super().reject()
+
     def closeEvent(
         self,
         event,
     ):
-        if (
-            self._worker is not None
-            and
-            self._worker.isRunning()
-        ):
+        if self._analysis_running():
+            self.summary_label.setText(
+                "Analisis en curso. "
+                "Espera a que termine antes "
+                "de cerrar."
+            )
             event.ignore()
             return
 

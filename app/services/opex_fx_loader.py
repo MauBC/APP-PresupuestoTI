@@ -79,11 +79,19 @@ class OpexFxLoader:
                 f"No existe el archivo TC: {source}"
             )
 
-        workbook = load_workbook(
-            source,
-            read_only=True,
-            data_only=True,
-        )
+        try:
+            workbook = load_workbook(
+                source,
+                read_only=True,
+                data_only=True,
+            )
+
+        except Exception as exc:
+            raise OpexFxLoadError(
+                "No se pudo abrir TC.xlsx. "
+                "Verifica que el archivo exista "
+                "y sea un Excel valido."
+            ) from exc
 
         matches = []
 
