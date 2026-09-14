@@ -89,6 +89,9 @@ from app.ui.models.presupuesto_table_model import (
 from app.ui.table_column_visibility import (
     apply_month_column_visibility,
 )
+from app.ui.table_productivity import (
+    install_table_productivity_shortcuts,
+)
 from app.ui.view_state_store import (
     PresupuestoViewState,
 )
@@ -676,6 +679,16 @@ class PresupuestoPage(QWidget):
 
         self._update_navigation()
         self._update_change_controls()
+
+        self._table_shortcuts = (
+            install_table_productivity_shortcuts(
+                self,
+                search_input=self.search_input,
+                table=self.table,
+                refresh_callback=self.refresh,
+                undo_callback=self.undo_last,
+            )
+        )
 
     @property
 

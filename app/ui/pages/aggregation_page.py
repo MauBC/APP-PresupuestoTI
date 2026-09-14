@@ -56,6 +56,9 @@ from app.ui.models.result_table_model import (
 from app.ui.table_column_visibility import (
     apply_month_column_visibility,
 )
+from app.ui.table_productivity import (
+    install_table_productivity_shortcuts,
+)
 from app.ui.view_state_store import (
     AggregationViewState,
 )
@@ -523,6 +526,11 @@ class AggregationPage(QWidget):
                 .module_config
                 .amount_columns
             ),
+            annual_columns=(
+                self._workspace
+                .module_config
+                .annual_column,
+            ),
         )
 
         self.proxy_model = (
@@ -698,6 +706,16 @@ class AggregationPage(QWidget):
         )
 
         self._update_change_controls()
+
+        self._table_shortcuts = (
+            install_table_productivity_shortcuts(
+                self,
+                search_input=self.search_input,
+                table=self.table,
+                refresh_callback=self.load_grouping,
+                undo_callback=self.undo_last,
+            )
+        )
 
     def set_workspace_ready(self):
         self._workspace_ready = True

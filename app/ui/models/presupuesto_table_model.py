@@ -9,7 +9,10 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QColor
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+)
 
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
@@ -30,6 +33,14 @@ class PresupuestoTableModel(
 
     USD_BACKGROUND = QColor(
         "#EEF8F1"
+    )
+
+    ANNUAL_BACKGROUND = QColor(
+        "#DDEFE3"
+    )
+
+    ANNUAL_FOREGROUND = QColor(
+        "#174B35"
     )
 
     MODIFIED_BACKGROUND = QColor(
@@ -273,8 +284,29 @@ class PresupuestoTableModel(
                     self.DISABLED_BACKGROUND
                 )
 
+            if column == self._annual_column:
+                return self.ANNUAL_BACKGROUND
+
             if column in self._amount_columns:
                 return self.USD_BACKGROUND
+
+        if (
+            role == Qt.ItemDataRole.FontRole
+            and column == self._annual_column
+        ):
+            font = QFont()
+            font.setBold(
+                True
+            )
+            return font
+
+        if (
+            role
+            == Qt.ItemDataRole.ForegroundRole
+            and column == self._annual_column
+            and enabled
+        ):
+            return self.ANNUAL_FOREGROUND
 
         if (
             role
