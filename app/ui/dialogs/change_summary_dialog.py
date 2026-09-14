@@ -24,6 +24,12 @@ from PySide6.QtWidgets import (
 )
 
 
+from app.ui.change_detail_formatting import (
+    change_field_label,
+    format_change_difference,
+    format_change_value,
+)
+
 ZERO = Decimal("0.00")
 
 
@@ -725,13 +731,16 @@ class ChangeSummaryDialog(QDialog):
                         detail.column
                     ),
                     self._format_value(
-                        detail.before
+                        detail.before,
+                        detail.column,
                     ),
                     self._format_value(
-                        detail.after
+                        detail.after,
+                        detail.column,
                     ),
                     self._format_difference(
-                        detail.difference
+                        detail.difference,
+                        detail.column,
                     ),
                     self._format_percent(
                         detail.variation_percent
@@ -1071,75 +1080,18 @@ class ChangeSummaryDialog(QDialog):
     def _field_label(
         column,
     ):
-        if column == "habilitado":
-            return "Estado"
-
-        parts = [
-            part
-            for part in str(column)
-            .strip()
-            .split("_")
-            if part
-        ]
-
-        if not parts:
-            return ""
-
-        if parts[0].lower() in (
-            "anio",
-            "ano",
-            "annual",
-        ):
-            parts = [
-                "total",
-                "anual",
-                *parts[1:],
-            ]
-
-        result = []
-
-        for part in parts:
-            if part.lower() == "usd":
-                result.append(
-                    "USD"
-                )
-            else:
-                result.append(
-                    part.capitalize()
-                )
-
-        return " ".join(
-            result
+        return change_field_label(
+            column
         )
 
     @staticmethod
     def _format_value(
         value,
+        column=None,
     ):
-        if value is None:
-            return ""
-
-        if isinstance(
+        return format_change_value(
+            column,
             value,
-            bool,
-        ):
-            return (
-                "Habilitado"
-                if value
-                else "Deshabilitado"
-            )
-
-        if isinstance(
-            value,
-            Decimal,
-        ):
-            return (
-                f"US$ "
-                f"{value:,.2f}"
-            )
-
-        return str(
-            value
         )
 
     @staticmethod
@@ -1153,23 +1105,12 @@ class ChangeSummaryDialog(QDialog):
     @staticmethod
     def _format_difference(
         value,
+        column=None,
     ):
-        if value is None:
-            return "-"
-
-        if value > ZERO:
-            return (
-                f"+US$ "
-                f"{value:,.2f}"
-            )
-
-        if value < ZERO:
-            return (
-                f"-US$ "
-                f"{abs(value):,.2f}"
-            )
-
-        return "US$ 0.00"
+        return format_change_difference(
+            column,
+            value,
+        )
 
     @staticmethod
     def _format_percent(

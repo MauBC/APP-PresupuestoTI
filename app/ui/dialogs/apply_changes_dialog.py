@@ -1,15 +1,19 @@
 from decimal import Decimal
 
+from PySide6.QtCore import Qt
+
 from PySide6.QtGui import (
     QBrush,
     QColor,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFrame,
     QHeaderView,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -19,12 +23,20 @@ from PySide6.QtWidgets import (
 )
 
 
+from app.ui.change_detail_formatting import (
+    change_field_label,
+    format_change_difference,
+    format_change_value,
+)
+
 ZERO = Decimal("0.00")
 
 
 class ChangeDetailsDialog(
     QDialog
 ):
+    MAX_DETAILS = 5000
+
     def __init__(
         self,
         summary,
@@ -40,17 +52,117 @@ class ChangeDetailsDialog(
             module_label
         )
 
+        self.setObjectName(
+            "changeDetailsDialog"
+        )
+
         self.setWindowTitle(
             "Detalle de cambios "
             f"{module_label}"
         )
 
         self.resize(
-            1180,
-            620,
+            1380,
+            720,
         )
 
+        self.setMinimumSize(
+            1050,
+            580,
+        )
+
+        self._apply_style()
         self._setup_ui()
+
+    def _apply_style(
+        self,
+    ):
+        self.setStyleSheet(
+            """
+            QDialog#changeDetailsDialog {
+                background-color: #FFFFFF;
+                color: #1F2937;
+            }
+
+            QDialog#changeDetailsDialog QLabel {
+                background-color: transparent;
+                color: #1F2937;
+            }
+
+            QLabel#detailTitle {
+                font-size: 20px;
+                font-weight: 700;
+                color: #1F2937;
+            }
+
+            QLabel#detailSubtitle {
+                color: #667085;
+                font-size: 12px;
+            }
+
+            QLabel#changeTypeSummary {
+                background-color: #F8F9FA;
+                color: #344054;
+                border: 1px solid #D8DEE4;
+                border-radius: 6px;
+                padding: 9px 12px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+
+            QLabel#detailWarning {
+                background-color: #FFF4E5;
+                color: #92400E;
+                border: 1px solid #F3D3A3;
+                border-radius: 6px;
+                padding: 8px;
+            }
+
+            QLineEdit {
+                background-color: #FFFFFF;
+                color: #1F2937;
+                border: 1px solid #98A2B3;
+                border-radius: 6px;
+                padding: 8px 10px;
+            }
+
+            QLineEdit:focus {
+                border: 2px solid #2F7650;
+            }
+
+            QComboBox {
+                background-color: #FFFFFF;
+                color: #1F2937;
+                border: 1px solid #98A2B3;
+                border-radius: 6px;
+                padding: 7px 10px;
+                min-width: 180px;
+            }
+
+            QComboBox:focus {
+                border: 2px solid #2F7650;
+            }
+
+            QTableWidget {
+                background-color: #FFFFFF;
+                alternate-background-color: #F8F9FA;
+                color: #1F2937;
+                gridline-color: #E5E7EB;
+                selection-background-color: #DCEFE4;
+                selection-color: #1F2937;
+            }
+
+            QHeaderView::section {
+                background-color: #EEF1F4;
+                color: #344054;
+                border: 0px;
+                border-right: 1px solid #D8DEE4;
+                border-bottom: 1px solid #D8DEE4;
+                padding: 7px;
+                font-weight: 600;
+            }
+            """
+        )
 
     def _setup_ui(
         self,
@@ -75,9 +187,8 @@ class ChangeDetailsDialog(
             f"{self._module_label}"
         )
 
-        title.setStyleSheet(
-            "font-size: 19px; "
-            "font-weight: 700;"
+        title.setObjectName(
+            "detailTitle"
         )
 
         layout.addWidget(
@@ -85,24 +196,123 @@ class ChangeDetailsDialog(
         )
 
         description = QLabel(
-            "Cada fila muestra un campo "
-            "modificado y el registro "
-            "presupuestal afectado."
+            "Cada fila representa un campo "
+            "modificado y muestra el contexto "
+            "del registro presupuestal afectado."
         )
 
-        description.setStyleSheet(
-            "color: #475467;"
+        description.setObjectName(
+            "detailSubtitle"
         )
 
         layout.addWidget(
             description
         )
 
+        type_summary = QLabel(
+            self._type_summary_text()
+        )
+
+        type_summary.setObjectName(
+            "changeTypeSummary"
+        )
+
+        layout.addWidget(
+            type_summary
+        )
+
+        all_details = tuple(
+            self._summary.details
+        )
+
+        details = all_details[
+            :self.MAX_DETAILS
+        ]
+
+        if (
+            len(all_details)
+            > self.MAX_DETAILS
+        ):
+            warning = QLabel(
+                "El detalle contiene "
+                f"{len(all_details):,} cambios. "
+                "Por rendimiento se muestran "
+                f"los primeros "
+                f"{self.MAX_DETAILS:,}."
+            )
+
+            warning.setObjectName(
+                "detailWarning"
+            )
+
+            warning.setWordWrap(
+                True
+            )
+
+            layout.addWidget(
+                warning
+            )
+
+        filters = QHBoxLayout()
+
+        self.detail_search = QLineEdit()
+
+        self.detail_search.setPlaceholderText(
+            "Buscar por presupuestador, "
+            "pais, gasto, inversion, "
+            "proveedor, CECO, campo..."
+        )
+
+        filters.addWidget(
+            self.detail_search,
+            1,
+        )
+
+        self.detail_type_filter = (
+            QComboBox()
+        )
+
+        self.detail_type_filter.addItem(
+            "Todos los tipos",
+            "ALL",
+        )
+
+        self.detail_type_filter.addItem(
+            "Editados",
+            "EDITED",
+        )
+
+        self.detail_type_filter.addItem(
+            "Nuevas filas",
+            "NEW",
+        )
+
+        self.detail_type_filter.addItem(
+            "Deshabilitados",
+            "DISABLED",
+        )
+
+        self.detail_type_filter.addItem(
+            "Reactivados",
+            "REACTIVATED",
+        )
+
+        filters.addWidget(
+            self.detail_type_filter
+        )
+
+        layout.addLayout(
+            filters
+        )
+
         context_columns = (
-            self._context_columns()
+            self._context_columns(
+                details
+            )
         )
 
         headers = [
+            "Tipo",
             *(
                 label
                 for _, label
@@ -114,41 +324,23 @@ class ChangeDetailsDialog(
             "Variacion",
         ]
 
-        table = QTableWidget(
-            len(
-                self._summary.details
-            ),
-            len(
-                headers
-            ),
+        self.detail_table = (
+            QTableWidget(
+                len(details),
+                len(headers),
+            )
         )
 
-        table.setHorizontalHeaderLabels(
+        self.detail_table.setHorizontalHeaderLabels(
             headers
         )
 
-        table.setEditTriggers(
-            QAbstractItemView
-            .EditTrigger
-            .NoEditTriggers
-        )
-
-        table.setSelectionBehavior(
-            QAbstractItemView
-            .SelectionBehavior
-            .SelectRows
-        )
-
-        table.setAlternatingRowColors(
-            True
-        )
-
-        table.verticalHeader().setVisible(
-            False
+        self._prepare_table(
+            self.detail_table
         )
 
         for row_index, detail in enumerate(
-            self._summary.details
+            details
         ):
             context_map = (
                 detail.context_map
@@ -156,11 +348,37 @@ class ChangeDetailsDialog(
 
             column_index = 0
 
+            type_item = (
+                QTableWidgetItem(
+                    self._change_type_label(
+                        detail.change_type
+                    )
+                )
+            )
+
+            type_item.setData(
+                Qt.ItemDataRole.UserRole,
+                detail.change_type,
+            )
+
+            self._color_change_type_item(
+                type_item,
+                detail.change_type,
+            )
+
+            self.detail_table.setItem(
+                row_index,
+                column_index,
+                type_item,
+            )
+
+            column_index += 1
+
             for (
                 context_column,
                 _,
             ) in context_columns:
-                table.setItem(
+                self.detail_table.setItem(
                     row_index,
                     column_index,
                     QTableWidgetItem(
@@ -173,7 +391,7 @@ class ChangeDetailsDialog(
 
                 column_index += 1
 
-            table.setItem(
+            self.detail_table.setItem(
                 row_index,
                 column_index,
                 QTableWidgetItem(
@@ -185,24 +403,26 @@ class ChangeDetailsDialog(
 
             column_index += 1
 
-            table.setItem(
+            self.detail_table.setItem(
                 row_index,
                 column_index,
                 QTableWidgetItem(
                     self._format_value(
-                        detail.before
+                        detail.before,
+                        detail.column,
                     )
                 ),
             )
 
             column_index += 1
 
-            table.setItem(
+            self.detail_table.setItem(
                 row_index,
                 column_index,
                 QTableWidgetItem(
                     self._format_value(
-                        detail.after
+                        detail.after,
+                        detail.column,
                     )
                 ),
             )
@@ -212,7 +432,8 @@ class ChangeDetailsDialog(
             variation_item = (
                 QTableWidgetItem(
                     self._format_difference(
-                        detail.difference
+                        detail.difference,
+                        detail.column,
                     )
                 )
             )
@@ -222,14 +443,19 @@ class ChangeDetailsDialog(
                 detail.difference,
             )
 
-            table.setItem(
+            self.detail_table.setItem(
                 row_index,
                 column_index,
                 variation_item,
             )
 
+        self.detail_table.setSortingEnabled(
+            True
+        )
+
         header = (
-            table.horizontalHeader()
+            self.detail_table
+            .horizontalHeader()
         )
 
         header.setSectionResizeMode(
@@ -242,10 +468,37 @@ class ChangeDetailsDialog(
             True
         )
 
+        self.detail_search.textChanged.connect(
+            self._filter_details
+        )
+
+        (
+            self.detail_type_filter
+            .currentIndexChanged
+            .connect(
+                self._filter_details
+            )
+        )
+
         layout.addWidget(
-            table,
+            self.detail_table,
             1,
         )
+
+        self.detail_footer = QLabel(
+            f"{len(details):,} "
+            "cambios visibles"
+        )
+
+        self.detail_footer.setObjectName(
+            "detailSubtitle"
+        )
+
+        layout.addWidget(
+            self.detail_footer
+        )
+
+        self._filter_details()
 
         buttons = QDialogButtonBox(
             QDialogButtonBox
@@ -273,15 +526,48 @@ class ChangeDetailsDialog(
             buttons
         )
 
+    @staticmethod
+    def _prepare_table(
+        table,
+    ):
+        table.setEditTriggers(
+            QAbstractItemView
+            .EditTrigger
+            .NoEditTriggers
+        )
+
+        table.setSelectionBehavior(
+            QAbstractItemView
+            .SelectionBehavior
+            .SelectRows
+        )
+
+        table.setSelectionMode(
+            QAbstractItemView
+            .SelectionMode
+            .ExtendedSelection
+        )
+
+        table.setAlternatingRowColors(
+            True
+        )
+
+        table.setSortingEnabled(
+            False
+        )
+
+        table.verticalHeader().setVisible(
+            False
+        )
+
+    @staticmethod
     def _context_columns(
-        self,
+        details,
     ):
         result = []
         seen = set()
 
-        for detail in (
-            self._summary.details
-        ):
+        for detail in details:
             for context in (
                 detail.context
             ):
@@ -306,99 +592,210 @@ class ChangeDetailsDialog(
             result
         )
 
+    def _filter_details(
+        self,
+        *_,
+    ):
+        needle = (
+            self.detail_search
+            .text()
+            .strip()
+            .lower()
+        )
+
+        selected_type = (
+            self.detail_type_filter
+            .currentData()
+        )
+
+        visible_count = 0
+
+        for row_index in range(
+            self.detail_table
+            .rowCount()
+        ):
+            type_item = (
+                self.detail_table
+                .item(
+                    row_index,
+                    0,
+                )
+            )
+
+            row_type = (
+                type_item.data(
+                    Qt.ItemDataRole.UserRole
+                )
+                if type_item is not None
+                else None
+            )
+
+            type_matches = (
+                selected_type == "ALL"
+                or
+                row_type == selected_type
+            )
+
+            text_matches = True
+
+            if needle:
+                values = []
+
+                for column_index in range(
+                    self.detail_table
+                    .columnCount()
+                ):
+                    item = (
+                        self.detail_table
+                        .item(
+                            row_index,
+                            column_index,
+                        )
+                    )
+
+                    if item is not None:
+                        values.append(
+                            item.text()
+                            .lower()
+                        )
+
+                text_matches = any(
+                    needle in value
+                    for value in values
+                )
+
+            visible = (
+                type_matches
+                and
+                text_matches
+            )
+
+            self.detail_table.setRowHidden(
+                row_index,
+                not visible,
+            )
+
+            if visible:
+                visible_count += 1
+
+        total = (
+            self.detail_table
+            .rowCount()
+        )
+
+        self.detail_footer.setText(
+            f"{visible_count:,} de "
+            f"{total:,} cambios visibles"
+        )
+
+    def _type_summary_text(
+        self,
+    ) -> str:
+        return (
+            "Operaciones por fila  |  "
+            f"Ediciones: "
+            f"{self._summary.edited_rows:,}  |  "
+            f"Nuevas: "
+            f"{self._summary.new_rows:,}  |  "
+            f"Deshabilitadas: "
+            f"{self._summary.disabled_rows:,}  |  "
+            f"Reactivadas: "
+            f"{self._summary.reactivated_rows:,}"
+        )
+
+    @staticmethod
+    def _change_type_label(
+        change_type,
+    ) -> str:
+        labels = {
+            "EDITED": "Editado",
+            "NEW": "Nueva fila",
+            "DISABLED": "Deshabilitado",
+            "REACTIVATED": "Reactivado",
+        }
+
+        return labels.get(
+            str(change_type),
+            str(change_type),
+        )
+
+    @staticmethod
+    def _color_change_type_item(
+        item,
+        change_type,
+    ):
+        styles = {
+            "EDITED": (
+                "#344054",
+                "#F2F4F7",
+            ),
+            "NEW": (
+                "#067647",
+                "#ECFDF3",
+            ),
+            "DISABLED": (
+                "#92400E",
+                "#FFF4E5",
+            ),
+            "REACTIVATED": (
+                "#067647",
+                "#ECFDF3",
+            ),
+        }
+
+        foreground, background = (
+            styles.get(
+                str(change_type),
+                (
+                    "#344054",
+                    "#F2F4F7",
+                ),
+            )
+        )
+
+        item.setForeground(
+            QBrush(
+                QColor(
+                    foreground
+                )
+            )
+        )
+
+        item.setBackground(
+            QBrush(
+                QColor(
+                    background
+                )
+            )
+        )
+
     @staticmethod
     def _field_label(
         column,
     ):
-        if column == "habilitado":
-            return "Estado"
-
-        parts = [
-            part
-            for part in str(column)
-            .strip()
-            .split("_")
-            if part
-        ]
-
-        if not parts:
-            return ""
-
-        if parts[0].lower() in (
-            "anio",
-            "ano",
-            "annual",
-        ):
-            parts = [
-                "total",
-                "anual",
-                *parts[1:],
-            ]
-
-        result = []
-
-        for part in parts:
-            if part.lower() == "usd":
-                result.append(
-                    "USD"
-                )
-            else:
-                result.append(
-                    part.capitalize()
-                )
-
-        return " ".join(
-            result
+        return change_field_label(
+            column
         )
 
     @staticmethod
     def _format_value(
         value,
+        column=None,
     ):
-        if value is None:
-            return ""
-
-        if isinstance(
+        return format_change_value(
+            column,
             value,
-            bool,
-        ):
-            return (
-                "Habilitado"
-                if value
-                else "Deshabilitado"
-            )
-
-        if isinstance(
-            value,
-            Decimal,
-        ):
-            return (
-                f"US$ {value:,.2f}"
-            )
-
-        return str(
-            value
         )
 
     @staticmethod
     def _format_difference(
         value,
+        column=None,
     ):
-        if value is None:
-            return "-"
-
-        if value > ZERO:
-            return (
-                f"+US$ {value:,.2f}"
-            )
-
-        if value < ZERO:
-            return (
-                f"-US$ "
-                f"{abs(value):,.2f}"
-            )
-
-        return "US$ 0.00"
+        return format_change_difference(
+            column,
+            value,
+        )
 
     @staticmethod
     def _style_variation_item(
