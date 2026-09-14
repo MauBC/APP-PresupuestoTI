@@ -422,3 +422,35 @@ QPushButton#warningButton:disabled {
     color: #98A2B3;
     border-color: #D0D5DD;
 }
+
+
+/* COLLAPSIBLE SIDEBAR */
+
+#sidebarToggleButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 7px;
+    padding: 8px;
+}
+
+#sidebarToggleButton:hover {
+    background-color: #1D6D4A;
+}
+
+#sidebarButton[compact="true"] {
+    padding: 11px 8px;
+    text-align: center;
+}
+
+#sidebarButton[pending="true"] {
+    border-right: 3px solid #E58B2A;
+}
+
+#navigationContext {
+    background-color: #F8FAF9;
+    color: #476253;
+    border-bottom: 1px solid #DCE6DF;
+    padding: 8px 18px;
+    font-size: 12px;
+    font-weight: 700;
+}
