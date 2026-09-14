@@ -83,6 +83,9 @@ from app.ui.dialogs.monthly_distribution_dialog import (
 from app.ui.dialogs.new_budget_row_dialog import (
     NewBudgetRowDialog,
 )
+from app.ui.action_menu import (
+    ActionMenuController,
+)
 from app.ui.frozen_columns import (
     FrozenColumnsController,
 )
@@ -350,6 +353,21 @@ class PresupuestoPage(QWidget):
             "sus importes."
         )
 
+        self.more_actions_menu = (
+            ActionMenuController(
+                parent=self,
+                sources=(
+                    self.export_excel_button,
+                    self.enabled_action_button,
+                ),
+                text="Mas acciones",
+                tooltip=(
+                    "Exportacion y acciones "
+                    "sobre la fila seleccionada."
+                ),
+            )
+        )
+
         toolbar.addWidget(
             self.search_input,
             1,
@@ -394,15 +412,11 @@ class PresupuestoPage(QWidget):
         )
 
         actions_toolbar.addWidget(
-            self.export_excel_button
-        )
-
-        actions_toolbar.addWidget(
             self.distribute_months_button
         )
 
         actions_toolbar.addWidget(
-            self.enabled_action_button
+            self.more_actions_menu.button
         )
 
         actions_toolbar.addStretch()

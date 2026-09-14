@@ -34,6 +34,9 @@ from app.services.presupuesto_group_edit_service import (
     PresupuestoGroupEditError,
     PresupuestoGroupEditService,
 )
+from app.ui.action_menu import (
+    ActionMenuController,
+)
 from app.ui.dialogs.app_message_box import (
     AppMessageBox,
     ask_confirmation,
@@ -317,16 +320,24 @@ class AggregationPage(QWidget):
             False
         )
 
-        distribution_layout.addWidget(
-            self.distribute_group_months_button
+        self.distribution_menu = (
+            ActionMenuController(
+                parent=self,
+                sources=(
+                    self.distribute_group_months_button,
+                    self.distribute_ceco_button,
+                    self.distribute_country_button,
+                ),
+                text="Distribuir",
+                tooltip=(
+                    "Opciones de distribucion "
+                    "para la agrupacion seleccionada."
+                ),
+            )
         )
 
         distribution_layout.addWidget(
-            self.distribute_ceco_button
-        )
-
-        distribution_layout.addWidget(
-            self.distribute_country_button
+            self.distribution_menu.button
         )
 
         distribution_layout.addStretch()

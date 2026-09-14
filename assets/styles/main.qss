@@ -225,6 +225,64 @@ QPushButton:disabled {
     border-color: #E0E5E2;
 }
 
+/* ACTION MENUS */
+
+QToolButton#actionMenuButton {
+    min-height: 36px;
+    padding-left: 16px;
+    padding-right: 16px;
+    background-color: #FFFFFF;
+    color: #244D38;
+    border: 1px solid #C9D8CF;
+    border-radius: 6px;
+    font-weight: 600;
+}
+
+QToolButton#actionMenuButton:hover {
+    background-color: #EEF6F1;
+    border-color: #89B39B;
+}
+
+QToolButton#actionMenuButton:pressed {
+    background-color: #E2EFE7;
+}
+
+QToolButton#actionMenuButton:disabled {
+    color: #98A69E;
+    background-color: #F0F3F1;
+    border-color: #DCE3DE;
+}
+
+QMenu#actionMenu {
+    background-color: #FFFFFF;
+    color: #244D38;
+    border: 1px solid #CBD8D0;
+    border-radius: 6px;
+    padding: 6px;
+}
+
+QMenu#actionMenu::item {
+    min-width: 190px;
+    padding: 9px 18px;
+    border-radius: 5px;
+}
+
+QMenu#actionMenu::item:selected {
+    background-color: #EEF6F1;
+    color: #164D36;
+}
+
+QMenu#actionMenu::item:disabled {
+    color: #98A69E;
+    background-color: transparent;
+}
+
+QMenu#actionMenu::separator {
+    height: 1px;
+    background-color: #E3EAE5;
+    margin: 5px 8px;
+}
+
 QLineEdit {
     min-height: 36px;
     padding-left: 12px;
