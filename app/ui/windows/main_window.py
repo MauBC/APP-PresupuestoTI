@@ -70,6 +70,9 @@ from app.ui.sidebar_navigation import (
     sidebar_icon,
     sidebar_width,
 )
+from app.ui.view_state_store import (
+    UiViewStateStore,
+)
 from app.ui.workers.presupuesto_reversal import (
     PresupuestoReversalThread,
 )
@@ -97,10 +100,32 @@ class MainWindow(QMainWindow):
             settings.WINDOW_HEIGHT,
         )
 
-        self.active_module = (
-            get_budget_module_config(
+        self._view_state_store = (
+            UiViewStateStore()
+        )
+
+        initial_module = (
+            self._view_state_store
+            .active_module(
                 BudgetModule.OPEX
             )
+        )
+
+        initial_config = (
+            get_budget_module_config(
+                initial_module
+            )
+        )
+
+        if not initial_config.configured:
+            initial_config = (
+                get_budget_module_config(
+                    BudgetModule.OPEX
+                )
+            )
+
+        self.active_module = (
+            initial_config
         )
 
         self.workspace = (
@@ -147,7 +172,12 @@ class MainWindow(QMainWindow):
 
         self._initial_load_seconds = None
 
-        self._sidebar_expanded = False
+        self._sidebar_expanded = (
+            self._view_state_store
+            .sidebar_expanded(
+                False
+            )
+        )
 
         self._setup_ui()
 
@@ -214,6 +244,7 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
 
         self._build_module_pages()
+        self._restore_navigation_page()
 
         content_layout.addWidget(
             self.navigation_context_label
@@ -254,6 +285,9 @@ class MainWindow(QMainWindow):
                 analysis_service=(
                     self.analysis_service
                 ),
+                view_state_store=(
+                    self._view_state_store
+                ),
             )
         )
 
@@ -262,6 +296,9 @@ class MainWindow(QMainWindow):
                 workspace=self.workspace,
                 analysis_service=(
                     self.analysis_service
+                ),
+                view_state_store=(
+                    self._view_state_store
                 ),
             )
         )
@@ -302,15 +339,106 @@ class MainWindow(QMainWindow):
             self.history_page
         )
 
+    def _restore_navigation_page(
+        self,
+    ):
+        page_index = (
+            self._view_state_store
+            .last_page(
+                self.active_module.module,
+                0,
+            )
+        )
+
+        if (
+            0 <= page_index
+            < self.pages.count()
+        ):
+            self.pages.setCurrentIndex(
+                page_index
+            )
+
+        button = getattr(
+            self,
+            "nav_buttons",
+            {},
+        ).get(
+            self.pages.currentIndex()
+        )
+
+        if button is not None:
+            button.setChecked(
+                True
+            )
+
+        self._update_navigation_context()
+
+    def _persist_view_state(
+        self,
+    ):
+        presupuesto_page = getattr(
+            self,
+            "presupuesto_page",
+            None,
+        )
+
+        if (
+            presupuesto_page is not None
+            and hasattr(
+                presupuesto_page,
+                "save_view_state",
+            )
+        ):
+            presupuesto_page.save_view_state()
+
+        aggregation_page = getattr(
+            self,
+            "aggregation_page",
+            None,
+        )
+
+        if (
+            aggregation_page is not None
+            and hasattr(
+                aggregation_page,
+                "save_view_state",
+            )
+        ):
+            aggregation_page.save_view_state()
+
+        pages = getattr(
+            self,
+            "pages",
+            None,
+        )
+
+        if pages is not None:
+            self._view_state_store.set_last_page(
+                self.active_module.module,
+                pages.currentIndex(),
+            )
+
+        self._view_state_store.set_sidebar_expanded(
+            self._sidebar_expanded
+        )
+
+        self._view_state_store.set_active_module(
+            self.active_module.module
+        )
+
+        self._view_state_store.sync()
+
     def _replace_module_context(
         self,
         config,
     ):
-        page_index = (
-            self.pages.currentIndex()
-        )
+        self._persist_view_state()
 
         self.active_module = config
+
+        self._view_state_store.set_active_module(
+            config.module
+        )
 
         self.workspace = (
             PresupuestoWorkspace(
@@ -345,13 +473,7 @@ class MainWindow(QMainWindow):
 
         self._build_module_pages()
 
-        if (
-            0 <= page_index
-            < self.pages.count()
-        ):
-            self.pages.setCurrentIndex(
-                page_index
-            )
+        self._restore_navigation_page()
 
         self._sync_module_selector()
 
@@ -659,6 +781,10 @@ class MainWindow(QMainWindow):
         )
 
         self._sync_sidebar_mode()
+
+        self._view_state_store.set_sidebar_expanded(
+            self._sidebar_expanded
+        )
 
     def _sync_sidebar_mode(
         self,
@@ -1619,6 +1745,11 @@ class MainWindow(QMainWindow):
             page_index
         )
 
+        self._view_state_store.set_last_page(
+            self.active_module.module,
+            page_index,
+        )
+
         self._update_navigation_context()
 
         page = self.pages.currentWidget()
@@ -1720,6 +1851,8 @@ class MainWindow(QMainWindow):
                 "y vuelve a cerrar la ventana.",
             )
             return
+
+        self._persist_view_state()
 
         super().closeEvent(
             event

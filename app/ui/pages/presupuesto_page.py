@@ -89,6 +89,9 @@ from app.ui.models.presupuesto_table_model import (
 from app.ui.table_column_visibility import (
     apply_month_column_visibility,
 )
+from app.ui.view_state_store import (
+    PresupuestoViewState,
+)
 from app.ui.workers.budget_catalog_loader import (
     BudgetCatalogLoadThread,
 )
@@ -110,6 +113,7 @@ class PresupuestoPage(QWidget):
         *,
         workspace,
         analysis_service,
+        view_state_store=None,
     ):
         super().__init__()
 
@@ -117,6 +121,10 @@ class PresupuestoPage(QWidget):
 
         self._analysis_service = (
             analysis_service
+        )
+
+        self._view_state_store = (
+            view_state_store
         )
 
         self._change_summary_service = (
@@ -144,6 +152,7 @@ class PresupuestoPage(QWidget):
         self._excel_export_thread = None
 
         self._setup_ui()
+        self._restore_view_state()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -589,6 +598,10 @@ class PresupuestoPage(QWidget):
             .setFilterFixedString
         )
 
+        self.search_input.textChanged.connect(
+            self._view_state_changed
+        )
+
         self.months_button.clicked.connect(
             self._toggle_month_columns
         )
@@ -699,6 +712,94 @@ class PresupuestoPage(QWidget):
             or export_busy
         )
 
+    def _restore_view_state(
+        self,
+    ):
+        if self._view_state_store is None:
+            return
+
+        state = (
+            self._view_state_store
+            .presupuesto_state(
+                self._workspace
+                .module_config
+                .module
+            )
+        )
+
+        self._page_index = (
+            state.page_index
+        )
+
+        self._page_size = (
+            state.page_size
+        )
+
+        self._months_visible = (
+            state.months_visible
+        )
+
+        self.search_input.setText(
+            state.search
+        )
+
+        self.page_size_combo.setCurrentText(
+            str(
+                state.page_size
+            )
+        )
+
+        index = (
+            self.enabled_filter_combo
+            .findData(
+                state.enabled_filter
+            )
+        )
+
+        if index >= 0:
+            self.enabled_filter_combo.setCurrentIndex(
+                index
+            )
+
+        self._apply_month_column_visibility()
+
+    def save_view_state(
+        self,
+    ):
+        if self._view_state_store is None:
+            return
+
+        state = PresupuestoViewState(
+            search=(
+                self.search_input.text()
+            ),
+            page_size=(
+                self._page_size
+            ),
+            enabled_filter=(
+                self._enabled_filter_value()
+            ),
+            months_visible=(
+                self._months_visible
+            ),
+            page_index=(
+                self._page_index
+            ),
+        )
+
+        self._view_state_store.set_presupuesto_state(
+            self._workspace
+            .module_config
+            .module,
+            state,
+        )
+
+    def _view_state_changed(
+        self,
+        *_,
+    ):
+        self.save_view_state()
+
     def set_workspace_ready(self):
         self._workspace_ready = True
 
@@ -780,7 +881,9 @@ class PresupuestoPage(QWidget):
             and
             not self._loaded_once
         ):
-            self._load_page(0)
+            self._load_page(
+                self._page_index
+            )
 
     def refresh(self):
         if not self._workspace_ready:
@@ -824,6 +927,8 @@ class PresupuestoPage(QWidget):
         text: str,
     ):
         self._page_size = int(text)
+
+        self.save_view_state()
 
         if (
             self._workspace_ready
@@ -873,6 +978,8 @@ class PresupuestoPage(QWidget):
 
             self._loaded_once = True
 
+            self.save_view_state()
+
         except Exception as exc:
             self.status_label.setText(
                 "Error al cargar datos locales: "
@@ -895,6 +1002,7 @@ class PresupuestoPage(QWidget):
         )
 
         self._apply_month_column_visibility()
+        self.save_view_state()
 
     def _apply_month_column_visibility(
         self,
@@ -1034,6 +1142,8 @@ class PresupuestoPage(QWidget):
         self,
         *_,
     ):
+        self.save_view_state()
+
         if not (
             self._workspace_ready
             and

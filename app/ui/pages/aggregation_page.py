@@ -56,6 +56,9 @@ from app.ui.models.result_table_model import (
 from app.ui.table_column_visibility import (
     apply_month_column_visibility,
 )
+from app.ui.view_state_store import (
+    AggregationViewState,
+)
 
 
 ZERO = Decimal("0.00")
@@ -69,6 +72,7 @@ class AggregationPage(QWidget):
         *,
         workspace,
         analysis_service,
+        view_state_store=None,
     ):
         super().__init__()
 
@@ -76,6 +80,10 @@ class AggregationPage(QWidget):
 
         self._analysis_service = (
             analysis_service
+        )
+
+        self._view_state_store = (
+            view_state_store
         )
 
         self._group_edit_service = (
@@ -108,6 +116,8 @@ class AggregationPage(QWidget):
         self._months_visible = False
 
         self._setup_ui()
+        self._restore_view_state()
+        self._connect_view_state_signals()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -723,6 +733,86 @@ class AggregationPage(QWidget):
             False
         )
 
+    def _restore_view_state(
+        self,
+    ):
+        if self._view_state_store is None:
+            return
+
+        state = (
+            self._view_state_store
+            .aggregation_state(
+                self._workspace
+                .module_config
+                .module
+            )
+        )
+
+        self._months_visible = (
+            state.months_visible
+        )
+
+        self.search_input.setText(
+            state.search
+        )
+
+        if state.groups:
+            for combo, value in zip(
+                self.group_combos,
+                state.groups,
+            ):
+                self._set_combo_value(
+                    combo,
+                    value,
+                )
+
+        self._apply_month_column_visibility()
+
+    def _connect_view_state_signals(
+        self,
+    ):
+        self.search_input.textChanged.connect(
+            self._view_state_changed
+        )
+
+        for combo in self.group_combos:
+            combo.currentIndexChanged.connect(
+                self._view_state_changed
+            )
+
+    def save_view_state(
+        self,
+    ):
+        if self._view_state_store is None:
+            return
+
+        state = AggregationViewState(
+            search=(
+                self.search_input.text()
+            ),
+            months_visible=(
+                self._months_visible
+            ),
+            groups=tuple(
+                combo.currentData()
+                for combo
+                in self.group_combos
+            ),
+        )
+
+        self._view_state_store.set_aggregation_state(
+            self._workspace
+            .module_config
+            .module,
+            state,
+        )
+
+    def _view_state_changed(
+        self,
+        *_,
+    ):
+        self.save_view_state()
+
     def invalidate(self):
         self._loaded_once = False
 
@@ -906,6 +996,7 @@ class AggregationPage(QWidget):
         )
 
         self._apply_month_column_visibility()
+        self.save_view_state()
 
     def _apply_month_column_visibility(
         self,
