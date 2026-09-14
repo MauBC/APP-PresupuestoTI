@@ -65,7 +65,13 @@ class PresupuestoRepository:
     def get_all_rows(
         self,
     ) -> tuple[dict, ...]:
-        table = self._bigquery.get_table(
+        table_loader = getattr(
+            self._bigquery,
+            "get_cached_table",
+            self._bigquery.get_table,
+        )
+
+        table = table_loader(
             self._module_config.main_table
         )
 
