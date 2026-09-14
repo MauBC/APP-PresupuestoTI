@@ -275,7 +275,10 @@ class MainWindow(QMainWindow):
     ):
         self.dashboard_page = (
             DashboardPage(
-                self.analysis_service
+                self.analysis_service,
+                change_summary_service=(
+                    self.change_summary_service
+                ),
             )
         )
 

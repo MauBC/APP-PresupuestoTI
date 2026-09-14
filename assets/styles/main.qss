@@ -559,3 +559,40 @@ QLabel#tableStatus[statusTone="empty"] {
     color: #667085;
     border-color: #D0D5DD;
 }
+
+/* M13A - DASHBOARD SIMULATION IMPACT */
+
+QFrame#simulationImpactCard {
+    background-color: #F8FAF9;
+    border: 1px solid #D7E4DC;
+    border-radius: 10px;
+}
+
+QLabel#impactMetricValue,
+QLabel#impactDifferenceValue,
+QLabel#impactVariationValue {
+    color: #155C3D;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+QLabel#impactSummary {
+    color: #5C6D63;
+    font-size: 12px;
+    padding-top: 4px;
+}
+
+QLabel#impactDifferenceValue[impactState="increase"],
+QLabel#impactVariationValue[impactState="increase"] {
+    color: #B42318;
+}
+
+QLabel#impactDifferenceValue[impactState="decrease"],
+QLabel#impactVariationValue[impactState="decrease"] {
+    color: #067647;
+}
+
+QLabel#impactDifferenceValue[impactState="neutral"],
+QLabel#impactVariationValue[impactState="neutral"] {
+    color: #475467;
+}

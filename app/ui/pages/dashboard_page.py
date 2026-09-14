@@ -403,15 +403,148 @@ def compare_dashboard_months(
     }
 
 
+def build_dashboard_simulation_impact(
+    summary,
+):
+    def decimal_value(
+        value,
+    ):
+        if isinstance(
+            value,
+            Decimal,
+        ):
+            return value
+
+        return Decimal(
+            str(
+                value
+                if value is not None
+                else 0
+            )
+        )
+
+    original = decimal_value(
+        summary.original_total
+    )
+
+    simulated = decimal_value(
+        summary.simulated_total
+    )
+
+    difference = decimal_value(
+        summary.difference
+    )
+
+    variation = (
+        summary.variation_percent
+    )
+
+    if (
+        variation is not None
+        and not isinstance(
+            variation,
+            Decimal,
+        )
+    ):
+        variation = Decimal(
+            str(variation)
+        )
+
+    pending_rows = int(
+        getattr(
+            summary,
+            "pending_rows",
+            0,
+        )
+        or 0
+    )
+
+    pending_fields = int(
+        getattr(
+            summary,
+            "pending_fields",
+            0,
+        )
+        or 0
+    )
+
+    difference_prefix = (
+        "+"
+        if difference > 0
+        else ""
+    )
+
+    if variation is None:
+        variation_text = "N/D"
+
+    else:
+        variation_prefix = (
+            "+"
+            if variation > 0
+            else ""
+        )
+
+        variation_text = (
+            f"{variation_prefix}"
+            f"{variation:,.2f}%"
+        )
+
+    has_changes = (
+        pending_rows > 0
+        or pending_fields > 0
+    )
+
+    if has_changes:
+        summary_text = (
+            "Cambios locales pendientes. "
+            "El impacto mostrado aun no se "
+            "ha aplicado a BigQuery."
+        )
+
+    else:
+        summary_text = (
+            "Sin cambios pendientes "
+            "en el Workspace."
+        )
+
+    return {
+        "original_text":
+            f"US$ {original:,.2f}",
+        "simulated_text":
+            f"US$ {simulated:,.2f}",
+        "difference_text":
+            f"{difference_prefix}"
+            f"US$ {difference:,.2f}",
+        "variation_text":
+            variation_text,
+        "pending_text":
+            f"{pending_rows:,} filas / "
+            f"{pending_fields:,} campos",
+        "state":
+            comparison_visual_state(
+                difference
+            ),
+        "has_changes":
+            has_changes,
+        "summary_text":
+            summary_text,
+    }
+
+
 class DashboardPage(QWidget):
     def __init__(
         self,
         analysis_service,
+        change_summary_service=None,
     ):
         super().__init__()
 
         self._analysis_service = (
             analysis_service
+        )
+
+        self._change_summary_service = (
+            change_summary_service
         )
 
         self._workspace_ready = False
@@ -860,6 +993,178 @@ class DashboardPage(QWidget):
 
         layout.addLayout(
             self.cards_layout
+        )
+
+        impact_section_label = QLabel(
+            "IMPACTO DE SIMULACION"
+        )
+
+        impact_section_label.setObjectName(
+            "dashboardSectionEyebrow"
+        )
+
+        layout.addWidget(
+            impact_section_label
+        )
+
+        impact_card = QFrame()
+
+        impact_card.setObjectName(
+            "simulationImpactCard"
+        )
+
+        impact_layout = QVBoxLayout(
+            impact_card
+        )
+
+        impact_layout.setContentsMargins(
+            20,
+            18,
+            20,
+            18,
+        )
+
+        impact_layout.setSpacing(
+            12
+        )
+
+        impact_title = QLabel(
+            "Impacto global de cambios locales"
+        )
+
+        impact_title.setObjectName(
+            "sectionTitle"
+        )
+
+        impact_hint = QLabel(
+            "Vista global del Workspace. "
+            "No cambia con los filtros "
+            "del Dashboard."
+        )
+
+        impact_hint.setObjectName(
+            "pageSubtitle"
+        )
+
+        impact_metrics = QGridLayout()
+
+        impact_metrics.setHorizontalSpacing(
+            24
+        )
+
+        impact_metrics.setVerticalSpacing(
+            6
+        )
+
+        impact_titles = (
+            "Presupuesto base",
+            "Presupuesto simulado",
+            "Diferencia",
+            "Variacion",
+            "Cambios pendientes",
+        )
+
+        for index, title_text in enumerate(
+            impact_titles
+        ):
+            title_label = QLabel(
+                title_text
+            )
+
+            title_label.setObjectName(
+                "cardTitle"
+            )
+
+            impact_metrics.addWidget(
+                title_label,
+                0,
+                index,
+            )
+
+        self.impact_original_value = QLabel(
+            "-"
+        )
+
+        self.impact_simulated_value = QLabel(
+            "-"
+        )
+
+        self.impact_difference_value = QLabel(
+            "-"
+        )
+
+        self.impact_variation_value = QLabel(
+            "-"
+        )
+
+        self.impact_pending_value = QLabel(
+            "-"
+        )
+
+        for widget in (
+            self.impact_original_value,
+            self.impact_simulated_value,
+            self.impact_pending_value,
+        ):
+            widget.setObjectName(
+                "impactMetricValue"
+            )
+
+        self.impact_difference_value.setObjectName(
+            "impactDifferenceValue"
+        )
+
+        self.impact_variation_value.setObjectName(
+            "impactVariationValue"
+        )
+
+        impact_values = (
+            self.impact_original_value,
+            self.impact_simulated_value,
+            self.impact_difference_value,
+            self.impact_variation_value,
+            self.impact_pending_value,
+        )
+
+        for index, widget in enumerate(
+            impact_values
+        ):
+            impact_metrics.addWidget(
+                widget,
+                1,
+                index,
+            )
+
+        self.impact_summary_label = QLabel(
+            "Esperando resumen de cambios..."
+        )
+
+        self.impact_summary_label.setObjectName(
+            "impactSummary"
+        )
+
+        self.impact_summary_label.setWordWrap(
+            True
+        )
+
+        impact_layout.addWidget(
+            impact_title
+        )
+
+        impact_layout.addWidget(
+            impact_hint
+        )
+
+        impact_layout.addLayout(
+            impact_metrics
+        )
+
+        impact_layout.addWidget(
+            self.impact_summary_label
+        )
+
+        layout.addWidget(
+            impact_card
         )
 
         dimensions_label = QLabel(
@@ -1719,6 +2024,121 @@ class DashboardPage(QWidget):
                 if variation is not None
                 else "neutral"
             ),
+        )
+
+    def _set_simulation_impact_state(
+        self,
+        state,
+    ):
+        for widget in (
+            self.impact_difference_value,
+            self.impact_variation_value,
+        ):
+            widget.setProperty(
+                "impactState",
+                state,
+            )
+
+            style = widget.style()
+
+            style.unpolish(
+                widget
+            )
+
+            style.polish(
+                widget
+            )
+
+            widget.update()
+
+    def _update_simulation_impact(
+        self,
+    ):
+        service = (
+            self._change_summary_service
+        )
+
+        if service is None:
+            self.impact_summary_label.setText(
+                "Resumen de cambios "
+                "no disponible."
+            )
+
+            return
+
+        try:
+            summary = service.build()
+
+            view = (
+                build_dashboard_simulation_impact(
+                    summary
+                )
+            )
+
+        except Exception as exc:
+            for widget in (
+                self.impact_original_value,
+                self.impact_simulated_value,
+                self.impact_difference_value,
+                self.impact_variation_value,
+                self.impact_pending_value,
+            ):
+                widget.setText(
+                    "-"
+                )
+
+            self._set_simulation_impact_state(
+                "neutral"
+            )
+
+            self.impact_summary_label.setText(
+                "No se pudo calcular "
+                "el impacto local: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+            return
+
+        self.impact_original_value.setText(
+            view[
+                "original_text"
+            ]
+        )
+
+        self.impact_simulated_value.setText(
+            view[
+                "simulated_text"
+            ]
+        )
+
+        self.impact_difference_value.setText(
+            view[
+                "difference_text"
+            ]
+        )
+
+        self.impact_variation_value.setText(
+            view[
+                "variation_text"
+            ]
+        )
+
+        self.impact_pending_value.setText(
+            view[
+                "pending_text"
+            ]
+        )
+
+        self.impact_summary_label.setText(
+            view[
+                "summary_text"
+            ]
+        )
+
+        self._set_simulation_impact_state(
+            view[
+                "state"
+            ]
         )
 
     def _create_card(
@@ -2678,6 +3098,8 @@ class DashboardPage(QWidget):
                     "total_usd",
                 ),
             )
+
+        self._update_simulation_impact()
 
         self._loaded_once = True
 
