@@ -83,6 +83,9 @@ from app.ui.dialogs.monthly_distribution_dialog import (
 from app.ui.dialogs.new_budget_row_dialog import (
     NewBudgetRowDialog,
 )
+from app.ui.frozen_columns import (
+    FrozenColumnsController,
+)
 from app.ui.models.presupuesto_table_model import (
     PresupuestoTableModel,
 )
@@ -562,6 +565,18 @@ class PresupuestoPage(QWidget):
 
         header.sortIndicatorChanged.connect(
             self._on_table_layout_changed
+        )
+
+        self._frozen_columns = (
+            FrozenColumnsController(
+                main_table=self.table,
+                preferred_columns=(
+                    self._workspace
+                    .module_config
+                    .frozen_context_columns
+                ),
+                parent=self,
+            )
         )
 
         layout.addWidget(
@@ -1156,6 +1171,10 @@ class PresupuestoPage(QWidget):
         )
 
         self._restore_table_layout_state()
+
+        self._frozen_columns.sync(
+            columns=self._current_columns,
+        )
 
     def _on_model_workspace_changed(
         self,

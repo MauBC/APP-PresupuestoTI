@@ -60,6 +60,11 @@ class BudgetModuleConfig:
         ...
     ] = ()
 
+    frozen_context_columns: tuple[
+        str,
+        ...
+    ] = ()
+
     insert_column_types: tuple[
         tuple[
             str,
