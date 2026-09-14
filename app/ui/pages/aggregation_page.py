@@ -53,6 +53,9 @@ from app.ui.dialogs.dimension_allocation_dialog import (
 from app.ui.models.result_table_model import (
     ResultTableModel,
 )
+from app.ui.table_column_visibility import (
+    apply_month_column_visibility,
+)
 
 
 ZERO = Decimal("0.00")
@@ -102,6 +105,7 @@ class AggregationPage(QWidget):
         self._workspace_ready = False
         self._loaded_once = False
         self._current_result = None
+        self._months_visible = False
 
         self._setup_ui()
 
@@ -318,6 +322,19 @@ class AggregationPage(QWidget):
             "Buscar dentro del resultado agrupado..."
         )
 
+        self.months_button = QPushButton(
+            "Mostrar meses"
+        )
+
+        self.months_button.setEnabled(
+            False
+        )
+
+        self.months_button.setToolTip(
+            "Muestra u oculta las columnas "
+            "mensuales sin cambiar la agrupacion."
+        )
+
         self.summary_label = QLabel(
             "Sin resultados"
         )
@@ -329,6 +346,10 @@ class AggregationPage(QWidget):
         search_layout.addWidget(
             self.search_input,
             1,
+        )
+
+        search_layout.addWidget(
+            self.months_button
         )
 
         search_layout.addWidget(
@@ -600,6 +621,10 @@ class AggregationPage(QWidget):
             .setFilterFixedString
         )
 
+        self.months_button.clicked.connect(
+            self._toggle_month_columns
+        )
+
         self.group_button.clicked.connect(
             self.load_grouping
         )
@@ -818,7 +843,7 @@ class AggregationPage(QWidget):
             result.columns,
         )
 
-        self.search_input.clear()
+        self._apply_month_column_visibility()
 
         self._loaded_once = True
 
@@ -872,6 +897,49 @@ class AggregationPage(QWidget):
         self._update_change_controls()
 
         self._update_group_state_button()
+
+    def _toggle_month_columns(
+        self,
+    ):
+        self._months_visible = (
+            not self._months_visible
+        )
+
+        self._apply_month_column_visibility()
+
+    def _apply_month_column_visibility(
+        self,
+    ):
+        columns = (
+            self._current_result.columns
+            if self._current_result is not None
+            else ()
+        )
+
+        matched = (
+            apply_month_column_visibility(
+                table=self.table,
+                columns=columns,
+                month_columns=(
+                    self._workspace
+                    .module_config
+                    .month_columns
+                ),
+                months_visible=(
+                    self._months_visible
+                ),
+            )
+        )
+
+        self.months_button.setEnabled(
+            bool(matched)
+        )
+
+        self.months_button.setText(
+            "Ocultar meses"
+            if self._months_visible
+            else "Mostrar meses"
+        )
 
     def _update_selected_context(
         self,

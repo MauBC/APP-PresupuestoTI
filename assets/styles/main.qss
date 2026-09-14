@@ -294,6 +294,11 @@ QTableView::item {
     padding: 4px;
 }
 
+QHeaderView {
+    background-color: #E7F2EB;
+    border: none;
+}
+
 QHeaderView::section {
     background-color: #E7F2EB;
     color: #174B35;

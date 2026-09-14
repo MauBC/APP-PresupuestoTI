@@ -86,6 +86,9 @@ from app.ui.dialogs.new_budget_row_dialog import (
 from app.ui.models.presupuesto_table_model import (
     PresupuestoTableModel,
 )
+from app.ui.table_column_visibility import (
+    apply_month_column_visibility,
+)
 from app.ui.workers.budget_catalog_loader import (
     BudgetCatalogLoadThread,
 )
@@ -128,6 +131,8 @@ class PresupuestoPage(QWidget):
 
         self._workspace_ready = False
         self._loaded_once = False
+        self._months_visible = False
+        self._current_columns = ()
 
         self._new_row_catalog_thread = None
         self._new_row_actor = None
@@ -180,6 +185,19 @@ class PresupuestoPage(QWidget):
 
         self.search_input.setPlaceholderText(
             "Buscar en la pagina actual..."
+        )
+
+        self.months_button = QPushButton(
+            "Mostrar meses"
+        )
+
+        self.months_button.setEnabled(
+            False
+        )
+
+        self.months_button.setToolTip(
+            "Muestra u oculta las columnas "
+            "mensuales manteniendo la vista actual."
         )
 
         self.page_size_combo = QComboBox()
@@ -315,6 +333,10 @@ class PresupuestoPage(QWidget):
         )
 
         toolbar.addWidget(
+            self.months_button
+        )
+
+        toolbar.addWidget(
             QLabel("Filas:")
         )
 
@@ -331,27 +353,39 @@ class PresupuestoPage(QWidget):
         )
 
         toolbar.addWidget(
-            self.insert_button
-        )
-
-        toolbar.addWidget(
-            self.export_excel_button
-        )
-
-        toolbar.addWidget(
-            self.distribute_months_button
-        )
-
-        toolbar.addWidget(
-            self.enabled_action_button
-        )
-
-        toolbar.addWidget(
             self.refresh_button
         )
 
         layout.addLayout(
             toolbar
+        )
+
+        actions_toolbar = QHBoxLayout()
+
+        actions_toolbar.addWidget(
+            QLabel("Acciones:")
+        )
+
+        actions_toolbar.addWidget(
+            self.insert_button
+        )
+
+        actions_toolbar.addWidget(
+            self.export_excel_button
+        )
+
+        actions_toolbar.addWidget(
+            self.distribute_months_button
+        )
+
+        actions_toolbar.addWidget(
+            self.enabled_action_button
+        )
+
+        actions_toolbar.addStretch()
+
+        layout.addLayout(
+            actions_toolbar
         )
 
         changes_layout = QHBoxLayout()
@@ -553,6 +587,10 @@ class PresupuestoPage(QWidget):
         self.search_input.textChanged.connect(
             self.proxy_model
             .setFilterFixedString
+        )
+
+        self.months_button.clicked.connect(
+            self._toggle_month_columns
         )
 
         self.refresh_button.clicked.connect(
@@ -819,6 +857,12 @@ class PresupuestoPage(QWidget):
                 result
             )
 
+            self._current_columns = tuple(
+                result.columns
+            )
+
+            self._apply_month_column_visibility()
+
             self._page_index = (
                 result.page_index
             )
@@ -828,8 +872,6 @@ class PresupuestoPage(QWidget):
             )
 
             self._loaded_once = True
-
-            self.search_input.clear()
 
         except Exception as exc:
             self.status_label.setText(
@@ -844,6 +886,45 @@ class PresupuestoPage(QWidget):
         self._update_change_controls()
         self._update_distribution_button()
         self._update_enabled_action_button()
+
+    def _toggle_month_columns(
+        self,
+    ):
+        self._months_visible = (
+            not self._months_visible
+        )
+
+        self._apply_month_column_visibility()
+
+    def _apply_month_column_visibility(
+        self,
+    ):
+        matched = (
+            apply_month_column_visibility(
+                table=self.table,
+                columns=(
+                    self._current_columns
+                ),
+                month_columns=(
+                    self._workspace
+                    .module_config
+                    .month_columns
+                ),
+                months_visible=(
+                    self._months_visible
+                ),
+            )
+        )
+
+        self.months_button.setEnabled(
+            bool(matched)
+        )
+
+        self.months_button.setText(
+            "Ocultar meses"
+            if self._months_visible
+            else "Mostrar meses"
+        )
 
     def _on_model_workspace_changed(
         self,
