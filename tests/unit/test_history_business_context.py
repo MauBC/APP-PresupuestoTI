@@ -1,263 +1,197 @@
-from datetime import (
-    datetime,
-    timezone,
-)
+﻿from decimal import Decimal
 
 import pytest
 
 from app.config.budget_modules import (
+    CAPEX_MODULE_CONFIG,
     OPEX_MODULE_CONFIG,
 )
-from app.models.budget_history import (
-    BudgetHistoryBatch,
-)
-from app.services.presupuesto_history_service import (
-    PresupuestoHistoryService,
+from app.repositories.presupuesto_repository import (
+    PresupuestoRepository,
 )
 from app.ui.dialogs.history_detail_dialog import (
-    build_detail_headers,
-    build_enhanced_detail_rows,
+    format_audit_display,
+    format_audit_field,
 )
 
 
 pytestmark = pytest.mark.unit
 
 
-NOW = datetime(
-    2026,
-    9,
-    10,
-    20,
-    0,
-    tzinfo=timezone.utc,
-)
+class FakeBigQuery:
+    pass
 
 
-def make_batch():
-    return BudgetHistoryBatch(
-        batch_id="batch-context",
-        status="APPLIED",
-        actor="tester",
-        created_at=NOW,
-        completed_at=NOW,
-        row_count=1,
-        field_count=1,
-        app_version="test",
-        error_message=None,
-        budget_module="OPEX",
+def _repository(
+    module_config,
+    row,
+):
+    repository = PresupuestoRepository(
+        FakeBigQuery(),
+        module_config=module_config,
     )
 
-
-class FakeRepository:
-    module_config = (
-        OPEX_MODULE_CONFIG
-    )
-
-    def get_batch_audit(
-        self,
-        batch_id,
-    ):
-        return (
-            {
-                "audit_id": "audit-1",
-                "batch_id": batch_id,
-                "row_id": "row-001",
-                "column_name":
-                    "enero_usd",
-                "value_type":
-                    "NUMERIC",
-                "before_value":
-                    "100.00",
-                "after_value":
-                    "150.00",
-                "version_before": 1,
-                "version_after": 2,
-                "actor": "tester",
-                "changed_at": NOW,
-            },
-        )
-
-    def get_history_row_context(
-        self,
-        row_ids,
-    ):
-        assert tuple(
-            row_ids
-        ) == (
-            "row-001",
-        )
-
-        return (
-            {
-                "row_id":
-                    "row-001",
-                "presupuestador":
-                    "SANDRA",
-                "pais":
-                    "PERU",
-                "compania":
-                    "RANSA PERU",
-                "proveedor":
-                    "MICROSOFT",
-                "nombre_gasto":
-                    "LICENCIAS M365",
-                "ceco":
-                    "CECO-100",
-            },
-        )
-
-
-def make_detail():
-    return (
-        PresupuestoHistoryService(
-            FakeRepository()
-        )
-        .get_batch_detail(
-            make_batch()
+    repository.get_rows_by_ids = (
+        lambda row_ids: (
+            dict(row),
         )
     )
 
+    return repository
 
-def test_context_values_are_available():
-    detail = make_detail()
 
-    assert (
-        detail.context_value(
-            "row-001",
-            "presupuestador",
-        )
-        == "SANDRA"
+def test_opex_history_context_uses_business_columns():
+    row = {
+        "row_id": "opex-1",
+        "presupuestador": "Sandra",
+        "pais": "PE",
+        "compania": "Ransa",
+        "proveedor": "Microsoft",
+        "nombre_gasto": "Azure",
+        "ceco": "001234",
+        "enero_usd": Decimal("100"),
+    }
+
+    repository = _repository(
+        OPEX_MODULE_CONFIG,
+        row,
     )
 
-    assert (
-        detail.context_value(
-            "row-001",
-            "proveedor",
-        )
-        == "MICROSOFT"
-    )
-
-    assert (
-        detail.context_value(
-            "row-001",
-            "nombre_gasto",
-        )
-        == "LICENCIAS M365"
-    )
-
-    assert (
-        detail.context_value(
-            "row-001",
-            "ceco",
-        )
-        == "CECO-100"
-    )
-
-
-def test_business_columns_precede_row_id():
-    detail = make_detail()
-
-    headers = (
-        build_detail_headers(
-            detail
+    result = (
+        repository
+        .get_history_row_context(
+            ("opex-1",)
         )
     )
 
-    assert (
-        headers[0]
-        == "TIPO"
-    )
+    assert len(result) == 1
+
+    context = result[0]
 
     assert (
-        "PRESUPUESTADOR"
-        in headers
-    )
-
-    assert (
-        "PROVEEDOR"
-        in headers
-    )
-
-    assert (
-        "NOMBRE DEL GASTO"
-        in headers
-    )
-
-    assert (
-        "CECO"
-        in headers
-    )
-
-    assert (
-        headers[-1]
-        == "ROW ID"
-    )
-
-
-def test_detail_row_is_business_readable():
-    detail = make_detail()
-
-    headers = (
-        build_detail_headers(
-            detail
+        tuple(context)
+        ==
+        (
+            "row_id",
+            *OPEX_MODULE_CONFIG
+            .change_detail_columns,
         )
     )
 
-    values = (
-        build_enhanced_detail_rows(
-            detail
-        )[0][:-1]
+    assert context["row_id"] == "opex-1"
+    assert context["proveedor"] == "Microsoft"
+    assert context["nombre_gasto"] == "Azure"
+
+    assert "enero_usd" not in context
+
+
+def test_capex_history_context_uses_business_columns():
+    row = {
+        "row_id": "capex-1",
+        "presupuestador": "Mauro",
+        "responsable": "Responsable Uno",
+        "pais": "PE",
+        "sociedad": "2501",
+        "nombre_inversion": "Proyecto Data",
+        "tipo_capex": "TI",
+        "codigo_cebe": "04WF2EAF90",
+        "codigo_ceco": "04WF2EAF93",
+    }
+
+    repository = _repository(
+        CAPEX_MODULE_CONFIG,
+        row,
     )
 
-    row = dict(
-        zip(
-            headers,
-            values,
+    result = (
+        repository
+        .get_history_row_context(
+            ("capex-1",)
         )
     )
 
+    context = result[0]
+
     assert (
-        row[
-            "PRESUPUESTADOR"
-        ]
-        == "SANDRA"
+        context["nombre_inversion"]
+        == "Proyecto Data"
     )
 
     assert (
-        row[
-            "PROVEEDOR"
-        ]
-        == "MICROSOFT"
+        context["codigo_cebe"]
+        == "04WF2EAF90"
     )
 
     assert (
-        row[
-            "NOMBRE DEL GASTO"
-        ]
-        == "LICENCIAS M365"
+        context["codigo_ceco"]
+        == "04WF2EAF93"
+    )
+
+
+def test_history_formats_usd():
+    assert (
+        format_audit_display(
+            "1234.5",
+            "NUMERIC",
+            "enero_usd",
+        )
+        == "US$ 1,234.50"
+    )
+
+
+def test_history_formats_ml():
+    assert (
+        format_audit_display(
+            "1234.5",
+            "NUMERIC",
+            "enero_ml",
+        )
+        == "ML 1,234.50"
+    )
+
+
+def test_history_formats_mf():
+    assert (
+        format_audit_display(
+            "45.25",
+            "NUMERIC",
+            "enero_mf",
+        )
+        == "MF 45.25"
+    )
+
+
+def test_history_formats_boolean_state():
+    assert (
+        format_audit_display(
+            "true",
+            "BOOLEAN",
+            "habilitado",
+        )
+        == "Habilitado"
     )
 
     assert (
-        row["CECO"]
-        == "CECO-100"
+        format_audit_display(
+            "false",
+            "BOOLEAN",
+            "habilitado",
+        )
+        == "Deshabilitado"
+    )
+
+
+def test_history_field_uses_shared_labels():
+    assert (
+        format_audit_field(
+            "codigo_ceco"
+        )
+        == "Codigo CECO"
     )
 
     assert (
-        row["CAMPO"]
-        == "Enero USD"
-    )
-
-    assert (
-        row["ANTES"]
-        == "US$ 100.00"
-    )
-
-    assert (
-        row["DESPUES"]
-        == "US$ 150.00"
-    )
-
-    assert (
-        row["ROW ID"]
-        == "row-001"
+        format_audit_field(
+            "anio_usd"
+        )
+        == "Total Anual USD"
     )

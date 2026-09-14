@@ -237,6 +237,36 @@ class PresupuestoRepository:
             for row in result
         )
 
+    def get_history_row_context(
+        self,
+        row_ids,
+    ) -> tuple[dict, ...]:
+        rows = self.get_rows_by_ids(
+            row_ids
+        )
+
+        context_columns = tuple(
+            self._module_config
+            .change_detail_columns
+            or ()
+        )
+
+        selected_columns = (
+            "row_id",
+            *context_columns,
+        )
+
+        return tuple(
+            {
+                column: row.get(
+                    column
+                )
+                for column
+                in selected_columns
+            }
+            for row in rows
+        )
+
     def get_catalog_values(
         self,
         column: str,

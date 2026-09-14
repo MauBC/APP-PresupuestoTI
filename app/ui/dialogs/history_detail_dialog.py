@@ -17,6 +17,11 @@ from PySide6.QtWidgets import (
 )
 
 
+from app.ui.change_detail_formatting import (
+    change_field_label,
+    format_change_value,
+)
+
 DETAIL_COLUMNS = (
     "TIPO",
     "ROW ID",
@@ -176,42 +181,9 @@ def format_audit_value(
 def format_audit_field(
     column,
 ) -> str:
-    value = str(
+    return change_field_label(
         column
-        if column is not None
-        else ""
-    ).strip()
-
-    if value == "habilitado":
-        return "Estado"
-
-    parts = [
-        part
-        for part in value.split("_")
-        if part
-    ]
-
-    if parts and parts[0].lower() in {
-        "anio",
-        "ano",
-    }:
-        parts = [
-            "total",
-            "anual",
-            *parts[1:],
-        ]
-
-    result = []
-
-    for part in parts:
-        if part.lower() == "usd":
-            result.append("USD")
-        else:
-            result.append(
-                part.capitalize()
-            )
-
-    return " ".join(result)
+    )
 
 
 def format_audit_display(
@@ -228,33 +200,40 @@ def format_audit_display(
         else ""
     ).strip().upper()
 
-    text = str(value).strip()
+    text = str(
+        value
+    ).strip()
 
     if kind == "BOOLEAN":
         lowered = text.lower()
 
         if lowered == "true":
-            return "Habilitado"
-
-        if lowered == "false":
-            return "Deshabilitado"
-
-    if (
-        kind == "NUMERIC"
-        and "usd" in str(column).lower()
-    ):
-        try:
-            number = float(text)
-
-            return (
-                f"US$ {number:,.2f}"
+            return format_change_value(
+                column,
+                True,
             )
 
-        except (
-            TypeError,
-            ValueError,
-        ):
-            pass
+        if lowered == "false":
+            return format_change_value(
+                column,
+                False,
+            )
+
+    if kind == "NUMERIC":
+        try:
+            from decimal import Decimal
+
+            numeric_value = Decimal(
+                text
+            )
+
+        except Exception:
+            return text
+
+        return format_change_value(
+            column,
+            numeric_value,
+        )
 
     return text
 
@@ -516,6 +495,15 @@ class HistoryDetailDialog(QDialog):
                 font-size: 12px;
             }
 
+            QLabel#historyContextNote {
+                background-color: #F8F9FA;
+                color: #475467;
+                border: 1px solid #D8DEE4;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 11px;
+            }
+
             QLabel#analysisSummary {
                 background-color: #EEF7F1;
                 color: #155C3D;
@@ -640,6 +628,30 @@ class HistoryDetailDialog(QDialog):
         )
 
         layout.addWidget(summary)
+
+        if detail_context_columns(
+            self._detail
+        ):
+            context_note = QLabel(
+                "Contexto de negocio: "
+                "las columnas de identificacion "
+                "muestran el estado actual de la "
+                "fila en BigQuery. Los valores "
+                "Antes y Despues corresponden "
+                "al batch historico seleccionado."
+            )
+
+            context_note.setObjectName(
+                "historyContextNote"
+            )
+
+            context_note.setWordWrap(
+                True
+            )
+
+            layout.addWidget(
+                context_note
+            )
 
         filters = QHBoxLayout()
 
