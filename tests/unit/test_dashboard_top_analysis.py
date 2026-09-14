@@ -7,8 +7,11 @@ from app.config.budget_module_config import (
     BudgetModule,
 )
 from app.ui.pages.dashboard_page import (
+    build_dashboard_top_chart_data,
     build_dashboard_top_rows,
     dashboard_dimension_label,
+    dashboard_top_axis_max_k,
+    dashboard_top_chart_label,
     dashboard_top_dimension_options,
 )
 
@@ -158,4 +161,77 @@ def test_dashboard_dimension_labels_use_business_names():
             "proveedor"
         )
         == "Proveedor"
+    )
+
+def test_top_chart_label_truncates_long_values():
+    value = dashboard_top_chart_label(
+        "Proveedor con un nombre extremadamente largo",
+        max_length=20,
+    )
+
+    assert len(value) == 20
+    assert value.endswith("...")
+
+
+def test_top_chart_data_reverses_rows_for_horizontal_chart():
+    rows = (
+        {
+            "proveedor": "Mayor",
+            "registros": 5,
+            "total_usd": Decimal("500000"),
+            "participacion_pct":
+                Decimal("50.00"),
+        },
+        {
+            "proveedor": "Menor",
+            "registros": 2,
+            "total_usd": Decimal("200000"),
+            "participacion_pct":
+                Decimal("20.00"),
+        },
+    )
+
+    result = build_dashboard_top_chart_data(
+        rows,
+        dimension="proveedor",
+    )
+
+    assert result["labels"] == (
+        "Menor",
+        "Mayor",
+    )
+
+    assert result["values_k"] == (
+        200.0,
+        500.0,
+    )
+
+    assert "US$ 500,000.00" in (
+        result["tooltips"][1]
+    )
+
+    assert "50.00%" in (
+        result["tooltips"][1]
+    )
+
+    assert "5 registros" in (
+        result["tooltips"][1]
+    )
+
+
+def test_top_axis_adds_visual_headroom():
+    assert (
+        dashboard_top_axis_max_k(
+            (100.0, 200.0)
+        )
+        == pytest.approx(
+            230.0
+        )
+    )
+
+    assert (
+        dashboard_top_axis_max_k(
+            ()
+        )
+        == 1.0
     )

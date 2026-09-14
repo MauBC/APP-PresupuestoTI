@@ -20,6 +20,7 @@ from PySide6.QtCharts import (
     QBarSet,
     QChart,
     QChartView,
+    QHorizontalBarSeries,
     QValueAxis,
 )
 from PySide6.QtWidgets import (
@@ -495,6 +496,157 @@ def build_dashboard_top_rows(
     return tuple(
         result
     )
+
+
+def dashboard_top_chart_label(
+    value,
+    *,
+    max_length=34,
+):
+    text = str(
+        value
+        if value is not None
+        else ""
+    ).strip()
+
+    if not text:
+        text = "(Sin valor)"
+
+    limit = max(
+        4,
+        int(max_length),
+    )
+
+    if len(text) <= limit:
+        return text
+
+    return (
+        text[
+            :limit - 3
+        ]
+        + "..."
+    )
+
+
+def build_dashboard_top_chart_data(
+    rows,
+    *,
+    dimension,
+):
+    labels = []
+    values_k = []
+    tooltips = []
+
+    # QBarCategoryAxis horizontal muestra
+    # naturalmente las primeras categorias
+    # desde abajo. Se invierte el Top para
+    # que el mayor quede visualmente arriba.
+    for row in reversed(
+        tuple(rows)
+    ):
+        raw_label = row.get(
+            dimension
+        )
+
+        full_label = str(
+            raw_label
+            if raw_label is not None
+            else "(Sin valor)"
+        ).strip()
+
+        if not full_label:
+            full_label = "(Sin valor)"
+
+        amount = row.get(
+            "total_usd"
+        )
+
+        if not isinstance(
+            amount,
+            Decimal,
+        ):
+            amount = Decimal(
+                str(
+                    amount
+                    if amount is not None
+                    else 0
+                )
+            )
+
+        participation = row.get(
+            "participacion_pct"
+        )
+
+        if not isinstance(
+            participation,
+            Decimal,
+        ):
+            participation = Decimal(
+                str(
+                    participation
+                    if participation is not None
+                    else 0
+                )
+            )
+
+        registros = int(
+            row.get(
+                "registros",
+                0,
+            )
+            or 0
+        )
+
+        labels.append(
+            dashboard_top_chart_label(
+                full_label
+            )
+        )
+
+        values_k.append(
+            float(
+                amount
+            )
+            / 1000.0
+        )
+
+        tooltips.append(
+            (
+                f"{full_label}\n"
+                f"US$ {amount:,.2f}\n"
+                f"{participation:,.2f}%\n"
+                f"{registros:,} registros"
+            )
+        )
+
+    return {
+        "labels": tuple(
+            labels
+        ),
+        "values_k": tuple(
+            values_k
+        ),
+        "tooltips": tuple(
+            tooltips
+        ),
+    }
+
+
+def dashboard_top_axis_max_k(
+    values_k,
+):
+    maximum = max(
+        (
+            float(value)
+            for value in values_k
+        ),
+        default=0.0,
+    )
+
+    if maximum <= 0:
+        return 1.0
+
+    return maximum * 1.15
 
 
 def dashboard_peak_month(
@@ -1749,6 +1901,26 @@ class DashboardPage(QWidget):
             self.top_table
         )
 
+        self.top_chart_view = QChartView(
+            self
+        )
+
+        self.top_chart_view.setRenderHint(
+            QPainter.RenderHint.Antialiasing
+        )
+
+        self.top_chart_view.setMinimumHeight(
+            360
+        )
+
+        self.top_chart_view.setMaximumHeight(
+            720
+        )
+
+        top_layout.addWidget(
+            self.top_chart_view
+        )
+
         layout.addWidget(
             top_card
         )
@@ -2985,6 +3157,10 @@ class DashboardPage(QWidget):
         if not self._workspace_ready:
             self.top_model.clear()
 
+            self._clear_top_chart(
+                "Esperando carga del presupuesto."
+            )
+
             self.top_status_label.setText(
                 "Esperando carga "
                 "del presupuesto."
@@ -2999,6 +3175,10 @@ class DashboardPage(QWidget):
 
         if not dimension:
             self.top_model.clear()
+
+            self._clear_top_chart(
+                "Sin dimensiones disponibles."
+            )
 
             self.top_status_label.setText(
                 "No existen dimensiones "
@@ -3033,6 +3213,10 @@ class DashboardPage(QWidget):
         except Exception as exc:
             self.top_model.clear()
 
+            self._clear_top_chart(
+                "No se pudo calcular el Top."
+            )
+
             self.top_status_label.setText(
                 "Error al calcular el Top: "
                 f"{type(exc).__name__}: {exc}"
@@ -3060,6 +3244,11 @@ class DashboardPage(QWidget):
             ),
         )
 
+        self._update_top_chart(
+            top_rows,
+            dimension=dimension,
+        )
+
         if not all_rows:
             self.top_status_label.setText(
                 "Sin datos para esta "
@@ -3082,6 +3271,291 @@ class DashboardPage(QWidget):
             f"de {total_count:,} valores. "
             "Participacion sobre el "
             "presupuesto filtrado actual."
+        )
+
+    def _replace_top_chart(
+        self,
+        chart,
+    ):
+        old_chart = (
+            self.top_chart_view
+            .chart()
+        )
+
+        self.top_chart_view.setChart(
+            chart
+        )
+
+        if (
+            old_chart is not None
+            and old_chart is not chart
+        ):
+            old_chart.deleteLater()
+
+    def _clear_top_chart(
+        self,
+        message,
+    ):
+        chart = QChart()
+
+        chart.legend().hide()
+
+        chart.setBackgroundBrush(
+            QColor(
+                "#FFFFFF"
+            )
+        )
+
+        chart.setBackgroundRoundness(
+            10
+        )
+
+        chart.setTitle(
+            str(message)
+        )
+
+        self._replace_top_chart(
+            chart
+        )
+
+    def _update_top_chart(
+        self,
+        rows,
+        *,
+        dimension,
+    ):
+        data = (
+            build_dashboard_top_chart_data(
+                rows,
+                dimension=dimension,
+            )
+        )
+
+        labels = data[
+            "labels"
+        ]
+
+        values_k = data[
+            "values_k"
+        ]
+
+        tooltips = data[
+            "tooltips"
+        ]
+
+        if not labels:
+            self._clear_top_chart(
+                "Sin datos para graficar."
+            )
+            return
+
+        bar_set = QBarSet(
+            "Presupuesto"
+        )
+
+        for value in values_k:
+            bar_set.append(
+                value
+            )
+
+        bar_set.setColor(
+            QColor(
+                "#08783E"
+            )
+        )
+
+        bar_set.setBorderColor(
+            QColor(
+                "#066333"
+            )
+        )
+
+        series = QHorizontalBarSeries()
+
+        series.append(
+            bar_set
+        )
+
+        series.setBarWidth(
+            0.62
+        )
+
+        chart = QChart()
+
+        chart.addSeries(
+            series
+        )
+
+        chart.legend().hide()
+
+        chart.setAnimationOptions(
+            QChart.AnimationOption
+            .SeriesAnimations
+        )
+
+        chart.setBackgroundBrush(
+            QColor(
+                "#FFFFFF"
+            )
+        )
+
+        chart.setBackgroundRoundness(
+            10
+        )
+
+        title_font = QFont()
+
+        title_font.setPointSize(
+            11
+        )
+
+        title_font.setBold(
+            True
+        )
+
+        chart.setTitleFont(
+            title_font
+        )
+
+        dimension_title = (
+            dashboard_dimension_label(
+                dimension
+            )
+        )
+
+        chart.setTitle(
+            f"Top por {dimension_title} "
+            "(miles de USD)"
+        )
+
+        axis_y = QBarCategoryAxis()
+
+        axis_y.append(
+            list(
+                labels
+            )
+        )
+
+        axis_x = QValueAxis()
+
+        axis_x.setTitleText(
+            "Miles de USD"
+        )
+
+        axis_x.setLabelFormat(
+            "%.0f"
+        )
+
+        axis_x.setRange(
+            0.0,
+            dashboard_top_axis_max_k(
+                values_k
+            ),
+        )
+
+        axis_x.setTickCount(
+            6
+        )
+
+        axis_x.setGridLineColor(
+            QColor(
+                "#E4E7EC"
+            )
+        )
+
+        axis_font = QFont()
+
+        axis_font.setPointSize(
+            9
+        )
+
+        axis_x.setLabelsFont(
+            axis_font
+        )
+
+        axis_y.setLabelsFont(
+            axis_font
+        )
+
+        axis_x.setLabelsColor(
+            QColor(
+                "#475467"
+            )
+        )
+
+        axis_y.setLabelsColor(
+            QColor(
+                "#475467"
+            )
+        )
+
+        chart.addAxis(
+            axis_x,
+            Qt.AlignmentFlag.AlignBottom,
+        )
+
+        chart.addAxis(
+            axis_y,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+
+        series.attachAxis(
+            axis_x
+        )
+
+        series.attachAxis(
+            axis_y
+        )
+
+        def show_top_tooltip(
+            status,
+            index,
+            *_,
+        ):
+            if (
+                not status
+                or index < 0
+                or index >= len(tooltips)
+            ):
+                QToolTip.hideText()
+                return
+
+            QToolTip.showText(
+                QCursor.pos(),
+                tooltips[index],
+                self.top_chart_view,
+            )
+
+        series.hovered.connect(
+            show_top_tooltip
+        )
+
+        self._top_hover_handler = (
+            show_top_tooltip
+        )
+
+        chart_height = min(
+            720,
+            max(
+                360,
+                (
+                    len(labels)
+                    * 31
+                )
+                + 150,
+            ),
+        )
+
+        self.top_chart_view.setMinimumHeight(
+            chart_height
+        )
+
+        self.top_chart_view.setMaximumHeight(
+            chart_height
+        )
+
+        self._replace_top_chart(
+            chart
         )
 
     def _position_monthly_labels(
