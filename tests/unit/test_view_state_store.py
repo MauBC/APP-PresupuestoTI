@@ -271,3 +271,132 @@ def test_invalid_values_fall_back_to_defaults():
     )
 
     assert state.page_index == 0
+
+
+
+def test_presupuesto_table_layout_round_trip():
+    backend = FakeSettings()
+    store = UiViewStateStore(
+        backend
+    )
+
+    expected = PresupuestoViewState(
+        column_widths=(
+            ("pais", 120),
+            ("presupuestador", 210),
+            ("anio_usd", 180),
+        ),
+        sort_column="anio_usd",
+        sort_order="desc",
+    )
+
+    store.set_presupuesto_state(
+        BudgetModule.OPEX,
+        expected,
+    )
+
+    result = (
+        store.presupuesto_state(
+            BudgetModule.OPEX
+        )
+    )
+
+    assert (
+        result.column_widths
+        == expected.column_widths
+    )
+
+    assert (
+        result.sort_column
+        == "anio_usd"
+    )
+
+    assert (
+        result.sort_order
+        == "desc"
+    )
+
+
+def test_aggregation_table_layout_round_trip():
+    backend = FakeSettings()
+    store = UiViewStateStore(
+        backend
+    )
+
+    expected = AggregationViewState(
+        groups=(
+            "pais",
+            "presupuestador",
+        ),
+        column_widths=(
+            ("pais", 140),
+            ("anio_usd", 200),
+        ),
+        sort_column="pais",
+        sort_order="asc",
+    )
+
+    store.set_aggregation_state(
+        BudgetModule.CAPEX,
+        expected,
+    )
+
+    result = (
+        store.aggregation_state(
+            BudgetModule.CAPEX
+        )
+    )
+
+    assert (
+        result.column_widths
+        == expected.column_widths
+    )
+
+    assert (
+        result.sort_column
+        == "pais"
+    )
+
+    assert (
+        result.sort_order
+        == "asc"
+    )
+
+
+def test_invalid_table_layout_falls_back_safely():
+    backend = FakeSettings(
+        {
+            (
+                "modules/OPEX/"
+                "presupuesto/"
+                "column_widths"
+            ):
+                "not-json",
+            (
+                "modules/OPEX/"
+                "presupuesto/"
+                "sort_order"
+            ):
+                "INVALID",
+        }
+    )
+
+    store = UiViewStateStore(
+        backend
+    )
+
+    state = (
+        store.presupuesto_state(
+            BudgetModule.OPEX
+        )
+    )
+
+    assert (
+        state.column_widths
+        == ()
+    )
+
+    assert (
+        state.sort_order
+        == "asc"
+    )

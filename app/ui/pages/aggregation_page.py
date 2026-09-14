@@ -57,7 +57,10 @@ from app.ui.table_column_visibility import (
     apply_month_column_visibility,
 )
 from app.ui.table_productivity import (
+    capture_table_layout,
     install_table_productivity_shortcuts,
+    merge_column_widths,
+    restore_table_layout,
 )
 from app.ui.view_state_store import (
     AggregationViewState,
@@ -117,6 +120,11 @@ class AggregationPage(QWidget):
         self._loaded_once = False
         self._current_result = None
         self._months_visible = False
+
+        self._table_column_widths = ()
+        self._table_sort_column = None
+        self._table_sort_order = "asc"
+        self._restoring_table_layout = False
 
         self._setup_ui()
         self._restore_view_state()
@@ -617,6 +625,14 @@ class AggregationPage(QWidget):
             145
         )
 
+        header.sectionResized.connect(
+            self._on_table_layout_changed
+        )
+
+        header.sortIndicatorChanged.connect(
+            self._on_table_layout_changed
+        )
+
         layout.addWidget(
             self.table,
             1,
@@ -770,6 +786,18 @@ class AggregationPage(QWidget):
             state.months_visible
         )
 
+        self._table_column_widths = (
+            state.column_widths
+        )
+
+        self._table_sort_column = (
+            state.sort_column
+        )
+
+        self._table_sort_order = (
+            state.sort_order
+        )
+
         self.search_input.setText(
             state.search
         )
@@ -804,6 +832,41 @@ class AggregationPage(QWidget):
         if self._view_state_store is None:
             return
 
+        columns = (
+            self._current_result.columns
+            if self._current_result
+            is not None
+            else ()
+        )
+
+        if (
+            columns
+            and not self._restoring_table_layout
+        ):
+            (
+                current_widths,
+                sort_column,
+                sort_order,
+            ) = capture_table_layout(
+                table=self.table,
+                columns=columns,
+            )
+
+            self._table_column_widths = (
+                merge_column_widths(
+                    self._table_column_widths,
+                    current_widths,
+                )
+            )
+
+            self._table_sort_column = (
+                sort_column
+            )
+
+            self._table_sort_order = (
+                sort_order
+            )
+
         state = AggregationViewState(
             search=(
                 self.search_input.text()
@@ -815,6 +878,15 @@ class AggregationPage(QWidget):
                 combo.currentData()
                 for combo
                 in self.group_combos
+            ),
+            column_widths=(
+                self._table_column_widths
+            ),
+            sort_column=(
+                self._table_sort_column
+            ),
+            sort_order=(
+                self._table_sort_order
             ),
         )
 
@@ -829,6 +901,52 @@ class AggregationPage(QWidget):
         self,
         *_,
     ):
+        self.save_view_state()
+
+    def _restore_table_layout_state(
+        self,
+    ):
+        if self._current_result is None:
+            return
+
+        columns = tuple(
+            self._current_result.columns
+        )
+
+        if not columns:
+            return
+
+        self._restoring_table_layout = (
+            True
+        )
+
+        try:
+            restore_table_layout(
+                table=self.table,
+                columns=columns,
+                column_widths=(
+                    self._table_column_widths
+                ),
+                sort_column=(
+                    self._table_sort_column
+                ),
+                sort_order=(
+                    self._table_sort_order
+                ),
+            )
+
+        finally:
+            self._restoring_table_layout = (
+                False
+            )
+
+    def _on_table_layout_changed(
+        self,
+        *_,
+    ):
+        if self._restoring_table_layout:
+            return
+
         self.save_view_state()
 
     def invalidate(self):
@@ -1049,6 +1167,8 @@ class AggregationPage(QWidget):
             if self._months_visible
             else "Mostrar meses"
         )
+
+        self._restore_table_layout_state()
 
     def _update_selected_context(
         self,

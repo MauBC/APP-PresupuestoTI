@@ -90,7 +90,10 @@ from app.ui.table_column_visibility import (
     apply_month_column_visibility,
 )
 from app.ui.table_productivity import (
+    capture_table_layout,
     install_table_productivity_shortcuts,
+    merge_column_widths,
+    restore_table_layout,
 )
 from app.ui.view_state_store import (
     PresupuestoViewState,
@@ -144,6 +147,11 @@ class PresupuestoPage(QWidget):
         self._loaded_once = False
         self._months_visible = False
         self._current_columns = ()
+
+        self._table_column_widths = ()
+        self._table_sort_column = None
+        self._table_sort_order = "asc"
+        self._restoring_table_layout = False
 
         self._new_row_catalog_thread = None
         self._new_row_actor = None
@@ -548,6 +556,14 @@ class PresupuestoPage(QWidget):
             80
         )
 
+        header.sectionResized.connect(
+            self._on_table_layout_changed
+        )
+
+        header.sortIndicatorChanged.connect(
+            self._on_table_layout_changed
+        )
+
         layout.addWidget(
             self.table,
             1,
@@ -752,6 +768,18 @@ class PresupuestoPage(QWidget):
             state.months_visible
         )
 
+        self._table_column_widths = (
+            state.column_widths
+        )
+
+        self._table_sort_column = (
+            state.sort_column
+        )
+
+        self._table_sort_order = (
+            state.sort_order
+        )
+
         self.search_input.setText(
             state.search
         )
@@ -782,6 +810,36 @@ class PresupuestoPage(QWidget):
         if self._view_state_store is None:
             return
 
+        if (
+            self._current_columns
+            and not self._restoring_table_layout
+        ):
+            (
+                current_widths,
+                sort_column,
+                sort_order,
+            ) = capture_table_layout(
+                table=self.table,
+                columns=(
+                    self._current_columns
+                ),
+            )
+
+            self._table_column_widths = (
+                merge_column_widths(
+                    self._table_column_widths,
+                    current_widths,
+                )
+            )
+
+            self._table_sort_column = (
+                sort_column
+            )
+
+            self._table_sort_order = (
+                sort_order
+            )
+
         state = PresupuestoViewState(
             search=(
                 self.search_input.text()
@@ -798,6 +856,15 @@ class PresupuestoPage(QWidget):
             page_index=(
                 self._page_index
             ),
+            column_widths=(
+                self._table_column_widths
+            ),
+            sort_column=(
+                self._table_sort_column
+            ),
+            sort_order=(
+                self._table_sort_order
+            ),
         )
 
         self._view_state_store.set_presupuesto_state(
@@ -811,6 +878,47 @@ class PresupuestoPage(QWidget):
         self,
         *_,
     ):
+        self.save_view_state()
+
+    def _restore_table_layout_state(
+        self,
+    ):
+        if not self._current_columns:
+            return
+
+        self._restoring_table_layout = (
+            True
+        )
+
+        try:
+            restore_table_layout(
+                table=self.table,
+                columns=(
+                    self._current_columns
+                ),
+                column_widths=(
+                    self._table_column_widths
+                ),
+                sort_column=(
+                    self._table_sort_column
+                ),
+                sort_order=(
+                    self._table_sort_order
+                ),
+            )
+
+        finally:
+            self._restoring_table_layout = (
+                False
+            )
+
+    def _on_table_layout_changed(
+        self,
+        *_,
+    ):
+        if self._restoring_table_layout:
+            return
+
         self.save_view_state()
 
     def set_workspace_ready(self):
@@ -1046,6 +1154,8 @@ class PresupuestoPage(QWidget):
             if self._months_visible
             else "Mostrar meses"
         )
+
+        self._restore_table_layout_state()
 
     def _on_model_workspace_changed(
         self,

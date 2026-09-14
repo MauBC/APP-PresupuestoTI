@@ -36,6 +36,9 @@ class PresupuestoViewState:
     enabled_filter: str = "enabled"
     months_visible: bool = False
     page_index: int = 0
+    column_widths: tuple = ()
+    sort_column: str | None = None
+    sort_order: str = "asc"
 
 
 @dataclass(
@@ -46,6 +49,9 @@ class AggregationViewState:
     search: str = ""
     months_visible: bool = False
     groups: tuple = ()
+    column_widths: tuple = ()
+    sort_column: str | None = None
+    sort_order: str = "asc"
 
 
 class UiViewStateStore:
@@ -140,6 +146,108 @@ class UiViewStateStore:
             return int(
                 default
             )
+
+    @staticmethod
+    def _column_widths_value(
+        value,
+    ):
+        if not value:
+            return ()
+
+        try:
+            parsed = (
+                value
+                if isinstance(
+                    value,
+                    (list, tuple),
+                )
+                else json.loads(
+                    str(value)
+                )
+            )
+
+        except (
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+        ):
+            return ()
+
+        if not isinstance(
+            parsed,
+            (list, tuple),
+        ):
+            return ()
+
+        result = []
+        seen = set()
+
+        for item in parsed:
+            if not (
+                isinstance(
+                    item,
+                    (list, tuple),
+                )
+                and len(item) == 2
+            ):
+                continue
+
+            column = str(
+                item[0]
+            ).strip()
+
+            try:
+                width = int(
+                    item[1]
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                continue
+
+            if not column:
+                continue
+
+            if not (
+                40
+                <= width
+                <= 2000
+            ):
+                continue
+
+            if column in seen:
+                continue
+
+            seen.add(
+                column
+            )
+
+            result.append(
+                (
+                    column,
+                    width,
+                )
+            )
+
+        return tuple(
+            result
+        )
+
+    @staticmethod
+    def _sort_order_value(
+        value,
+    ) -> str:
+        return (
+            "desc"
+            if str(
+                value
+                or ""
+            ).strip().lower()
+            == "desc"
+            else "asc"
+        )
 
     def _module_key(
         self,
@@ -351,6 +459,38 @@ class UiViewStateStore:
                 )
             ),
             page_index=page_index,
+            column_widths=(
+                self._column_widths_value(
+                    self._settings.value(
+                        prefix(
+                            "column_widths"
+                        ),
+                        "",
+                    )
+                )
+            ),
+            sort_column=(
+                str(
+                    self._settings.value(
+                        prefix(
+                            "sort_column"
+                        ),
+                        "",
+                    )
+                    or ""
+                ).strip()
+                or None
+            ),
+            sort_order=(
+                self._sort_order_value(
+                    self._settings.value(
+                        prefix(
+                            "sort_order"
+                        ),
+                        "asc",
+                    )
+                )
+            ),
         )
 
     def set_presupuesto_state(
@@ -399,6 +539,35 @@ class UiViewStateStore:
                 "page_index"
             ),
             state.page_index,
+        )
+
+        self._settings.setValue(
+            prefix(
+                "column_widths"
+            ),
+            json.dumps(
+                list(
+                    state.column_widths
+                ),
+                ensure_ascii=False,
+            ),
+        )
+
+        self._settings.setValue(
+            prefix(
+                "sort_column"
+            ),
+            state.sort_column
+            or "",
+        )
+
+        self._settings.setValue(
+            prefix(
+                "sort_order"
+            ),
+            self._sort_order_value(
+                state.sort_order
+            ),
         )
 
     def aggregation_state(
@@ -471,6 +640,38 @@ class UiViewStateStore:
                 )
             ),
             groups=groups,
+            column_widths=(
+                self._column_widths_value(
+                    self._settings.value(
+                        prefix(
+                            "column_widths"
+                        ),
+                        "",
+                    )
+                )
+            ),
+            sort_column=(
+                str(
+                    self._settings.value(
+                        prefix(
+                            "sort_column"
+                        ),
+                        "",
+                    )
+                    or ""
+                ).strip()
+                or None
+            ),
+            sort_order=(
+                self._sort_order_value(
+                    self._settings.value(
+                        prefix(
+                            "sort_order"
+                        ),
+                        "asc",
+                    )
+                )
+            ),
         )
 
     def set_aggregation_state(
@@ -509,6 +710,35 @@ class UiViewStateStore:
                     state.groups
                 ),
                 ensure_ascii=False,
+            ),
+        )
+
+        self._settings.setValue(
+            prefix(
+                "column_widths"
+            ),
+            json.dumps(
+                list(
+                    state.column_widths
+                ),
+                ensure_ascii=False,
+            ),
+        )
+
+        self._settings.setValue(
+            prefix(
+                "sort_column"
+            ),
+            state.sort_column
+            or "",
+        )
+
+        self._settings.setValue(
+            prefix(
+                "sort_order"
+            ),
+            self._sort_order_value(
+                state.sort_order
             ),
         )
 
