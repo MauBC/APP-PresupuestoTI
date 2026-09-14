@@ -84,21 +84,69 @@ class PresupuestoRepository:
             for field in selected_fields
         )
 
+        module_name = str(
+            self._module_config
+            .module
+            .value
+        ).upper()
+
+        if module_name == "OPEX":
+            try:
+                rows_iterator = (
+                    self._bigquery
+                    .client
+                    .list_rows(
+                        table,
+                        selected_fields=(
+                            selected_fields
+                        ),
+                    )
+                )
+
+                arrow_table = (
+                    rows_iterator
+                    .to_arrow(
+                        create_bqstorage_client=True
+                    )
+                )
+
+                return tuple(
+                    arrow_table.to_pylist()
+                )
+
+            except Exception:
+                # Storage API es una
+                # optimizacion opcional.
+                # Si falla, se conserva
+                # la ruta REST tradicional.
+                pass
+
         rows_iterator = (
-            self._bigquery.client.list_rows(
+            self._bigquery
+            .client
+            .list_rows(
                 table,
-                selected_fields=selected_fields,
+                selected_fields=(
+                    selected_fields
+                ),
             )
         )
 
         return tuple(
             {
-                column: values.get(column)
-                for column in selected_names
+                column:
+                    values.get(
+                        column
+                    )
+                for column
+                in selected_names
             }
             for values in (
-                dict(row.items())
-                for row in rows_iterator
+                dict(
+                    row.items()
+                )
+                for row
+                in rows_iterator
             )
         )
 
