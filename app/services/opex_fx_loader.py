@@ -63,6 +63,60 @@ def _normalize_text(
     )
 
 
+def normalize_opex_country_code(
+    value,
+) -> str:
+    normalized = _normalize_text(
+        value
+    )
+
+    if not normalized:
+        return ""
+
+    return COUNTRY_CODES.get(
+        normalized,
+        normalized,
+    )
+
+
+COUNTRY_BUSINESS_NAMES = {
+    "PE": "Per\u00fa",
+    "BO": "Bolivia",
+    "EC": "Ecuador",
+    "CO": "Colombia",
+    "SV": "El Salvador",
+    "HN": "Honduras",
+    "GT": "Guatemala",
+    "PA": "Panam\u00e1",
+    "NI": "Nicaragua",
+    "MX": "M\u00e9xico",
+    "CR": "Costa Rica",
+    "CL": "Chile",
+}
+
+
+def normalize_opex_business_country(
+    value,
+) -> str:
+    text = str(
+        value
+        if value is not None
+        else ""
+    ).strip()
+
+    if not text:
+        return ""
+
+    code = normalize_opex_country_code(
+        text
+    )
+
+    return COUNTRY_BUSINESS_NAMES.get(
+        code,
+        text,
+    )
+
+
 class OpexFxLoader:
     def load(
         self,

@@ -13,6 +13,9 @@ from app.models.opex_smart_periodization import (
 from app.services.new_budget_row_service import (
     NewBudgetRowService,
 )
+from app.services.opex_fx_loader import (
+    normalize_opex_business_country,
+)
 from app.services.opex_new_row_amount_service import (
     OpexNewRowAmountService,
 )
@@ -169,7 +172,9 @@ class OpexSmartFinalizationService:
             "presupuestador":
                 presupuestador,
             "pais":
-                enrichment.pais,
+                normalize_opex_business_country(
+                    enrichment.pais
+                ),
             "compania":
                 enrichment.compania,
             "moneda_facturacion":

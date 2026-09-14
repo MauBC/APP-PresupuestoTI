@@ -275,3 +275,22 @@ def test_monthly_values_builds_all_36_columns():
             ]
             == Decimal("340.00")
         )
+
+def test_country_business_names_resolve_fx_codes():
+    cases = {
+        "Perú": "PEN",
+        "PERU": "PEN",
+        "Colombia": "COP",
+        "Bolivia": "BOB",
+        "Ecuador": "USD",
+    }
+
+    value = service()
+
+    for country, expected in cases.items():
+        assert (
+            value.local_currency(
+                country
+            )
+            == expected
+        )

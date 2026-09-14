@@ -463,3 +463,27 @@ def test_grouped_totals_respect_dashboard_filters():
         result.rows[0]["anio_usd"]
         == Decimal("80")
     )
+
+def test_page_clamps_out_of_range_page_index():
+    workspace = build_workspace()
+
+    service = (
+        PresupuestoWorkspaceAnalysisService(
+            workspace
+        )
+    )
+
+    result = service.get_page(
+        page_index=99,
+        page_size=2,
+        enabled_filter="enabled",
+    )
+
+    assert result.total_rows == 3
+    assert result.page_index == 1
+    assert len(result.rows) == 1
+
+    assert (
+        result.rows[0][SESSION_ROW_ID]
+        == 2
+    )

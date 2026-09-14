@@ -14,6 +14,9 @@ from app.models.opex_fx import (
 from app.models.opex_smart_periodization import (
     OpexSmartPeriodizedRow,
 )
+from app.services.opex_fx_loader import (
+    normalize_opex_country_code,
+)
 
 
 CENT = Decimal("0.01")
@@ -123,11 +126,11 @@ class OpexFxService:
     def _country(
         value,
     ) -> str:
-        text = str(
-            value
-            if value is not None
-            else ""
-        ).strip().upper()
+        text = (
+            normalize_opex_country_code(
+                value
+            )
+        )
 
         if not text:
             raise OpexFxError(

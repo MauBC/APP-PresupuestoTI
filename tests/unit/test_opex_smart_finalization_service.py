@@ -256,7 +256,7 @@ def test_builds_2027_business_dimensions():
 
     assert (
         value["pais"]
-        == "PE"
+        == "Per\u00fa"
     )
 
     assert (

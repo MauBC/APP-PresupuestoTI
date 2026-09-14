@@ -7,6 +7,8 @@ from openpyxl import Workbook
 from app.services.opex_fx_loader import (
     OpexFxLoadError,
     OpexFxLoader,
+    normalize_opex_country_code,
+    normalize_opex_business_country,
 )
 
 
@@ -250,3 +252,68 @@ def test_nicaragua_uses_nio_currency(
         == Decimal("36.62")
     )
 
+
+def test_country_business_names_map_to_fx_codes():
+    assert (
+        normalize_opex_country_code(
+            "Perú"
+        )
+        == "PE"
+    )
+
+    assert (
+        normalize_opex_country_code(
+            "El Salvador"
+        )
+        == "SV"
+    )
+
+    assert (
+        normalize_opex_country_code(
+            "México"
+        )
+        == "MX"
+    )
+
+    assert (
+        normalize_opex_country_code(
+            "Panamá"
+        )
+        == "PA"
+    )
+
+    assert (
+        normalize_opex_country_code(
+            "PE"
+        )
+        == "PE"
+    )
+
+def test_business_country_normalizes_code_and_name():
+    assert (
+        normalize_opex_business_country(
+            "PE"
+        )
+        == "Per\u00fa"
+    )
+
+    assert (
+        normalize_opex_business_country(
+            "Per\u00fa"
+        )
+        == "Per\u00fa"
+    )
+
+    assert (
+        normalize_opex_business_country(
+            "CO"
+        )
+        == "Colombia"
+    )
+
+    assert (
+        normalize_opex_business_country(
+            "SV"
+        )
+        == "El Salvador"
+    )

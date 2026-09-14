@@ -300,6 +300,22 @@ class PresupuestoWorkspaceAnalysisService:
                 item
             )
 
+        last_page = max(
+            0,
+            (
+                matched_rows
+                - 1
+            )
+            // page_size,
+        )
+
+        if page_index > last_page:
+            return self.get_page(
+                page_index=last_page,
+                page_size=page_size,
+                enabled_filter=filter_value,
+            )
+
         return PageResult(
             rows=tuple(
                 selected_rows
