@@ -86,6 +86,9 @@ from app.ui.dialogs.new_budget_row_dialog import (
 from app.ui.action_menu import (
     ActionMenuController,
 )
+from app.ui.status_feedback import (
+    set_status_feedback,
+)
 from app.ui.frozen_columns import (
     FrozenColumnsController,
 )
@@ -608,6 +611,12 @@ class PresupuestoPage(QWidget):
             "tableStatus"
         )
 
+        set_status_feedback(
+            self.status_label,
+            "Esperando carga del presupuesto...",
+            tone="neutral",
+        )
+
         self.previous_button = QPushButton(
             "Anterior"
         )
@@ -965,8 +974,10 @@ class PresupuestoPage(QWidget):
         self._update_import_excel_button()
         self._update_export_excel_button()
 
-        self.status_label.setText(
-            "Presupuesto local disponible."
+        set_status_feedback(
+            self.status_label,
+            "Presupuesto local disponible.",
+            tone="success",
         )
 
         self._update_navigation()
@@ -1017,9 +1028,13 @@ class PresupuestoPage(QWidget):
             False
         )
 
-        self.status_label.setText(
-            "Error al preparar presupuesto: "
-            + message
+        set_status_feedback(
+            self.status_label,
+            (
+                "Error al preparar presupuesto: "
+                + message
+            ),
+            tone="error",
         )
 
     def invalidate(self):
@@ -1096,6 +1111,14 @@ class PresupuestoPage(QWidget):
 
         self._set_loading(True)
 
+        set_status_feedback(
+            self.status_label,
+            "Cargando registros locales...",
+            tone="loading",
+        )
+
+        error_message = None
+
         try:
             result = (
                 self._analysis_service
@@ -1131,7 +1154,7 @@ class PresupuestoPage(QWidget):
             self.save_view_state()
 
         except Exception as exc:
-            self.status_label.setText(
+            error_message = (
                 "Error al cargar datos locales: "
                 f"{type(exc).__name__}: {exc}"
             )
@@ -1143,6 +1166,27 @@ class PresupuestoPage(QWidget):
         self._update_change_controls()
         self._update_distribution_button()
         self._update_enabled_action_button()
+
+        if error_message is not None:
+            set_status_feedback(
+                self.status_label,
+                error_message,
+                tone="error",
+            )
+
+        elif self._total_rows == 0:
+            set_status_feedback(
+                self.status_label,
+                "Sin registros para la vista actual.",
+                tone="empty",
+            )
+
+        else:
+            set_status_feedback(
+                self.status_label,
+                self.status_label.text(),
+                tone="neutral",
+            )
 
     def _toggle_month_columns(
         self,
@@ -1242,23 +1286,22 @@ class PresupuestoPage(QWidget):
         if not self._workspace.has_changes:
             return
 
-        result = AppMessageBox.question(
+        confirmed = ask_confirmation(
             self,
             "Descartar cambios",
-            "Se descartaran todos los "
-            "cambios realizados durante "
-            "esta simulacion.\n\n"
-            "¿Desea continuar?",
-            AppMessageBox.StandardButton.Yes
-            |
-            AppMessageBox.StandardButton.No,
-            AppMessageBox.StandardButton.No,
+            (
+                "Se descartaran todos los "
+                "cambios realizados durante "
+                "esta simulacion.\n\n"
+                "Esta accion afecta solo al "
+                "Workspace local y no modifica "
+                "BigQuery."
+            ),
+            confirm_text="Descartar cambios",
+            cancel_text="Cancelar",
         )
 
-        if (
-            result
-            != AppMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         self._workspace.discard_all()
@@ -1267,9 +1310,13 @@ class PresupuestoPage(QWidget):
             self._page_index
         )
 
-        self.status_label.setText(
-            "Todos los cambios locales "
-            "fueron descartados."
+        set_status_feedback(
+            self.status_label,
+            (
+                "Todos los cambios locales "
+                "fueron descartados."
+            ),
+            tone="success",
         )
 
         self.workspace_changed.emit()

@@ -37,6 +37,9 @@ from app.services.presupuesto_group_edit_service import (
 from app.ui.action_menu import (
     ActionMenuController,
 )
+from app.ui.status_feedback import (
+    set_status_feedback,
+)
 from app.ui.dialogs.app_message_box import (
     AppMessageBox,
     ask_confirmation,
@@ -657,6 +660,12 @@ class AggregationPage(QWidget):
             "tableStatus"
         )
 
+        set_status_feedback(
+            self.status_label,
+            "Esperando carga del presupuesto...",
+            tone="neutral",
+        )
+
         layout.addWidget(
             self.status_label
         )
@@ -752,8 +761,10 @@ class AggregationPage(QWidget):
             True
         )
 
-        self.status_label.setText(
-            "Presupuesto local disponible."
+        set_status_feedback(
+            self.status_label,
+            "Presupuesto local disponible.",
+            tone="success",
         )
 
         self._update_change_controls()
@@ -769,9 +780,13 @@ class AggregationPage(QWidget):
             False
         )
 
-        self.status_label.setText(
-            "Error al preparar presupuesto: "
-            + message
+        set_status_feedback(
+            self.status_label,
+            (
+                "Error al preparar presupuesto: "
+                + message
+            ),
+            tone="error",
         )
 
         self.group_state_button.setEnabled(
@@ -1024,17 +1039,23 @@ class AggregationPage(QWidget):
 
     def load_grouping(self):
         if not self._workspace_ready:
-            self.status_label.setText(
-                "Esperando carga del presupuesto..."
+            set_status_feedback(
+                self.status_label,
+                "Esperando carga del presupuesto...",
+                tone="neutral",
             )
             return
 
         groups = self._selected_groups()
 
         if len(groups) != len(set(groups)):
-            self.status_label.setText(
-                "No se puede repetir una columna "
-                "en la agrupacion."
+            set_status_feedback(
+                self.status_label,
+                (
+                    "No se puede repetir una columna "
+                    "en la agrupacion."
+                ),
+                tone="warning",
             )
             return
 
@@ -1042,8 +1063,10 @@ class AggregationPage(QWidget):
             False
         )
 
-        self.status_label.setText(
-            "Calculando agrupacion local..."
+        set_status_feedback(
+            self.status_label,
+            "Calculando agrupacion local...",
+            tone="loading",
         )
 
         try:
@@ -1059,9 +1082,13 @@ class AggregationPage(QWidget):
             )
 
         except Exception as exc:
-            self.status_label.setText(
-                "Error: "
-                f"{type(exc).__name__}: {exc}"
+            set_status_feedback(
+                self.status_label,
+                (
+                    "Error al calcular la agrupacion: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+                tone="error",
             )
 
         finally:
@@ -1109,10 +1136,25 @@ class AggregationPage(QWidget):
             in result.group_columns
         )
 
-        self.status_label.setText(
-            "Agrupacion local por: "
-            + group_names
-        )
+        if result.rows:
+            set_status_feedback(
+                self.status_label,
+                (
+                    "Agrupacion local por: "
+                    + group_names
+                ),
+                tone="success",
+            )
+
+        else:
+            set_status_feedback(
+                self.status_label,
+                (
+                    "La agrupacion no devolvio "
+                    "registros para la vista actual."
+                ),
+                tone="empty",
+            )
 
         has_rows = bool(
             result.rows
@@ -2073,22 +2115,21 @@ class AggregationPage(QWidget):
         if not self._workspace.has_changes:
             return
 
-        result = AppMessageBox.question(
+        confirmed = ask_confirmation(
             self,
             "Descartar cambios",
-            "Se descartaran todos los "
-            "cambios de la simulacion local.\n\n"
-            "¿Desea continuar?",
-            AppMessageBox.StandardButton.Yes
-            |
-            AppMessageBox.StandardButton.No,
-            AppMessageBox.StandardButton.No,
+            (
+                "Se descartaran todos los "
+                "cambios de la simulacion local.\n\n"
+                "Esta accion afecta solo al "
+                "Workspace local y no modifica "
+                "BigQuery."
+            ),
+            confirm_text="Descartar cambios",
+            cancel_text="Cancelar",
         )
 
-        if (
-            result
-            != AppMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         self._workspace.discard_all()
@@ -2097,9 +2138,13 @@ class AggregationPage(QWidget):
 
         self.load_grouping()
 
-        self.status_label.setText(
-            "Todos los cambios locales "
-            "fueron descartados."
+        set_status_feedback(
+            self.status_label,
+            (
+                "Todos los cambios locales "
+                "fueron descartados."
+            ),
+            tone="success",
         )
 
     def _update_change_controls(self):

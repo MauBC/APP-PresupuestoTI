@@ -118,9 +118,7 @@ class FrozenColumnsController(
         )
 
         self.view.setEditTriggers(
-            QAbstractItemView
-            .EditTrigger
-            .NoEditTriggers
+            main_table.editTriggers()
         )
 
         self.view.setHorizontalScrollMode(
