@@ -92,6 +92,9 @@ from app.ui.workers.budget_catalog_loader import (
 from app.ui.workers.budget_excel_import import (
     BudgetExcelImportThread,
 )
+from app.ui.workers.budget_excel_export import (
+    BudgetExcelExportThread,
+)
 
 
 class PresupuestoPage(QWidget):
@@ -132,6 +135,8 @@ class PresupuestoPage(QWidget):
         self._excel_import_thread = None
         self._excel_import_actor = None
         self._excel_import_path = None
+
+        self._excel_export_thread = None
 
         self._setup_ui()
 
@@ -264,6 +269,22 @@ class PresupuestoPage(QWidget):
             "informacion en el presupuesto."
         )
 
+        self.export_excel_button = QPushButton(
+            "Exportar Excel"
+        )
+
+        self.export_excel_button.setEnabled(
+            False
+        )
+
+        self.export_excel_button.setToolTip(
+            "Genera una plantilla Excel con "
+            "las filas habilitadas confirmadas "
+            "actualmente en BigQuery. "
+            "No incluye cambios locales "
+            "pendientes."
+        )
+
         self.distribute_months_button = (
             QPushButton(
                 "Distribuir meses"
@@ -311,6 +332,10 @@ class PresupuestoPage(QWidget):
 
         toolbar.addWidget(
             self.insert_button
+        )
+
+        toolbar.addWidget(
+            self.export_excel_button
         )
 
         toolbar.addWidget(
@@ -546,6 +571,10 @@ class PresupuestoPage(QWidget):
             self.show_insert_dialog
         )
 
+        self.export_excel_button.clicked.connect(
+            self.show_excel_export
+        )
+
         self.distribute_months_button.clicked.connect(
             self.show_monthly_distribution
         )
@@ -618,9 +647,18 @@ class PresupuestoPage(QWidget):
             .isRunning()
         )
 
+        export_busy = (
+            self._excel_export_thread
+            is not None
+            and
+            self._excel_export_thread
+            .isRunning()
+        )
+
         return bool(
             catalog_busy
             or import_busy
+            or export_busy
         )
 
     def set_workspace_ready(self):
@@ -636,6 +674,7 @@ class PresupuestoPage(QWidget):
 
         self._update_new_row_button()
         self._update_import_excel_button()
+        self._update_export_excel_button()
 
         self.status_label.setText(
             "Presupuesto local disponible."
@@ -670,6 +709,10 @@ class PresupuestoPage(QWidget):
         )
 
         self.import_excel_button.setEnabled(
+            False
+        )
+
+        self.export_excel_button.setEnabled(
             False
         )
 
@@ -1595,6 +1638,191 @@ class PresupuestoPage(QWidget):
 
         self._update_new_row_button()
         self._update_import_excel_button()
+
+    def _update_export_excel_button(
+        self,
+    ):
+        if not hasattr(
+            self,
+            "export_excel_button",
+        ):
+            return
+
+        running = (
+            self._excel_export_thread
+            is not None
+            and
+            self._excel_export_thread
+            .isRunning()
+        )
+
+        enabled = (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+            and
+            not self.is_busy
+        )
+
+        self.export_excel_button.setEnabled(
+            bool(enabled)
+        )
+
+        self.export_excel_button.setText(
+            (
+                "Exportando..."
+                if running
+                else "Exportar Excel"
+            )
+        )
+
+    def show_excel_export(
+        self,
+    ):
+        if not (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+        ):
+            return
+
+        if self.is_busy:
+            return
+
+        module = (
+            self._workspace
+            .module_config
+            .module
+            .value
+        )
+
+        default_name = (
+            f"{module}_2027_BigQuery.xlsx"
+        )
+
+        destination, _ = (
+            QFileDialog
+            .getSaveFileName(
+                self,
+                (
+                    "Exportar presupuesto "
+                    f"{module}"
+                ),
+                default_name,
+                (
+                    "Excel (*.xlsx);;"
+                    "Todos los archivos (*.*)"
+                ),
+            )
+        )
+
+        if not destination:
+            return
+
+        self._excel_export_thread = (
+            BudgetExcelExportThread(
+                module_config=(
+                    self._workspace
+                    .module_config
+                ),
+                destination=destination,
+                parent=self,
+            )
+        )
+
+        self._excel_export_thread.exported.connect(
+            self._on_excel_exported
+        )
+
+        self._excel_export_thread.failed.connect(
+            self._on_excel_export_failed
+        )
+
+        self._excel_export_thread.finished.connect(
+            self._on_excel_export_finished
+        )
+
+        self.status_label.setText(
+            "Leyendo datos confirmados "
+            f"de BigQuery y generando "
+            f"Excel {module}..."
+        )
+
+        self._update_new_row_button()
+        self._update_import_excel_button()
+        self._update_export_excel_button()
+        self._update_distribution_button()
+        self._update_enabled_action_button()
+
+        self._excel_export_thread.start()
+
+    def _on_excel_exported(
+        self,
+        result,
+    ):
+        pending_note = ""
+
+        if self._workspace.has_changes:
+            pending_note = (
+                "\n\nLa exportacion contiene "
+                "el estado confirmado en BigQuery. "
+                "Los cambios locales pendientes "
+                "no fueron incluidos."
+            )
+
+        AppMessageBox.information(
+            self,
+            "Excel generado",
+            (
+                f"Se exportaron "
+                f"{result.row_count:,} filas "
+                f"y {result.column_count:,} "
+                "columnas.\n\n"
+                f"Archivo:\n{result.path}"
+                f"{pending_note}"
+            ),
+        )
+
+        self.status_label.setText(
+            f"Exportacion completada: "
+            f"{result.row_count:,} filas."
+        )
+
+    def _on_excel_export_failed(
+        self,
+        message,
+    ):
+        AppMessageBox.warning(
+            self,
+            "No se pudo exportar",
+            (
+                "No fue posible generar "
+                "el archivo Excel desde "
+                "BigQuery.\n\n"
+                f"Detalle: {message}"
+            ),
+        )
+
+        self.status_label.setText(
+            "Exportacion Excel fallida."
+        )
+
+    def _on_excel_export_finished(
+        self,
+    ):
+        if (
+            self._excel_export_thread
+            is not None
+        ):
+            self._excel_export_thread.deleteLater()
+
+            self._excel_export_thread = None
+
+        self._update_new_row_button()
+        self._update_import_excel_button()
+        self._update_export_excel_button()
+        self._update_distribution_button()
+        self._update_enabled_action_button()
 
     def _update_new_row_button(
         self,

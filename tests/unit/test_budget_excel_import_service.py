@@ -511,3 +511,70 @@ def test_opex_zero_is_not_a_ghost_row(
             2,
         )
     )
+
+
+def test_opex_import_accepts_current_60_column_contract(
+    tmp_path,
+):
+    path = (
+        tmp_path
+        / "opex_current_contract.xlsx"
+    )
+
+    dataframe = (
+        make_opex_dataframe()
+        .drop(
+            columns=[
+                "vp",
+                "vp2",
+            ]
+        )
+    )
+
+    dataframe.to_excel(
+        path,
+        index=False,
+    )
+
+    result = (
+        BudgetExcelImportService(
+            OPEX_MODULE_CONFIG
+        )
+        .prepare(
+            path,
+            actor="tester",
+            row_id_factory=(
+                id_factory(
+                    "current-contract"
+                )
+            ),
+        )
+    )
+
+    assert result.is_valid
+    assert result.rows_read == 1
+    assert result.importable_count == 1
+
+    assert (
+        result.source_column_count
+        == len(
+            OPEX_MODULE_CONFIG
+            .insert_columns
+        )
+        == 60
+    )
+
+    row = result.rows[0]
+
+    assert (
+        set(
+            OPEX_MODULE_CONFIG
+            .insert_columns
+        )
+        .issubset(
+            row
+        )
+    )
+
+    assert "vp" not in row
+    assert "vp2" not in row

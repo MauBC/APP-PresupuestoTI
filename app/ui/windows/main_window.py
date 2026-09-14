@@ -757,7 +757,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Operacion en curso",
                 "Espera a que termine "
-                "la carga de catalogos "
+                "la operacion de Presupuesto "
                 "antes de cambiar de modulo.",
             )
 
@@ -1371,6 +1371,24 @@ class MainWindow(QMainWindow):
             )
         ):
             return "la consulta del historial"
+
+        presupuesto_page = getattr(
+            self,
+            "presupuesto_page",
+            None,
+        )
+
+        if (
+            presupuesto_page is not None
+            and getattr(
+                presupuesto_page,
+                "is_busy",
+                False,
+            )
+        ):
+            return (
+                "una operacion de Presupuesto"
+            )
 
         return None
 

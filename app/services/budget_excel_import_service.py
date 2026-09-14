@@ -338,6 +338,41 @@ def _row_for_excel_number(
     )
 
 
+def _ensure_current_opex_input_contract(
+    dataframe,
+):
+    result = dataframe.copy()
+
+    normalized_columns = {
+        str(column)
+        .strip()
+        .lower()
+        for column
+        in result.columns
+    }
+
+    # El cleaner historico trabaja con el
+    # contrato fuente de 62 columnas.
+    # vp y vp2 ya no forman parte del
+    # contrato actual OPEX de negocio.
+    #
+    # Se agregan solo como puente interno
+    # para mantener compatibilidad con el
+    # cleaner existente. El projector las
+    # elimina antes de persistir.
+    for column in (
+        "vp",
+        "vp2",
+    ):
+        if (
+            column
+            not in normalized_columns
+        ):
+            result[column] = None
+
+    return result
+
+
 def _context_text(
     value,
 ):
@@ -586,6 +621,12 @@ class BudgetExcelImportService:
 
             source_row_numbers = (
                 _source_row_numbers(
+                    dataframe
+                )
+            )
+
+            dataframe = (
+                _ensure_current_opex_input_contract(
                     dataframe
                 )
             )
