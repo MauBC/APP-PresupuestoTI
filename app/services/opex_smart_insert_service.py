@@ -195,6 +195,7 @@ class OpexSmartInsertService:
         allocations,
         annual_total,
         actor,
+        row_overrides=None,
         monthly_percentages=None,
         timestamp=None,
     ) -> OpexSmartInsertPreview:
@@ -288,6 +289,7 @@ class OpexSmartInsertService:
             ),
             source_total=total,
             actor=actor_value,
+            row_overrides=row_overrides,
             monthly_percentages=(
                 monthly_percentages
             ),
@@ -300,6 +302,7 @@ class OpexSmartInsertService:
         base_dimensions,
         allocations,
         actor,
+        row_overrides=None,
         monthly_percentages=None,
         timestamp=None,
     ) -> OpexSmartInsertPreview:
@@ -353,6 +356,7 @@ class OpexSmartInsertService:
             allocation_rows=amounts,
             source_total=total,
             actor=actor_value,
+            row_overrides=row_overrides,
             monthly_percentages=(
                 monthly_percentages
             ),
@@ -452,9 +456,20 @@ class OpexSmartInsertService:
         allocation_rows,
         source_total,
         actor,
+        row_overrides,
         monthly_percentages,
         timestamp,
     ):
+        overrides = (
+            self._normalize_row_overrides(
+                row_overrides
+            )
+        )
+
+        overridden_columns = set(
+            overrides
+        )
+
         month_distribution = (
             self._monthly_percentages(
                 monthly_percentages
@@ -483,6 +498,37 @@ class OpexSmartInsertService:
                 )
             )
 
+            ambiguous_values = tuple(
+                (
+                    column,
+                    options,
+                )
+                for column, options
+                in inference.ambiguous_values
+                if (
+                    column
+                    not in overridden_columns
+                )
+            )
+
+            no_data_columns = tuple(
+                column
+                for column
+                in inference.no_data_columns
+                if (
+                    column
+                    not in overridden_columns
+                )
+            )
+
+            resolved_values = dict(
+                inference.resolved_values
+            )
+
+            resolved_values.update(
+                overrides
+            )
+
             blockers = []
 
             if not (
@@ -496,10 +542,7 @@ class OpexSmartInsertService:
             for (
                 column,
                 _,
-            ) in (
-                inference
-                .ambiguous_values
-            ):
+            ) in ambiguous_values:
                 blockers.append(
                     "AMBIGUO:"
                     f"{column}"
@@ -512,8 +555,7 @@ class OpexSmartInsertService:
                     draft = (
                         self._row_service
                         .create_draft(
-                            inference
-                            .resolved_values,
+                            resolved_values,
                             actor=actor,
                             timestamp=timestamp,
                         )
@@ -554,17 +596,13 @@ class OpexSmartInsertService:
                         annual_amount
                     ),
                     dimensions=tuple(
-                        inference
-                        .resolved_values
-                        .items()
+                        resolved_values.items()
                     ),
                     ambiguous_values=(
-                        inference
-                        .ambiguous_values
+                        ambiguous_values
                     ),
                     no_data_columns=(
-                        inference
-                        .no_data_columns
+                        no_data_columns
                     ),
                     matching_row_count=(
                         inference
@@ -614,6 +652,84 @@ class OpexSmartInsertService:
                 items
             ),
         )
+
+    def _normalize_row_overrides(
+        self,
+        values,
+    ) -> dict[str, Any]:
+        if values is None:
+            return {}
+
+        try:
+            supplied = dict(
+                values
+            )
+
+        except Exception as exc:
+            raise OpexSmartInsertError(
+                "Los valores finales no "
+                "tienen un formato valido."
+            ) from exc
+
+        if (
+            self._config
+            .ceco_column
+            in supplied
+        ):
+            raise OpexSmartInsertError(
+                "CECO no puede definirse "
+                "como valor final global."
+            )
+
+        allowed = set(
+            self._config
+            .dimension_columns
+        )
+
+        invalid = sorted(
+            set(supplied)
+            - allowed
+        )
+
+        if invalid:
+            raise OpexSmartInsertError(
+                "Columnas OPEX no validas "
+                "en valores finales: "
+                + ", ".join(
+                    invalid
+                )
+            )
+
+        result = {}
+
+        for column in (
+            self._config
+            .dimension_columns
+        ):
+            if column not in supplied:
+                continue
+
+            value = supplied[
+                column
+            ]
+
+            if value is None:
+                continue
+
+            if isinstance(
+                value,
+                str,
+            ):
+                value = value.strip()
+
+                if not value:
+                    continue
+
+            result[
+                column
+            ] = value
+
+        return result
 
     def _normalize_base_dimensions(
         self,
@@ -686,12 +802,6 @@ class OpexSmartInsertService:
             result[
                 column
             ] = value
-
-        if not result:
-            raise OpexSmartInsertError(
-                "Debe indicar al menos "
-                "un dato base del gasto."
-            )
 
         return result
 

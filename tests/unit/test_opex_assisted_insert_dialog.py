@@ -166,3 +166,149 @@ def test_summary_hides_user_owned_historical_values():
     assert "Segmentacion" in text
     assert "HISTORICO" not in text
     assert "Regional" not in text
+
+def test_allocation_parser_preserves_ceco_zeroes():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        parse_opex_assisted_allocations,
+    )
+
+    result = (
+        parse_opex_assisted_allocations(
+            """
+            001001;20
+            001002;30
+            001003;50
+            """
+        )
+    )
+
+    assert result == (
+        (
+            "001001",
+            "20",
+        ),
+        (
+            "001002",
+            "30",
+        ),
+        (
+            "001003",
+            "50",
+        ),
+    )
+
+
+def test_allocation_parser_accepts_equals():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        parse_opex_assisted_allocations,
+    )
+
+    result = (
+        parse_opex_assisted_allocations(
+            "001001=100.50"
+        )
+    )
+
+    assert result == (
+        (
+            "001001",
+            "100.50",
+        ),
+    )
+
+
+def test_allocation_parser_rejects_duplicates():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        parse_opex_assisted_allocations,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="duplicado",
+    ):
+        (
+            parse_opex_assisted_allocations(
+                """
+                001001;50
+                001001;50
+                """
+            )
+        )
+
+
+def test_insert_dimensions_keep_only_historical_clues():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        build_opex_assisted_insert_dimensions,
+    )
+
+    result = (
+        build_opex_assisted_insert_dimensions(
+            values()
+        )
+    )
+
+    assert result == {
+        "nombre_gasto":
+            "LICENCIAS",
+    }
+
+    assert "ceco" not in result
+    assert "presupuestador" not in result
+    assert "origen" not in result
+
+
+def test_preview_formatter_exposes_blocked_ceco():
+    from decimal import Decimal
+    from types import SimpleNamespace
+
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        format_opex_assisted_preview,
+    )
+
+    item = SimpleNamespace(
+        ceco="001001",
+        annual_total=(
+            Decimal("100.00")
+        ),
+        matching_row_count=2,
+        is_ready=False,
+        blockers=(
+            "AMBIGUO:proveedor",
+        ),
+        ambiguous_values=(
+            (
+                "proveedor",
+                (
+                    "MICROSOFT",
+                    "ORACLE",
+                ),
+            ),
+        ),
+    )
+
+    preview = SimpleNamespace(
+        mode="AMOUNT",
+        source_total=(
+            Decimal("100.00")
+        ),
+        allocated_total=(
+            Decimal("100.00")
+        ),
+        row_count=1,
+        ready_count=0,
+        blocked_count=1,
+        items=(
+            item,
+        ),
+    )
+
+    text = (
+        format_opex_assisted_preview(
+            preview
+        )
+    )
+
+    assert "001001" in text
+    assert "BLOQUEADO" in text
+    assert "MICROSOFT" in text
+    assert "ORACLE" in text

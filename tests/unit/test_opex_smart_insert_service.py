@@ -731,3 +731,182 @@ def test_ceco_cannot_be_supplied_in_base_dimensions():
             actor="tester",
             timestamp=NOW,
         )
+
+def test_row_overrides_do_not_filter_historical_match():
+    service = build_service(
+        default_history()
+    )
+
+    preview = (
+        service.preview_amounts(
+            base_dimensions={
+                "nombre_gasto":
+                    "LICENCIAS",
+            },
+            allocations={
+                "001001":
+                    "100",
+            },
+            actor="tester",
+            row_overrides={
+                "presupuestador":
+                    "NUEVO PRESUPUESTADOR",
+                "origen":
+                    "NUEVO ORIGEN",
+                "periodo":
+                    "2027 PB",
+            },
+            timestamp=NOW,
+        )
+    )
+
+    assert preview.is_ready
+
+    row = preview.items[0].row
+
+    assert (
+        row["presupuestador"]
+        == "NUEVO PRESUPUESTADOR"
+    )
+
+    assert (
+        row["origen"]
+        == "NUEVO ORIGEN"
+    )
+
+    assert (
+        row["periodo"]
+        == "2027 PB"
+    )
+
+
+def test_overridden_historical_ambiguity_does_not_block():
+    first = historical_row(
+        ceco="001001",
+    )
+
+    second = historical_row(
+        ceco="001001",
+    )
+
+    first[
+        "presupuestador"
+    ] = "HISTORICO A"
+
+    second[
+        "presupuestador"
+    ] = "HISTORICO B"
+
+    first[
+        "origen"
+    ] = "LOCAL"
+
+    second[
+        "origen"
+    ] = "REGIONAL"
+
+    first[
+        "periodo"
+    ] = "2026"
+
+    second[
+        "periodo"
+    ] = "2025"
+
+    service = build_service(
+        (
+            first,
+            second,
+        )
+    )
+
+    preview = (
+        service.preview_amounts(
+            base_dimensions={
+                "nombre_gasto":
+                    "LICENCIAS",
+            },
+            allocations={
+                "001001":
+                    "100",
+            },
+            actor="tester",
+            row_overrides={
+                "presupuestador":
+                    "USUARIO ACTUAL",
+                "origen":
+                    "NUEVA ALTA",
+                "periodo":
+                    "2027 PB",
+            },
+            timestamp=NOW,
+        )
+    )
+
+    assert preview.is_ready
+    assert preview.blocked_count == 0
+
+    assert (
+        "presupuestador"
+        not in (
+            preview.items[0]
+            .ambiguous_map
+        )
+    )
+
+    row = preview.items[0].row
+
+    assert (
+        row["presupuestador"]
+        == "USUARIO ACTUAL"
+    )
+
+    assert (
+        row["origen"]
+        == "NUEVA ALTA"
+    )
+
+    assert (
+        row["periodo"]
+        == "2027 PB"
+    )
+
+
+def test_ceco_alone_can_drive_historical_inference():
+    service = build_service(
+        default_history()
+    )
+
+    preview = (
+        service.preview_amounts(
+            base_dimensions={},
+            allocations={
+                "001001":
+                    "100",
+            },
+            actor="tester",
+            row_overrides={
+                "presupuestador":
+                    "USUARIO",
+                "origen":
+                    "ALTA ASISTIDA",
+                "periodo":
+                    "2027 PB",
+            },
+            timestamp=NOW,
+        )
+    )
+
+    assert preview.is_ready
+
+    assert (
+        preview.items[0]
+        .matching_row_count
+        == 1
+    )
+
+    assert (
+        preview.items[0]
+        .row["ceco"]
+        == "001001"
+    )

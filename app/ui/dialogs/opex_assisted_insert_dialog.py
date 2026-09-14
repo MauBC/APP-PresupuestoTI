@@ -132,6 +132,279 @@ def _field_label(
     )
 
 
+def parse_opex_assisted_allocations(
+    text,
+):
+    rows = []
+
+    raw_text = str(
+        text
+        if text is not None
+        else ""
+    )
+
+    for line_number, raw_line in enumerate(
+        raw_text.splitlines(),
+        start=1,
+    ):
+        line = raw_line.strip()
+
+        if not line:
+            continue
+
+        if ";" in line:
+            parts = line.split(
+                ";",
+                1,
+            )
+
+        elif "=" in line:
+            parts = line.split(
+                "=",
+                1,
+            )
+
+        else:
+            raise ValueError(
+                "Linea "
+                f"{line_number}: usa "
+                "CECO;VALOR."
+            )
+
+        ceco = parts[0].strip()
+        value = parts[1].strip()
+
+        if not ceco:
+            raise ValueError(
+                "Linea "
+                f"{line_number}: "
+                "CECO vacio."
+            )
+
+        if not value:
+            raise ValueError(
+                "Linea "
+                f"{line_number}: "
+                "valor vacio."
+            )
+
+        rows.append(
+            (
+                ceco,
+                value,
+            )
+        )
+
+    if not rows:
+        raise ValueError(
+            "Ingresa al menos una "
+            "distribucion CECO."
+        )
+
+    cecos = [
+        ceco
+        for ceco, _
+        in rows
+    ]
+
+    duplicates = sorted(
+        {
+            ceco
+            for ceco in cecos
+            if cecos.count(
+                ceco
+            ) > 1
+        }
+    )
+
+    if duplicates:
+        raise ValueError(
+            "CECO duplicado: "
+            + ", ".join(
+                duplicates
+            )
+            + "."
+        )
+
+    return tuple(
+        rows
+    )
+
+
+def build_opex_assisted_insert_dimensions(
+    values,
+):
+    supplied = dict(
+        values or {}
+    )
+
+    result = {}
+
+    for column in (
+        "nombre_gasto",
+        "proveedor",
+    ):
+        clean = _clean_text(
+            supplied.get(
+                column
+            )
+        )
+
+        if clean:
+            result[
+                column
+            ] = clean
+
+    return result
+
+
+def build_opex_assisted_row_overrides(
+    values,
+):
+    supplied = dict(
+        values or {}
+    )
+
+    result = {}
+
+    missing = []
+
+    for column in USER_DIMENSIONS:
+        clean = _clean_text(
+            supplied.get(
+                column
+            )
+        )
+
+        if not clean:
+            missing.append(
+                FIELD_LABELS[
+                    column
+                ]
+            )
+            continue
+
+        result[
+            column
+        ] = clean
+
+    if missing:
+        raise ValueError(
+            "Completa los campos obligatorios: "
+            + ", ".join(
+                missing
+            )
+            + "."
+        )
+
+    result[
+        "periodo"
+    ] = "2027 PB"
+
+    return result
+
+
+def format_opex_assisted_preview(
+    preview,
+):
+    lines = [
+        (
+            "Modo: "
+            f"{preview.mode}"
+        ),
+        (
+            "Total origen: "
+            f"US$ {preview.source_total:,.2f}"
+        ),
+        (
+            "Total distribuido: "
+            f"US$ {preview.allocated_total:,.2f}"
+        ),
+        (
+            "Filas: "
+            f"{preview.row_count}"
+        ),
+        (
+            "Listas: "
+            f"{preview.ready_count}"
+        ),
+        (
+            "Bloqueadas: "
+            f"{preview.blocked_count}"
+        ),
+        "",
+    ]
+
+    for index, item in enumerate(
+        preview.items,
+        start=1,
+    ):
+        state = (
+            "LISTO"
+            if item.is_ready
+            else "BLOQUEADO"
+        )
+
+        lines.extend(
+            [
+                (
+                    f"{index}. CECO "
+                    f"{item.ceco}"
+                ),
+                (
+                    "   Estado: "
+                    f"{state}"
+                ),
+                (
+                    "   Importe anual: "
+                    f"US$ "
+                    f"{item.annual_total:,.2f}"
+                ),
+                (
+                    "   Coincidencias: "
+                    f"{item.matching_row_count}"
+                ),
+            ]
+        )
+
+        if item.blockers:
+            lines.append(
+                "   Bloqueos: "
+                + ", ".join(
+                    item.blockers
+                )
+            )
+
+        if item.ambiguous_values:
+            lines.append(
+                "   Ambiguedades:"
+            )
+
+            for (
+                column,
+                options,
+            ) in (
+                item.ambiguous_values
+            ):
+                lines.append(
+                    "      - "
+                    f"{_field_label(column)}: "
+                    + " | ".join(
+                        str(option)
+                        for option
+                        in options
+                    )
+                )
+
+        lines.append(
+            ""
+        )
+
+    return "\n".join(
+        lines
+    )
+
+
 def format_opex_assisted_inference(
     result,
 ) -> str:
