@@ -45,6 +45,9 @@ from app.config.budget_module_config import (
     BudgetModule,
 )
 
+from app.ui.change_detail_formatting import (
+    change_field_label,
+)
 from app.ui.models.result_table_model import (
     ResultTableModel,
 )
@@ -52,6 +55,54 @@ from app.ui.models.result_table_model import (
 
 MONTHLY_CHART_STEP_K = 100.0
 DASHBOARD_TABLE_MIN_HEIGHT = 300
+
+DASHBOARD_TOP_LIMITS = (
+    5,
+    10,
+    15,
+    20,
+)
+
+DASHBOARD_TOP_DIMENSIONS = {
+    BudgetModule.OPEX: (
+        "pais",
+        "presupuestador",
+        "compania",
+        "proveedor",
+        "nombre_gasto",
+        "ceco",
+        "categoria_gasto",
+        "segmentacion",
+        "moneda_facturacion",
+    ),
+    BudgetModule.CAPEX: (
+        "pais",
+        "presupuestador",
+        "responsable",
+        "vicepresidencia",
+        "gerente_aprobador",
+        "nombre_inversion",
+        "tipo_capex",
+        "tipo_activo",
+        "sociedad",
+        "codigo_cebe",
+        "codigo_ceco",
+    ),
+}
+
+DASHBOARD_DIMENSION_LABELS = {
+    "ceco": "CECO",
+    "codigo_ceco": "Codigo CECO",
+    "codigo_cebe": "Codigo CEBE",
+    "gyp": "GYP",
+    "nombre_gasto": "Nombre del gasto",
+    "nombre_inversion": "Nombre de inversion",
+    "tipo_capex": "Tipo de CAPEX",
+    "tipo_activo": "Tipo de activo",
+    "gerente_aprobador": "Gerente aprobador",
+    "categoria_gasto": "Categoria gasto",
+    "moneda_facturacion": "Moneda de facturacion",
+}
 
 
 MONTH_LABELS = {
@@ -272,6 +323,177 @@ def dashboard_filter_status_text(
     return (
         "Dashboard calculado | "
         + " | ".join(parts)
+    )
+
+
+def dashboard_dimension_label(
+    column,
+):
+    value = str(
+        column
+        if column is not None
+        else ""
+    ).strip()
+
+    if value in DASHBOARD_DIMENSION_LABELS:
+        return DASHBOARD_DIMENSION_LABELS[
+            value
+        ]
+
+    return change_field_label(
+        value
+    )
+
+
+def dashboard_top_dimension_options(
+    module_config,
+):
+    preferred = (
+        DASHBOARD_TOP_DIMENSIONS
+        .get(
+            module_config.module,
+            (),
+        )
+    )
+
+    available = set(
+        getattr(
+            module_config,
+            "groupable_columns",
+            (),
+        )
+        or ()
+    )
+
+    return tuple(
+        column
+        for column in preferred
+        if column in available
+    )
+
+
+def build_dashboard_top_rows(
+    rows,
+    *,
+    dimension,
+    top_n,
+    total_usd,
+):
+    def decimal_value(
+        value,
+    ):
+        if isinstance(
+            value,
+            Decimal,
+        ):
+            return value
+
+        return Decimal(
+            str(
+                value
+                if value is not None
+                else 0
+            )
+        )
+
+    total = decimal_value(
+        total_usd
+    )
+
+    normalized = []
+
+    for row in rows:
+        amount = decimal_value(
+            row.get(
+                "total_usd"
+            )
+        )
+
+        registros = int(
+            row.get(
+                "registros",
+                0,
+            )
+            or 0
+        )
+
+        value = row.get(
+            dimension
+        )
+
+        if (
+            value is None
+            or not str(
+                value
+            ).strip()
+        ):
+            value = "(Sin valor)"
+
+        normalized.append(
+            {
+                dimension: value,
+                "registros": registros,
+                "total_usd": amount,
+            }
+        )
+
+    normalized.sort(
+        key=lambda row: (
+            -row[
+                "total_usd"
+            ],
+            str(
+                row.get(
+                    dimension,
+                    "",
+                )
+            ).casefold(),
+        )
+    )
+
+    limit = max(
+        1,
+        int(
+            top_n
+        ),
+    )
+
+    result = []
+
+    for row in normalized[
+        :limit
+    ]:
+        amount = row[
+            "total_usd"
+        ]
+
+        if total == 0:
+            participation = (
+                Decimal("0.00")
+            )
+
+        else:
+            participation = (
+                (
+                    amount
+                    / total
+                )
+                * Decimal("100")
+            ).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+
+        result.append(
+            {
+                **row,
+                "participacion_pct":
+                    participation,
+            }
+        )
+
+    return tuple(
+        result
     )
 
 
@@ -552,6 +774,10 @@ class DashboardPage(QWidget):
         self._filters_loaded = False
 
         self._current_monthly_totals = ()
+
+        self._current_dashboard_total_usd = (
+            Decimal("0")
+        )
 
         self._setup_ui()
 
@@ -1348,6 +1574,185 @@ class DashboardPage(QWidget):
                 extra_tables_layout
             )
 
+        top_section_label = QLabel(
+            "ANALISIS TOP"
+        )
+
+        top_section_label.setObjectName(
+            "dashboardSectionEyebrow"
+        )
+
+        layout.addWidget(
+            top_section_label
+        )
+
+        top_card = QFrame()
+
+        top_card.setObjectName(
+            "dashboardCard"
+        )
+
+        top_layout = QVBoxLayout(
+            top_card
+        )
+
+        top_layout.setContentsMargins(
+            20,
+            18,
+            20,
+            18,
+        )
+
+        top_layout.setSpacing(
+            12
+        )
+
+        top_controls = QHBoxLayout()
+
+        top_controls.setSpacing(
+            10
+        )
+
+        dimension_label = QLabel(
+            "Dimension"
+        )
+
+        dimension_label.setObjectName(
+            "filterLabel"
+        )
+
+        self.top_dimension_combo = (
+            QComboBox()
+        )
+
+        self.top_dimension_combo.setMinimumWidth(
+            230
+        )
+
+        top_dimensions = (
+            dashboard_top_dimension_options(
+                module_config
+            )
+        )
+
+        for column in top_dimensions:
+            self.top_dimension_combo.addItem(
+                dashboard_dimension_label(
+                    column
+                ),
+                column,
+            )
+
+        limit_label = QLabel(
+            "Cantidad"
+        )
+
+        limit_label.setObjectName(
+            "filterLabel"
+        )
+
+        self.top_limit_combo = (
+            QComboBox()
+        )
+
+        self.top_limit_combo.setMinimumWidth(
+            110
+        )
+
+        for limit in DASHBOARD_TOP_LIMITS:
+            self.top_limit_combo.addItem(
+                f"Top {limit}",
+                limit,
+            )
+
+        default_limit_index = (
+            self.top_limit_combo.findData(
+                10
+            )
+        )
+
+        if default_limit_index >= 0:
+            self.top_limit_combo.setCurrentIndex(
+                default_limit_index
+            )
+
+        top_controls.addWidget(
+            dimension_label
+        )
+
+        top_controls.addWidget(
+            self.top_dimension_combo
+        )
+
+        top_controls.addSpacing(
+            12
+        )
+
+        top_controls.addWidget(
+            limit_label
+        )
+
+        top_controls.addWidget(
+            self.top_limit_combo
+        )
+
+        top_controls.addStretch(
+            1
+        )
+
+        self.top_title_label = QLabel(
+            "Top por dimension"
+        )
+
+        self.top_title_label.setObjectName(
+            "sectionTitle"
+        )
+
+        self.top_status_label = QLabel(
+            "Esperando calculo del Dashboard."
+        )
+
+        self.top_status_label.setObjectName(
+            "pageSubtitle"
+        )
+
+        self.top_model = ResultTableModel(
+            self,
+            amount_columns=(
+                "total_usd",
+            ),
+        )
+
+        self.top_table = (
+            self._create_table(
+                self.top_model
+            )
+        )
+
+        self.top_table.setMinimumHeight(
+            320
+        )
+
+        top_layout.addLayout(
+            top_controls
+        )
+
+        top_layout.addWidget(
+            self.top_title_label
+        )
+
+        top_layout.addWidget(
+            self.top_status_label
+        )
+
+        top_layout.addWidget(
+            self.top_table
+        )
+
+        layout.addWidget(
+            top_card
+        )
+
         monthly_container = QVBoxLayout()
 
         monthly_title = QLabel(
@@ -1683,6 +2088,14 @@ class DashboardPage(QWidget):
 
         self.clear_filters_button.clicked.connect(
             self._clear_dashboard_filters
+        )
+
+        self.top_dimension_combo.currentIndexChanged.connect(
+            self._update_top_analysis
+        )
+
+        self.top_limit_combo.currentIndexChanged.connect(
+            self._update_top_analysis
         )
 
         self.comparison_base_combo.currentIndexChanged.connect(
@@ -2545,6 +2958,132 @@ class DashboardPage(QWidget):
             for row in result.rows
         )
 
+    def _selected_top_limit(
+        self,
+    ):
+        value = (
+            self.top_limit_combo
+            .currentData()
+        )
+
+        try:
+            return max(
+                1,
+                int(value),
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return 10
+
+    def _update_top_analysis(
+        self,
+        *_,
+    ):
+        if not self._workspace_ready:
+            self.top_model.clear()
+
+            self.top_status_label.setText(
+                "Esperando carga "
+                "del presupuesto."
+            )
+
+            return
+
+        dimension = (
+            self.top_dimension_combo
+            .currentData()
+        )
+
+        if not dimension:
+            self.top_model.clear()
+
+            self.top_status_label.setText(
+                "No existen dimensiones "
+                "disponibles para analizar."
+            )
+
+            return
+
+        limit = (
+            self._selected_top_limit()
+        )
+
+        try:
+            all_rows = (
+                self._dashboard_dimension_rows(
+                    dimension
+                )
+            )
+
+            top_rows = (
+                build_dashboard_top_rows(
+                    all_rows,
+                    dimension=dimension,
+                    top_n=limit,
+                    total_usd=(
+                        self
+                        ._current_dashboard_total_usd
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            self.top_model.clear()
+
+            self.top_status_label.setText(
+                "Error al calcular el Top: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+            return
+
+        dimension_title = (
+            dashboard_dimension_label(
+                dimension
+            )
+        )
+
+        self.top_title_label.setText(
+            f"Top por {dimension_title}"
+        )
+
+        self.top_model.set_data(
+            top_rows,
+            (
+                dimension,
+                "registros",
+                "total_usd",
+                "participacion_pct",
+            ),
+        )
+
+        if not all_rows:
+            self.top_status_label.setText(
+                "Sin datos para esta "
+                "dimension con los "
+                "filtros actuales."
+            )
+
+            return
+
+        visible_count = len(
+            top_rows
+        )
+
+        total_count = len(
+            all_rows
+        )
+
+        self.top_status_label.setText(
+            f"Mostrando {visible_count:,} "
+            f"de {total_count:,} valores. "
+            "Participacion sobre el "
+            "presupuesto filtrado actual."
+        )
+
     def _position_monthly_labels(
         self,
         chart,
@@ -2957,6 +3496,10 @@ class DashboardPage(QWidget):
             f"US$ {result.total_usd:,.2f}"
         )
 
+        self._current_dashboard_total_usd = (
+            result.total_usd
+        )
+
         self.rows_value.setText(
             f"{result.total_rows:,}"
         )
@@ -3098,6 +3641,8 @@ class DashboardPage(QWidget):
                     "total_usd",
                 ),
             )
+
+        self._update_top_analysis()
 
         self._update_simulation_impact()
 
