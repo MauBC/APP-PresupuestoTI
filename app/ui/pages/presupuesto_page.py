@@ -71,6 +71,9 @@ from app.ui.dialogs.capex_amounts_dialog import (
 from app.ui.dialogs.opex_amounts_dialog import (
     OpexAmountsDialog,
 )
+from app.ui.dialogs.opex_assisted_insert_dialog import (
+    OpexAssistedInsertDialog,
+)
 from app.ui.dialogs.opex_smart_import_dialog import (
     OpexSmartImportDialog,
 )
@@ -115,6 +118,9 @@ from app.ui.workers.budget_excel_import import (
 )
 from app.ui.workers.budget_excel_export import (
     BudgetExcelExportThread,
+)
+from app.ui.workers.opex_assisted_insert_loader import (
+    OpexAssistedInferenceLoadThread,
 )
 
 
@@ -164,6 +170,9 @@ class PresupuestoPage(QWidget):
 
         self._new_row_catalog_thread = None
         self._new_row_actor = None
+
+        self._opex_assisted_thread = None
+        self._opex_assisted_actor = None
 
         self._excel_import_thread = None
         self._excel_import_actor = None
@@ -773,10 +782,19 @@ class PresupuestoPage(QWidget):
             .isRunning()
         )
 
+        assisted_busy = (
+            self._opex_assisted_thread
+            is not None
+            and
+            self._opex_assisted_thread
+            .isRunning()
+        )
+
         return bool(
             catalog_busy
             or import_busy
             or export_busy
+            or assisted_busy
         )
 
     def _restore_view_state(
@@ -2286,6 +2304,13 @@ class PresupuestoPage(QWidget):
 
         if (
             mode
+            == BudgetInsertMode.ASSISTED
+        ):
+            self.show_opex_assisted_insert()
+            return
+
+        if (
+            mode
             == BudgetInsertMode.TEMPLATE
         ):
             self.show_excel_import()
@@ -2304,6 +2329,149 @@ class PresupuestoPage(QWidget):
             "El tipo de insercion seleccionado "
             "no esta configurado.",
         )
+
+    def show_opex_assisted_insert(
+        self,
+    ):
+        if not (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+        ):
+            return
+
+        if self.is_busy:
+            return
+
+        if (
+            self._workspace
+            .module_config
+            .module
+            != BudgetModule.OPEX
+        ):
+            AppMessageBox.warning(
+                self,
+                "Alta asistida",
+                "La alta asistida solo esta "
+                "disponible para OPEX.",
+            )
+            return
+
+        try:
+            actor = (
+                resolve_current_actor()
+            )
+
+        except CurrentActorError as exc:
+            AppMessageBox.warning(
+                self,
+                "Usuario no identificado",
+                str(exc),
+            )
+            return
+
+        self._opex_assisted_actor = actor
+
+        self._opex_assisted_thread = (
+            OpexAssistedInferenceLoadThread(
+                self._workspace
+                .module_config,
+                parent=self,
+            )
+        )
+
+        self._opex_assisted_thread.loaded.connect(
+            self._on_opex_assisted_loaded
+        )
+
+        self._opex_assisted_thread.failed.connect(
+            self._on_opex_assisted_failed
+        )
+
+        self._opex_assisted_thread.finished.connect(
+            self._on_opex_assisted_finished
+        )
+
+        self.status_label.setText(
+            "Cargando historial OPEX para "
+            "la alta asistida..."
+        )
+
+        self._update_new_row_button()
+        self._update_import_excel_button()
+        self._update_export_excel_button()
+        self._update_insert_button()
+
+        self._opex_assisted_thread.start()
+
+    def _on_opex_assisted_loaded(
+        self,
+        inference_service,
+    ):
+        actor = (
+            self._opex_assisted_actor
+        )
+
+        if not actor:
+            return
+
+        dialog = (
+            OpexAssistedInsertDialog(
+                actor=actor,
+                inference_service=(
+                    inference_service
+                ),
+                parent=self,
+            )
+        )
+
+        dialog.exec()
+
+        self.status_label.setText(
+            "Alta asistida cerrada. "
+            "En este checkpoint solo se "
+            "analizo el historial; no se "
+            "agregaron filas al Workspace."
+        )
+
+    def _on_opex_assisted_failed(
+        self,
+        message,
+    ):
+        AppMessageBox.warning(
+            self,
+            "Alta asistida no disponible",
+            "No se pudo cargar el historial "
+            "OPEX necesario para la "
+            "inferencia.\n\n"
+            f"Detalle: {message}",
+        )
+
+        self.status_label.setText(
+            "No se pudo preparar "
+            "la alta asistida."
+        )
+
+    def _on_opex_assisted_finished(
+        self,
+    ):
+        if (
+            self._opex_assisted_thread
+            is not None
+        ):
+            (
+                self._opex_assisted_thread
+                .deleteLater()
+            )
+
+            self._opex_assisted_thread = None
+
+        self._opex_assisted_actor = None
+
+        self._update_new_row_button()
+        self._update_import_excel_button()
+        self._update_export_excel_button()
+        self._update_insert_button()
 
     def show_intelligent_insert(
         self,

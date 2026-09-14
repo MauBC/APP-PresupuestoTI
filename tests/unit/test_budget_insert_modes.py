@@ -1,4 +1,4 @@
-import pytest
+﻿import pytest
 
 from app.config.budget_insert_modes import (
     BudgetInsertMode,
@@ -13,7 +13,7 @@ from app.config.budget_modules import (
 pytestmark = pytest.mark.unit
 
 
-def test_opex_has_three_insert_modes():
+def test_opex_has_four_insert_modes():
     options = (
         get_budget_insert_options(
             OPEX_MODULE_CONFIG
@@ -25,6 +25,7 @@ def test_opex_has_three_insert_modes():
         for option in options
     ) == (
         BudgetInsertMode.MANUAL,
+        BudgetInsertMode.ASSISTED,
         BudgetInsertMode.INTELLIGENT,
         BudgetInsertMode.TEMPLATE,
     )
@@ -78,7 +79,27 @@ def test_manual_and_template_are_enabled():
         )
 
 
-def test_intelligent_is_visible_and_enabled():
+def test_assisted_is_visible_and_enabled_for_opex():
+    options = (
+        get_budget_insert_options(
+            OPEX_MODULE_CONFIG
+        )
+    )
+
+    assisted = next(
+        option
+        for option in options
+        if (
+            option.mode
+            == BudgetInsertMode.ASSISTED
+        )
+    )
+
+    assert assisted.title == "Alta asistida"
+    assert assisted.enabled is True
+
+
+def test_intelligent_template_keeps_existing_flow():
     options = (
         get_budget_insert_options(
             OPEX_MODULE_CONFIG
@@ -94,11 +115,15 @@ def test_intelligent_is_visible_and_enabled():
         )
     )
 
-    assert intelligent.title == "Inteligente"
+    assert (
+        intelligent.title
+        == "Inteligente por plantilla"
+    )
+
     assert intelligent.enabled is True
 
 
-def test_capex_does_not_expose_intelligent_mode():
+def test_capex_does_not_expose_opex_specific_modes():
     modes = {
         option.mode
         for option in (
@@ -107,6 +132,11 @@ def test_capex_does_not_expose_intelligent_mode():
             )
         )
     }
+
+    assert (
+        BudgetInsertMode.ASSISTED
+        not in modes
+    )
 
     assert (
         BudgetInsertMode.INTELLIGENT

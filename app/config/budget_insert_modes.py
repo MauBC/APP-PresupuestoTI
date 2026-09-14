@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+﻿from dataclasses import dataclass
 from enum import Enum
 
 from app.config.budget_module_config import (
@@ -12,6 +12,7 @@ class BudgetInsertMode(
     Enum,
 ):
     MANUAL = "MANUAL"
+    ASSISTED = "ASSISTED"
     INTELLIGENT = "INTELLIGENT"
     TEMPLATE = "TEMPLATE"
 
@@ -53,12 +54,24 @@ def get_budget_insert_options(
         module_config.module
         == BudgetModule.OPEX
     ):
+        assisted = BudgetInsertOption(
+            mode=BudgetInsertMode.ASSISTED,
+            title="Alta asistida",
+            description=(
+                "Completar datos conocidos y "
+                "usar el historial OPEX para "
+                "inferir dimensiones antes de "
+                "crear nuevas filas."
+            ),
+            enabled=True,
+        )
+
         intelligent = BudgetInsertOption(
             mode=(
                 BudgetInsertMode
                 .INTELLIGENT
             ),
-            title="Inteligente",
+            title="Inteligente por plantilla",
             description=(
                 "Importar el formato OPEX "
                 "simplificado por gasto, "
@@ -69,6 +82,7 @@ def get_budget_insert_options(
 
         return (
             manual,
+            assisted,
             intelligent,
             template,
         )
