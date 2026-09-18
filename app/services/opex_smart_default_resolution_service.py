@@ -193,9 +193,13 @@ class OpexSmartDefaultResolutionService:
                     )
                 )
 
-            selection = (
-                requirement.options[0]
-            )
+            # Conservar decisiones previas; una ambiguedad real requiere
+            # seleccion explicita y debe llegar pendiente al editor.
+            if requirement.centro_beneficio in state.cebe_selections:
+                continue
+            if len(requirement.options) != 1:
+                continue
+            selection = requirement.options[0]
 
             self._state_service.select_cebe(
                 state,
@@ -280,19 +284,6 @@ class OpexSmartDefaultResolutionService:
             raise self._blocking_error(
                 budget.sheet_name,
                 final_plan.issues,
-            )
-
-        if not getattr(
-            final_plan,
-            "cebe_resolved",
-            True,
-        ):
-            raise (
-                OpexSmartDefaultResolutionError(
-                    "La hoja "
-                    f"{budget.sheet_name} conserva "
-                    "CEBE pendientes."
-                )
             )
 
         if not getattr(

@@ -740,6 +740,7 @@ class OpexSmartImportPreparationService:
                     tipo_servicio_cg=str(
                         record.tipo_servicio_cg
                     ),
+                    selected_option=cls._cebe_option(centro_beneficio, record),
                 )
                 for (
                     centro_beneficio,
@@ -758,6 +759,7 @@ class OpexSmartImportPreparationService:
                     account_name=str(
                         account.nombre_cuenta
                     ),
+                    categoria_gasto=account.categoria_gasto,
                     atributo_2=str(
                         account.atributo_2
                     ),
@@ -879,6 +881,7 @@ class OpexSmartImportPreparationService:
             ):
                 cebe_decisions.append(
                     OpexSmartImportCebeDecision(
+                        selected_option=cls._cebe_option(centro_beneficio, record),
                         centro_beneficio=(
                             str(
                                 centro_beneficio
@@ -899,6 +902,7 @@ class OpexSmartImportPreparationService:
 
             decisions.append(
                 OpexSmartImportDecision(
+                    categoria_gasto=account.categoria_gasto,
                     sheet_name=(
                         str(
                             sheet_name

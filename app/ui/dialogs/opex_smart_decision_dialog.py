@@ -7,7 +7,9 @@ from PySide6.QtWidgets import (
     QFrame,
     QGroupBox,
     QLabel,
+    QLayout,
     QScrollArea,
+    QSizePolicy,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -188,6 +190,20 @@ class OpexSmartDecisionDialog(
                 min-height: 34px;
                 border-radius: 6px;
                 padding: 0 14px;
+                background-color: #FFFFFF;
+                color: #344054;
+                border: 1px solid #D0D5DD;
+            }
+            QPushButton#applyDecisions {
+                background-color: #2F7650;
+                color: #FFFFFF;
+                border: 1px solid #2F7650;
+                font-weight: 700;
+            }
+            QPushButton#applyDecisions:disabled {
+                background-color: #F2F4F7;
+                color: #667085;
+                border: 1px solid #D0D5DD;
             }
             """
         )
@@ -267,6 +283,10 @@ class OpexSmartDecisionDialog(
             1,
         )
 
+        self.pending_label = QLabel()
+        self.pending_label.setWordWrap(True)
+        root.addWidget(self.pending_label)
+
         decisions = {
             decision.sheet_name:
                 decision
@@ -309,6 +329,8 @@ class OpexSmartDecisionDialog(
         save_button.setText(
             "Aplicar decisiones"
         )
+        self.save_button = save_button
+        save_button.setObjectName("applyDecisions")
 
         cancel_button = (
             buttons.button(
@@ -332,6 +354,43 @@ class OpexSmartDecisionDialog(
         root.addWidget(
             buttons
         )
+        for controls in self._controls.values():
+            for combo in (controls["account"], controls["distribution"], *controls["cebes"].values()):
+                combo.currentIndexChanged.connect(self._update_pending)
+        self._update_pending()
+
+    def _update_pending(self):
+        total = 0
+        for index, (sheet_name, controls) in enumerate(self._controls.items()):
+            combos = (controls["account"], controls["distribution"], *controls["cebes"].values())
+            pending = sum(combo.currentData() is None for combo in combos)
+            total += pending
+            self.tabs.setTabText(index, f"{sheet_name} ({pending} pendientes)" if pending else sheet_name)
+        self.pending_label.setText(
+            f"Faltan {total} decisiones. Revisa las pestañas indicadas."
+            if total else "Todas las decisiones están completas. Puedes aplicar y recalcular."
+        )
+        self.save_button.setEnabled(total == 0 and bool(self._controls))
+
+    @staticmethod
+    def _make_readable_combo(combo, form):
+        combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(20)
+        detail = QLabel()
+        detail.setWordWrap(True)
+        detail.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        detail.setTextFormat(Qt.TextFormat.PlainText)
+        detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        def update_detail():
+            text = combo.currentData(Qt.ItemDataRole.ToolTipRole) or combo.currentText()
+            detail.setText(text)
+            combo.setToolTip(text)
+
+        combo.currentIndexChanged.connect(update_detail)
+        update_detail()
+        form.addRow(detail)
 
     def _build_sheet_page(
         self,
@@ -383,6 +442,7 @@ class OpexSmartDecisionDialog(
         layout = QVBoxLayout(
             content
         )
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
 
         layout.setContentsMargins(
             18,
@@ -460,6 +520,7 @@ class OpexSmartDecisionDialog(
             "Cuenta / Atributo 2",
             account_combo,
         )
+        self._make_readable_combo(account_combo, form)
 
         form.addRow(
             "Distribucion",
@@ -494,7 +555,7 @@ class OpexSmartDecisionDialog(
             if decision is not None:
                 selected_cebes = {
                     item.centro_beneficio:
-                        item.tipo_servicio_cg
+                        item
                     for item
                     in decision.cebe_decisions
                 }
@@ -503,6 +564,7 @@ class OpexSmartDecisionDialog(
                 review.cebe_choices
             ):
                 combo = QComboBox()
+                combo.addItem("Selecciona un CEBE oficial...", None)
 
                 for option in (
                     choice.options
@@ -516,10 +578,19 @@ class OpexSmartDecisionDialog(
                             " — "
                             + option.desc_cebe
                         )
+                    label += f" | {option.region_cg} / {option.sede_cg}"
 
                     combo.addItem(
                         label,
                         option,
+                    )
+                    combo.setItemData(
+                        combo.count() - 1,
+                        f"{option.desc_cebe}\n"
+                        f"Macroservicio: {option.macroservicio_cg} | Tipo: {option.tipo_servicio_cg}\n"
+                        f"Región: {option.region_cg} | Sede: {option.sede_cg}\n"
+                        f"Segmentación: {option.segmentacion}",
+                        Qt.ItemDataRole.ToolTipRole,
                     )
 
                 expected = (
@@ -530,30 +601,20 @@ class OpexSmartDecisionDialog(
                 )
 
                 if expected is not None:
-                    for index in range(
-                        combo.count()
-                    ):
-                        option = (
-                            combo.itemData(
-                                index
-                            )
-                        )
-
-                        if (
-                            option
-                            .tipo_servicio_cg
-                            == expected
-                        ):
-                            combo.setCurrentIndex(
-                                index
-                            )
-
-                            break
+                    exact = expected.selected_option
+                    candidates = [
+                        index for index in range(1, combo.count())
+                        if (combo.itemData(index) == exact if exact is not None else
+                            combo.itemData(index).tipo_servicio_cg == expected.tipo_servicio_cg)
+                    ]
+                    if len(candidates) == 1:
+                        combo.setCurrentIndex(candidates[0])
 
                 cebe_form.addRow(
                     choice.centro_beneficio,
                     combo,
                 )
+                self._make_readable_combo(combo, cebe_form)
 
                 cebe_controls[
                     choice
@@ -613,6 +674,7 @@ class OpexSmartDecisionDialog(
             )
             return
 
+        candidates = []
         for index in range(
             combo.count()
         ):
@@ -629,15 +691,11 @@ class OpexSmartDecisionDialog(
                 and
                 option.atributo_2
                 == decision.atributo_2
+                and (decision.categoria_gasto is None or
+                     option.categoria_gasto == decision.categoria_gasto)
             ):
-                combo.setCurrentIndex(
-                    index
-                )
-                return
-
-        combo.setCurrentIndex(
-            0
-        )
+                candidates.append(index)
+        combo.setCurrentIndex(candidates[0] if len(candidates) == 1 else 0)
 
     @staticmethod
     def _select_distribution(
@@ -666,6 +724,9 @@ class OpexSmartDecisionDialog(
     def _apply(
         self,
     ):
+        self._update_pending()
+        if not self.save_button.isEnabled():
+            return
         overrides = []
 
         for (

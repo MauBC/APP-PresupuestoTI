@@ -335,7 +335,7 @@ def test_uses_recommended_account():
     )
 
 
-def test_uses_first_official_cebe_option():
+def test_ambiguous_cebe_remains_pending_for_explicit_selection():
     requirement = (
         SimpleNamespace(
             centro_beneficio=(
@@ -365,22 +365,15 @@ def test_uses_first_official_cebe_option():
         )
     )
 
-    assert (
-        manager.cebe_calls
-        == [
-            (
-                "51IC000000",
-                "TESORERIA",
-            )
-        ]
-    )
+    assert manager.cebe_calls == []
+    assert current.cebe_selections == {}
+    assert result.cebe_defaults == ()
+    assert not manager.plan(current).ready
 
-    assert (
-        result.cebe_defaults
-        == (
-            "51IC000000",
-        )
-    )
+    current.cebe_selections["51IC000000"] = "FACTURACION"
+    OpexSmartDefaultResolutionService(state_service=manager).apply_budget_defaults(current)
+    assert current.cebe_selections["51IC000000"] == "FACTURACION"
+    assert manager.cebe_calls == []
 
 
 def test_rejects_unresolvable_distribution():
