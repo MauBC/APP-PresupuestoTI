@@ -21,6 +21,8 @@ class OpexSmartResolutionPlanIssue:
     code: str
     message: str
     key: str | None = None
+    excel_row: int | None = None
+    ceco: str | None = None
 
 
 @dataclass(

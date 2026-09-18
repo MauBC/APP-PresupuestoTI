@@ -8,7 +8,10 @@ from app.services.opex_template_distribution_service import (
 class OpexSmartDefaultResolutionError(
     ValueError
 ):
-    pass
+    def __init__(self, message, *, sheet_name=None, issues=()):
+        super().__init__(message)
+        self.sheet_name = sheet_name
+        self.issues = tuple(issues)
 
 
 @dataclass(
@@ -24,6 +27,32 @@ class OpexSmartDefaultDecision:
 
 
 class OpexSmartDefaultResolutionService:
+    ISSUE_PREVIEW_LIMIT = 5
+
+    @classmethod
+    def _blocking_error(cls, sheet_name, issues):
+        issues = tuple(issues)
+        lines = [f'La hoja "{sheet_name}" tiene {len(issues)} incidencias bloqueantes.']
+        for issue in issues[:cls.ISSUE_PREVIEW_LIMIT]:
+            context = []
+            if issue.excel_row is not None:
+                context.append(f"Fila Excel {issue.excel_row}")
+            if issue.ceco is not None:
+                context.append(f"CECO {issue.ceco}")
+            elif issue.key is not None:
+                context.append(f"Referencia {issue.key}")
+            prefix = " | ".join(context)
+            if prefix:
+                prefix += " | "
+            lines.append(f"{prefix}{issue.code}: {issue.message}")
+        remaining = len(issues) - cls.ISSUE_PREVIEW_LIMIT
+        if remaining > 0:
+            lines.append(f"Hay {remaining} incidencias adicionales en esta hoja.")
+        lines.append("Corrige los datos indicados y vuelve a analizar la plantilla.")
+        return OpexSmartDefaultResolutionError(
+            "\n".join(lines), sheet_name=sheet_name, issues=issues,
+        )
+
     DEFAULT_CATEGORY = (
         "Equipo inform\u00e1tico"
     )
@@ -248,20 +277,9 @@ class OpexSmartDefaultResolutionService:
         # issue: el plan lo representa como una
         # decision pendiente.
         if final_plan.issues:
-            codes = ", ".join(
-                issue.code
-                for issue
-                in final_plan.issues
-            )
-
-            raise (
-                OpexSmartDefaultResolutionError(
-                    "La hoja "
-                    f"{budget.sheet_name} conserva "
-                    "problemas despues de aplicar "
-                    "los valores seguros: "
-                    f"{codes}."
-                )
+            raise self._blocking_error(
+                budget.sheet_name,
+                final_plan.issues,
             )
 
         if not getattr(
