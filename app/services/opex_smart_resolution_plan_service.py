@@ -40,11 +40,15 @@ class OpexSmartResolutionPlanService:
         message,
         *,
         key=None,
+        excel_row=None,
+        ceco=None,
     ):
         return OpexSmartResolutionPlanIssue(
             code=code,
             message=message,
             key=key,
+            excel_row=excel_row,
+            ceco=ceco,
         )
 
     @staticmethod
@@ -56,6 +60,8 @@ class OpexSmartResolutionPlanService:
             issue.code,
             issue.message,
             issue.key,
+            issue.excel_row,
+            issue.ceco,
         )
 
         existing = {
@@ -63,6 +69,8 @@ class OpexSmartResolutionPlanService:
                 current.code,
                 current.message,
                 current.key,
+                current.excel_row,
+                current.ceco,
             )
             for current in issues
         }
@@ -269,6 +277,8 @@ class OpexSmartResolutionPlanService:
                     issue.code,
                     issue.message,
                     key=issue.ceco,
+                    excel_row=issue.excel_row,
+                    ceco=issue.ceco,
                 ),
             )
 

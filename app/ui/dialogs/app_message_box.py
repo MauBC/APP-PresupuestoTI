@@ -80,6 +80,14 @@ class AppMessageDialog(
         self._apply_style()
         self._setup_ui()
 
+        # El ancho fijo puede ser menor al sizeHint del texto. Calcular
+        # la altura con ese ancho evita recortar las ultimas lineas.
+        self.ensurePolished()
+        self.resize(
+            self.width(),
+            self.layout().totalHeightForWidth(self.width()),
+        )
+
     def _apply_style(
         self,
     ):
