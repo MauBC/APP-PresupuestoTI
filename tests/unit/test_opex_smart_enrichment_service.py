@@ -474,3 +474,75 @@ def test_ceco_problem_remains_row_level_when_account_is_ambiguous():
         result.issues[0].code
         == "CEBE_AMBIGUOUS"
     )
+
+
+
+def test_missing_cebe_is_not_a_blocking_analysis_issue():
+    base = snapshot()
+
+    value_snapshot = (
+        OpexMasterDataSnapshot(
+            accounts=base.accounts,
+            cebes={
+                "291ACC9900":
+                    base.cebes[
+                        "291ACC9900"
+                    ],
+            },
+            recoverables=(
+                base.recoverables
+            ),
+            account_conflicts=(
+                base.account_conflicts
+            ),
+            cebe_conflicts={},
+            recoverable_conflicts=(
+                base.recoverable_conflicts
+            ),
+            account_source=(
+                base.account_source
+            ),
+            cebe_source=(
+                base.cebe_source
+            ),
+            recoverable_source=(
+                base.recoverable_source
+            ),
+        )
+    )
+
+    smart = (
+        OpexSmartEnrichmentService(
+            OpexMasterEnrichmentService(
+                value_snapshot
+            )
+        )
+    )
+
+    result = smart.analyze_budget(
+        budget()
+    )
+
+    assert not result.issues
+
+    assert len(
+        result.drafts
+    ) == 2
+
+    first = result.drafts[0]
+
+    assert (
+        first.ceco
+        == "04WF2EAF93"
+    )
+
+    assert (
+        first.enrichment
+        .centro_beneficio
+        is None
+    )
+
+    assert (
+        first.enrichment.desc_cebe
+        is None
+    )

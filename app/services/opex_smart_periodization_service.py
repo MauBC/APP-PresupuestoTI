@@ -29,6 +29,7 @@ class OpexSmartPeriodizationService:
         value,
         *,
         label,
+        quantum=CENT,
     ) -> Decimal:
         if isinstance(
             value,
@@ -65,7 +66,7 @@ class OpexSmartPeriodizationService:
             )
 
         result = result.quantize(
-            CENT,
+            quantum,
             rounding=ROUND_HALF_UP,
         )
 
@@ -100,6 +101,8 @@ class OpexSmartPeriodizationService:
     def periodize_row(
         cls,
         row: OpexSmartEnrichedRow,
+        *,
+        quantum=CENT,
     ) -> OpexSmartPeriodizedRow:
         if not isinstance(
             row,
@@ -117,6 +120,7 @@ class OpexSmartPeriodizationService:
         amount = cls._money(
             row.monto_ceco,
             label="Monto CECO",
+            quantum=quantum,
         )
 
         if tipo == "MENSUAL":
@@ -135,7 +139,7 @@ class OpexSmartPeriodizationService:
                     len(MONTHS)
                 )
             ).quantize(
-                CENT,
+                quantum,
                 rounding=ROUND_HALF_UP,
             )
 
@@ -155,20 +159,20 @@ class OpexSmartPeriodizationService:
             MONTHS
         )
 
-        total_cents = int(
+        total_units = int(
             (
                 amount
-                * Decimal("100")
+                / quantum
             ).to_integral_value()
         )
 
-        base_cents = (
-            total_cents
+        base_units = (
+            total_units
             // month_count
         )
 
-        residual_cents = (
-            total_cents
+        residual_units = (
+            total_units
             % month_count
         )
 
@@ -177,17 +181,17 @@ class OpexSmartPeriodizationService:
                 month,
                 (
                     Decimal(
-                        base_cents
+                        base_units
                         + (
                             1
                             if index
-                            < residual_cents
+                            < residual_units
                             else 0
                         )
                     )
-                    / Decimal("100")
+                    * quantum
                 ).quantize(
-                    CENT,
+                    quantum,
                     rounding=ROUND_HALF_UP,
                 ),
             )
@@ -205,7 +209,7 @@ class OpexSmartPeriodizationService:
             ),
             ZERO,
         ).quantize(
-            CENT,
+            quantum,
             rounding=ROUND_HALF_UP,
         )
 
@@ -233,6 +237,8 @@ class OpexSmartPeriodizationService:
     def periodize_rows(
         cls,
         rows,
+        *,
+        quantum=CENT,
     ) -> tuple[
         OpexSmartPeriodizedRow,
         ...,
@@ -250,7 +256,8 @@ class OpexSmartPeriodizationService:
 
         return tuple(
             cls.periodize_row(
-                row
+                row,
+                quantum=quantum,
             )
             for row
             in supplied

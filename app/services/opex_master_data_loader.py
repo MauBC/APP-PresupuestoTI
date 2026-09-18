@@ -962,7 +962,18 @@ class OpexMasterDataLoader:
                 ignored_blank_keys += 1
                 continue
 
-            if not key.isdigit():
+            if (
+                re.fullmatch(
+                    r"[A-Z0-9]+",
+                    key,
+                )
+                is None
+                or not any(
+                    character.isdigit()
+                    for character
+                    in key
+                )
+            ):
                 ignored_invalid_keys += 1
                 continue
 

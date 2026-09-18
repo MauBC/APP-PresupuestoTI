@@ -151,23 +151,30 @@ def test_gyp_mapping(
     )
 
 
-def test_invalid_gyp_digit_is_rejected():
+@pytest.mark.parametrize(
+    "final_value",
+    (
+        "0",
+        "6",
+        "8",
+        "9",
+        "A",
+    ),
+)
+def test_unknown_gyp_value_returns_none(
+    final_value,
+):
     service = (
         OpexMasterEnrichmentService(
             make_snapshot()
         )
     )
 
-    with pytest.raises(
-        OpexMasterEnrichmentError,
-    ) as error:
-        service.derive_gyp_from_ceco(
-            "04WF2EAF96"
-        )
-
     assert (
-        error.value.code
-        == "INVALID_GYP_DIGIT"
+        service.derive_gyp_from_ceco(
+            f"04WF2EAF9{final_value}"
+        )
+        is None
     )
 
 
@@ -231,6 +238,55 @@ def test_single_digit_recoverable_matches_zero_padded_ceco(
         resolved_prefix
         == prefix
     )
+
+
+@pytest.mark.parametrize(
+    ("prefix", "ceco"),
+    (("1", "10ABCDEF01"), ("4", "41WF2EAF93"), ("5", "51DL1NA092")),
+)
+def test_single_digit_recoverable_does_not_capture_unpadded_ceco(prefix, ceco):
+    service = OpexMasterEnrichmentService(
+        make_snapshot(recoverables={prefix: recoverable(prefix, pais="CO")})
+    )
+
+    with pytest.raises(OpexMasterEnrichmentError) as error:
+        service.resolve_recoverable(ceco)
+
+    assert error.value.code == "RECOVERABLE_NOT_FOUND"
+    assert error.value.key == ceco
+    assert ceco in str(error.value)
+
+
+@pytest.mark.parametrize("ceco", ("51AD000SA7", "51AD000CC7"))
+def test_full_alphanumeric_recoverable_wins_over_shorter_prefixes(ceco):
+    service = OpexMasterEnrichmentService(
+        make_snapshot(recoverables={
+            "5": recoverable("5", pais="CO"),
+            "51": recoverable("51", compania="GENERAL", pais="PE"),
+            "51AD": recoverable("51AD", compania="INTERMEDIA", pais="PE"),
+            ceco: recoverable(ceco, compania="ESPECIFICA", pais="PE"),
+        })
+    )
+
+    prefix, record = service.resolve_recoverable(ceco)
+
+    assert prefix == ceco
+    assert record.compania == "ESPECIFICA"
+    assert record.pais == "PE"
+
+
+def test_zero_padded_recoverable_alias_collision_requires_resolution():
+    service = OpexMasterEnrichmentService(
+        make_snapshot(recoverables={
+            "5": recoverable("5", compania="PRIMERA"),
+            "05": recoverable("05", compania="SEGUNDA"),
+        })
+    )
+
+    with pytest.raises(OpexMasterEnrichmentError) as error:
+        service.resolve_recoverable("05ABCDEFG1")
+
+    assert error.value.code == "RECOVERABLE_PREFIX_AMBIGUOUS"
 
 
 def test_longest_recoverable_prefix_wins():
@@ -536,3 +592,76 @@ def test_full_enrichment():
         result.segmentacion
         == "SEGMENTO"
     )
+
+
+
+def test_derive_cebe_does_not_require_gyp_mapping():
+    service = (
+        OpexMasterEnrichmentService(
+            make_snapshot()
+        )
+    )
+
+    assert (
+        service.derive_cebe_from_ceco(
+            "51AD000CC6"
+        )
+        == "51AD000CC0"
+    )
+
+
+def test_missing_cebe_keeps_ceco_and_leaves_cebe_fields_blank():
+    rec = recoverable(
+        "51AD000CC6",
+        sociedad="2501",
+        compania="SLA",
+        pais="PE",
+    )
+
+    service = (
+        OpexMasterEnrichmentService(
+            make_snapshot(
+                recoverables={
+                    "51AD000CC6":
+                        rec,
+                }
+            )
+        )
+    )
+
+    result = service.enrich_ceco(
+        "51AD000CC6"
+    )
+
+    assert (
+        result.ceco
+        == "51AD000CC6"
+    )
+
+    assert (
+        result.ceco_prefix
+        == "51AD000CC6"
+    )
+
+    assert result.gyp is None
+
+    assert (
+        result.centro_beneficio
+        is None
+    )
+
+    assert result.desc_cebe is None
+
+    assert (
+        result.macroservicio_cg
+        is None
+    )
+
+    assert (
+        result.tipo_servicio_cg
+        is None
+    )
+
+    assert result.region_cg is None
+    assert result.sede_cg is None
+    assert result.segmentacion is None

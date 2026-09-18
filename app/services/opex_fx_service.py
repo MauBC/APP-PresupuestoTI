@@ -264,6 +264,7 @@ class OpexFxService:
         mf_amount,
         invoice_currency,
         country,
+        quantum=CENT,
     ):
         mf = self._money(
             mf_amount
@@ -291,7 +292,7 @@ class OpexFxService:
         )
 
         usd = raw_usd.quantize(
-            CENT,
+            quantum,
             rounding=ROUND_HALF_UP,
         )
 
@@ -299,14 +300,14 @@ class OpexFxService:
             raw_usd
             * local_rate
         ).quantize(
-            CENT,
+            quantum,
             rounding=ROUND_HALF_UP,
         )
 
         return {
             "mf":
                 mf.quantize(
-                    CENT,
+                    quantum,
                     rounding=ROUND_HALF_UP,
                 ),
             "usd":
@@ -319,6 +320,8 @@ class OpexFxService:
         self,
         periodized:
             OpexSmartPeriodizedRow,
+        *,
+        quantum=CENT,
     ):
         if not isinstance(
             periodized,
@@ -363,6 +366,7 @@ class OpexFxService:
                     country=(
                         enrichment.pais
                     ),
+                    quantum=quantum,
                 )
             )
 

@@ -1,3 +1,9 @@
+from app.config.opex_smart_precision import (
+    OPEX_SMART_MONEY_QUANTUM,
+)
+
+from functools import partial
+
 from collections import Counter
 from decimal import Decimal
 from pathlib import Path
@@ -686,6 +692,113 @@ class OpexSmartImportPreparationService:
             )
 
     @classmethod
+    def _build_pending_result(
+        cls,
+        *,
+        source,
+        workbook,
+        workbook_state,
+        review_options,
+    ) -> OpexSmartImportPreparation:
+        decisions = []
+        auto_cebe_count = 0
+
+        for (
+            sheet_name,
+            state,
+        ) in (
+            workbook_state
+            .budgets
+            .items()
+        ):
+            auto_cebe_count += len(
+                state.cebe_selections
+            )
+
+            account = (
+                state.account_selection
+            )
+
+            distribution = (
+                state.resolved_distribution
+            )
+
+            # Solo guardamos una decision previa
+            # si ya existe una cuenta realmente
+            # seleccionada en el estado.
+            if (
+                account is None
+                or distribution is None
+            ):
+                continue
+
+            cebe_decisions = tuple(
+                OpexSmartImportCebeDecision(
+                    centro_beneficio=str(
+                        centro_beneficio
+                    ),
+                    tipo_servicio_cg=str(
+                        record.tipo_servicio_cg
+                    ),
+                )
+                for (
+                    centro_beneficio,
+                    record,
+                )
+                in state
+                .cebe_selections
+                .items()
+            )
+
+            decisions.append(
+                OpexSmartImportDecision(
+                    sheet_name=str(
+                        sheet_name
+                    ),
+                    account_name=str(
+                        account.nombre_cuenta
+                    ),
+                    atributo_2=str(
+                        account.atributo_2
+                    ),
+                    distribution_mode=str(
+                        distribution.mode
+                    ),
+                    cebe_decisions=(
+                        cebe_decisions
+                    ),
+                )
+            )
+
+        return (
+            OpexSmartImportPreparation(
+                rows=(),
+                source_name=(
+                    Path(
+                        source
+                    ).name
+                ),
+                budget_count=len(
+                    workbook.budgets
+                ),
+                auto_cebe_count=(
+                    auto_cebe_count
+                ),
+                total_usd=Decimal(
+                    "0.00"
+                ),
+                country_counts=(),
+                invoice_currency_counts=(),
+                review_options=tuple(
+                    review_options
+                ),
+                decisions=tuple(
+                    decisions
+                ),
+            )
+        )
+
+    @classmethod
     def _build_result(
         cls,
         *,
@@ -934,15 +1047,35 @@ class OpexSmartImportPreparationService:
             )
         )
 
-        self._apply_overrides(
-            workbook_state=(
+        if overrides:
+            self._apply_overrides(
+                workbook_state=(
+                    workbook_state
+                ),
+                state_service=(
+                    state_service
+                ),
+                overrides=overrides,
+            )
+
+        if not (
+            state_service
+            .workbook_ready(
                 workbook_state
-            ),
-            state_service=(
-                state_service
-            ),
-            overrides=overrides,
-        )
+            )
+        ):
+            return (
+                self._build_pending_result(
+                    source=source,
+                    workbook=workbook,
+                    workbook_state=(
+                        workbook_state
+                    ),
+                    review_options=(
+                        review_options
+                    ),
+                )
+            )
 
         fx_table = (
             OpexFxLoader()
@@ -964,7 +1097,12 @@ class OpexSmartImportPreparationService:
                     state_service
                 ),
                 amount_provider=(
-                    fx.monthly_values
+                    partial(
+                        fx.monthly_values,
+                        quantum=(
+                            OPEX_SMART_MONEY_QUANTUM
+                        ),
+                    )
                 ),
             )
             .build_rows(

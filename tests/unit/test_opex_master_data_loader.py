@@ -758,3 +758,52 @@ def test_cebe_dirty_keys_are_ignored(
             snapshot.cebes
         )
     )
+
+
+
+def test_recoverable_accepts_alphanumeric_full_ceco(
+    tmp_path,
+):
+    create_valid_masters(
+        tmp_path
+    )
+
+    write_excel(
+        tmp_path
+        / "RECUPERABLES.xlsx",
+        (
+            (
+                "Inicial",
+                "Sociedad",
+                "Descripcion Sociedad",
+                "Pais",
+            ),
+            (
+                "51AD000CC7",
+                "2501",
+                "SLA",
+                "PE",
+            ),
+        ),
+    )
+
+    snapshot = (
+        OpexMasterDataLoader(
+            tmp_path
+        )
+        .load()
+    )
+
+    assert (
+        "51AD000CC7"
+        in snapshot.recoverables
+    )
+
+    assert (
+        snapshot
+        .recoverables[
+            "51AD000CC7"
+        ]
+        .pais
+        == "PE"
+    )

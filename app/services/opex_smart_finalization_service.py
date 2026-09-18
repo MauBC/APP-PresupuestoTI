@@ -1,3 +1,7 @@
+from app.config.opex_smart_precision import (
+    OPEX_SMART_MONEY_QUANTUM,
+)
+
 from datetime import datetime
 from typing import Callable, Mapping
 
@@ -260,7 +264,10 @@ class OpexSmartFinalizationService:
         periodized_rows = (
             self._periodization_service
             .periodize_rows(
-                enriched_rows
+                enriched_rows,
+                quantum=(
+                    OPEX_SMART_MONEY_QUANTUM
+                ),
             )
         )
 
@@ -301,6 +308,9 @@ class OpexSmartFinalizationService:
                     draft,
                     monthly_values=(
                         monthly_values
+                    ),
+                    quantum=(
+                        OPEX_SMART_MONEY_QUANTUM
                     ),
                 )
             )

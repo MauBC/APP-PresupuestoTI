@@ -1,3 +1,7 @@
+from app.config.opex_smart_precision import (
+    OPEX_SMART_MONEY_QUANTUM,
+)
+
 from dataclasses import dataclass
 from decimal import (
     Decimal,
@@ -355,6 +359,8 @@ class OpexTemplateDistributionService:
         cls,
         budget: OpexTemplateBudget,
         percentages,
+        *,
+        quantum=OPEX_SMART_MONEY_QUANTUM,
     ) -> OpexTemplateResolvedDistribution:
         supplied = dict(
             percentages
@@ -431,6 +437,7 @@ class OpexTemplateDistributionService:
                 .allocate(
                     normalized.items(),
                     budget.monto,
+                    quantum=quantum,
                 )
             )
 
@@ -460,6 +467,8 @@ class OpexTemplateDistributionService:
         cls,
         budget: OpexTemplateBudget,
         amounts,
+        *,
+        quantum=OPEX_SMART_MONEY_QUANTUM,
     ) -> OpexTemplateResolvedDistribution:
         supplied = dict(
             amounts
@@ -519,6 +528,7 @@ class OpexTemplateDistributionService:
                 .allocate(
                     normalized,
                     budget.monto,
+                    quantum=quantum,
                 )
             )
 
@@ -548,6 +558,8 @@ class OpexTemplateDistributionService:
         cls,
         budget: OpexTemplateBudget,
         amounts,
+        *,
+        quantum=OPEX_SMART_MONEY_QUANTUM,
     ) -> OpexTemplateResolvedDistribution:
         supplied = dict(
             amounts
@@ -591,6 +603,7 @@ class OpexTemplateDistributionService:
                 .allocate(
                     normalized,
                     budget.monto,
+                    quantum=quantum,
                 )
             )
 

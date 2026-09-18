@@ -266,6 +266,68 @@ def test_full_plan_becomes_ready():
     assert plan.ready
 
 
+def test_distribution_accepts_excel_decimal_artifact():
+    base = budget()
+
+    artifact_budget = (
+        OpexTemplateBudget(
+            sheet_name=(
+                base.sheet_name
+            ),
+            nombre_gasto=(
+                base.nombre_gasto
+            ),
+            proveedor=(
+                base.proveedor
+            ),
+            moneda_facturacion=(
+                base.moneda_facturacion
+            ),
+            numero_cuenta=(
+                base.numero_cuenta
+            ),
+            tipo=(
+                base.tipo
+            ),
+            monto=Decimal(
+                "999.9999999999999"
+            ),
+            distributions=(
+                base.distributions
+            ),
+        )
+    )
+
+    plan = (
+        plan_service()
+        .build_plan(
+            artifact_budget,
+            account_selection=(
+                ACCOUNT_A
+            ),
+            cebe_selections={
+                "04WF2EAF90":
+                    CEBE_B,
+            },
+            resolved_distribution=(
+                resolved()
+            ),
+        )
+    )
+
+    assert (
+        plan.distribution_resolved
+    )
+
+    assert not any(
+        issue.code
+        == "DISTRIBUTION_TOTAL_MISMATCH"
+        for issue in plan.issues
+    )
+
+    assert plan.ready
+
+
 def test_wrong_distribution_total_blocks_ready():
     invalid = (
         OpexTemplateResolvedDistribution(

@@ -1,4 +1,7 @@
-from decimal import Decimal
+from decimal import (
+    Decimal,
+    ROUND_HALF_UP,
+)
 
 from app.models.opex_smart_resolution_plan import (
     OpexSmartBudgetResolutionPlan,
@@ -11,6 +14,9 @@ from app.services.opex_smart_resolution_service import (
 from app.services.opex_template_distribution_service import (
     OpexTemplateDistributionService,
 )
+
+
+CENT = Decimal("0.01")
 
 
 class OpexSmartResolutionPlanService:
@@ -186,10 +192,16 @@ class OpexSmartResolutionPlanService:
                 in resolved.amounts
             ),
             Decimal("0"),
+        ).quantize(
+            CENT,
+            rounding=ROUND_HALF_UP,
         )
 
         target = Decimal(
             budget.monto
+        ).quantize(
+            CENT,
+            rounding=ROUND_HALF_UP,
         )
 
         if total != target:

@@ -278,3 +278,74 @@ def test_build_result_creates_business_summary(
         .tipo_servicio_cg
         == "TESORERIA"
     )
+
+
+
+def test_build_pending_result_allows_user_review(
+    tmp_path,
+):
+    source = valid_file(
+        tmp_path
+    )
+
+    state = SimpleNamespace(
+        account_selection=None,
+        resolved_distribution=(
+            SimpleNamespace(
+                mode="IMPORTE"
+            )
+        ),
+        cebe_selections={},
+    )
+
+    workbook = SimpleNamespace(
+        budgets=(
+            object(),
+        )
+    )
+
+    workbook_state = SimpleNamespace(
+        budgets={
+            "Sheet1": state,
+        }
+    )
+
+    review = (
+        SimpleNamespace(
+            sheet_name="Sheet1"
+        ),
+    )
+
+    result = (
+        OpexSmartImportPreparationService
+        ._build_pending_result(
+            source=source,
+            workbook=workbook,
+            workbook_state=(
+                workbook_state
+            ),
+            review_options=review,
+        )
+    )
+
+    assert result.rows == ()
+
+    assert (
+        result.budget_count
+        == 1
+    )
+
+    assert (
+        result.total_usd
+        == Decimal("0.00")
+    )
+
+    assert (
+        result.review_options
+        == review
+    )
+
+    assert (
+        result.decisions
+        == ()
+    )

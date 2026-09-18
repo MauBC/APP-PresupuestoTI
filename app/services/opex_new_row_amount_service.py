@@ -29,6 +29,8 @@ class OpexNewRowAmountError(
 
 def clean_opex_new_row_amount(
     value,
+    *,
+    quantum=CENT,
 ) -> Decimal:
     if value is None:
         return ZERO
@@ -131,7 +133,7 @@ def clean_opex_new_row_amount(
         )
 
     return amount.quantize(
-        CENT,
+        quantum,
         rounding=ROUND_HALF_UP,
     )
 
@@ -156,6 +158,7 @@ class OpexNewRowAmountService:
         draft: NewBudgetRowDraft,
         *,
         monthly_values,
+        quantum=CENT,
     ) -> NewBudgetRowDraft:
         if (
             draft.module
@@ -230,7 +233,8 @@ class OpexNewRowAmountService:
                 try:
                     amount = (
                         clean_opex_new_row_amount(
-                            supplied[column]
+                            supplied[column],
+                            quantum=quantum,
                         )
                     )
 
@@ -249,7 +253,7 @@ class OpexNewRowAmountService:
                     group
                 )
             ] = group_total.quantize(
-                CENT,
+                quantum,
                 rounding=ROUND_HALF_UP,
             )
 

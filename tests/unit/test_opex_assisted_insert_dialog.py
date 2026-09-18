@@ -312,3 +312,391 @@ def test_preview_formatter_exposes_blocked_ceco():
     assert "BLOQUEADO" in text
     assert "MICROSOFT" in text
     assert "ORACLE" in text
+
+
+class RecordingAssistedPreviewService:
+    def __init__(
+        self,
+    ):
+        self.calls = []
+
+    def preview_percentages(
+        self,
+        **kwargs,
+    ):
+        self.calls.append(
+            (
+                "PERCENTAGE",
+                kwargs,
+            )
+        )
+
+        return "percentage-preview"
+
+    def preview_amounts(
+        self,
+        **kwargs,
+    ):
+        self.calls.append(
+            (
+                "AMOUNT",
+                kwargs,
+            )
+        )
+
+        return "amount-preview"
+
+
+def test_preview_request_routes_percentage_mode():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        build_opex_assisted_preview_request,
+    )
+
+    service = (
+        RecordingAssistedPreviewService()
+    )
+
+    result = (
+        build_opex_assisted_preview_request(
+            service,
+            values=values(),
+            mode="PERCENTAGE",
+            allocations_text=(
+                "001001;40\n"
+                "001002;60"
+            ),
+            annual_total="1000",
+            actor="tester",
+        )
+    )
+
+    assert result == "percentage-preview"
+
+    mode, kwargs = service.calls[0]
+
+    assert mode == "PERCENTAGE"
+
+    assert kwargs["allocations"] == (
+        (
+            "001001",
+            "40",
+        ),
+        (
+            "001002",
+            "60",
+        ),
+    )
+
+    assert kwargs["annual_total"] == "1000"
+
+    assert kwargs["base_dimensions"] == {
+        "nombre_gasto":
+            "LICENCIAS",
+    }
+
+    assert kwargs["row_overrides"] == {
+        "presupuestador":
+            "ANA TEST",
+        "origen":
+            "Local",
+        "periodo":
+            "2027 PB",
+    }
+
+
+def test_preview_request_routes_amount_mode():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        build_opex_assisted_preview_request,
+    )
+
+    service = (
+        RecordingAssistedPreviewService()
+    )
+
+    result = (
+        build_opex_assisted_preview_request(
+            service,
+            values=values(),
+            mode="AMOUNT",
+            allocations_text=(
+                "001001;250.50\n"
+                "001002;749.50"
+            ),
+            annual_total="NO SE USA",
+            actor="tester",
+        )
+    )
+
+    assert result == "amount-preview"
+
+    mode, kwargs = service.calls[0]
+
+    assert mode == "AMOUNT"
+
+    assert kwargs["allocations"] == (
+        (
+            "001001",
+            "250.50",
+        ),
+        (
+            "001002",
+            "749.50",
+        ),
+    )
+
+    assert (
+        "annual_total"
+        not in kwargs
+    )
+
+
+def test_preview_request_requires_total_for_percentage():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        build_opex_assisted_preview_request,
+    )
+
+    service = (
+        RecordingAssistedPreviewService()
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="total anual",
+    ):
+        (
+            build_opex_assisted_preview_request(
+                service,
+                values=values(),
+                mode="PERCENTAGE",
+                allocations_text=(
+                    "001001;100"
+                ),
+                annual_total="   ",
+                actor="tester",
+            )
+        )
+
+    assert service.calls == []
+
+
+def test_preview_request_rejects_unknown_mode():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        build_opex_assisted_preview_request,
+    )
+
+    service = (
+        RecordingAssistedPreviewService()
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Modo",
+    ):
+        (
+            build_opex_assisted_preview_request(
+                service,
+                values=values(),
+                mode="UNKNOWN",
+                allocations_text=(
+                    "001001;100"
+                ),
+                annual_total="1000",
+                actor="tester",
+            )
+        )
+
+    assert service.calls == []
+
+
+class RecordingAssistedPreviewService:
+    def __init__(
+        self,
+    ):
+        self.calls = []
+
+    def preview_percentages(
+        self,
+        **kwargs,
+    ):
+        self.calls.append(
+            (
+                "PERCENTAGE",
+                kwargs,
+            )
+        )
+
+        return "percentage-preview"
+
+    def preview_amounts(
+        self,
+        **kwargs,
+    ):
+        self.calls.append(
+            (
+                "AMOUNT",
+                kwargs,
+            )
+        )
+
+        return "amount-preview"
+
+
+def test_preview_request_routes_percentage_mode():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        build_opex_assisted_preview_request,
+    )
+
+    service = (
+        RecordingAssistedPreviewService()
+    )
+
+    result = (
+        build_opex_assisted_preview_request(
+            service,
+            values=values(),
+            mode="PERCENTAGE",
+            allocations_text=(
+                "001001;40\n"
+                "001002;60"
+            ),
+            annual_total="1000",
+            actor="tester",
+        )
+    )
+
+    assert result == "percentage-preview"
+
+    mode, kwargs = service.calls[0]
+
+    assert mode == "PERCENTAGE"
+
+    assert kwargs["allocations"] == (
+        (
+            "001001",
+            "40",
+        ),
+        (
+            "001002",
+            "60",
+        ),
+    )
+
+    assert kwargs["annual_total"] == "1000"
+
+    assert kwargs["base_dimensions"] == {
+        "nombre_gasto":
+            "LICENCIAS",
+    }
+
+    assert kwargs["row_overrides"] == {
+        "presupuestador":
+            "ANA TEST",
+        "origen":
+            "Local",
+        "periodo":
+            "2027 PB",
+    }
+
+
+def test_preview_request_routes_amount_mode():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        build_opex_assisted_preview_request,
+    )
+
+    service = (
+        RecordingAssistedPreviewService()
+    )
+
+    result = (
+        build_opex_assisted_preview_request(
+            service,
+            values=values(),
+            mode="AMOUNT",
+            allocations_text=(
+                "001001;250.50\n"
+                "001002;749.50"
+            ),
+            annual_total="NO SE USA",
+            actor="tester",
+        )
+    )
+
+    assert result == "amount-preview"
+
+    mode, kwargs = service.calls[0]
+
+    assert mode == "AMOUNT"
+
+    assert kwargs["allocations"] == (
+        (
+            "001001",
+            "250.50",
+        ),
+        (
+            "001002",
+            "749.50",
+        ),
+    )
+
+    assert (
+        "annual_total"
+        not in kwargs
+    )
+
+
+def test_preview_request_requires_total_for_percentage():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        build_opex_assisted_preview_request,
+    )
+
+    service = (
+        RecordingAssistedPreviewService()
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="total anual",
+    ):
+        (
+            build_opex_assisted_preview_request(
+                service,
+                values=values(),
+                mode="PERCENTAGE",
+                allocations_text=(
+                    "001001;100"
+                ),
+                annual_total="   ",
+                actor="tester",
+            )
+        )
+
+    assert service.calls == []
+
+
+def test_preview_request_rejects_unknown_mode():
+    from app.ui.dialogs.opex_assisted_insert_dialog import (
+        build_opex_assisted_preview_request,
+    )
+
+    service = (
+        RecordingAssistedPreviewService()
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Modo",
+    ):
+        (
+            build_opex_assisted_preview_request(
+                service,
+                values=values(),
+                mode="UNKNOWN",
+                allocations_text=(
+                    "001001;100"
+                ),
+                annual_total="1000",
+                actor="tester",
+            )
+        )
+
+    assert service.calls == []

@@ -16,6 +16,9 @@ from PySide6.QtWidgets import (
 from app.models.opex_smart_import import (
     OpexSmartImportSheetOverride,
 )
+from app.ui.dialogs.app_message_box import (
+    AppMessageBox,
+)
 
 
 class OpexSmartDecisionDialog(
@@ -216,9 +219,10 @@ class OpexSmartDecisionDialog(
         )
 
         subtitle = QLabel(
-            "La aplicacion ya eligio valores "
-            "recomendados. Puedes modificarlos "
-            "antes de importar."
+            "La aplicacion aplico valores seguros "
+            "cuando fue posible. Cuando existan "
+            "varias alternativas oficiales debes "
+            "elegir la correcta antes de importar."
         )
 
         subtitle.setObjectName(
@@ -409,12 +413,20 @@ class OpexSmartDecisionDialog(
 
         account_combo = QComboBox()
 
+        account_combo.addItem(
+            "Selecciona una opcion oficial...",
+            None,
+        )
+
         for option in (
             review.account_options
         ):
             label = (
-                f"{option.nombre_cuenta} "
-                f"— {option.atributo_2}"
+                f"{option.categoria_gasto}"
+                " | "
+                f"{option.nombre_cuenta}"
+                " | "
+                f"{option.atributo_2}"
             )
 
             account_combo.addItem(
@@ -596,6 +608,9 @@ class OpexSmartDecisionDialog(
         decision,
     ):
         if decision is None:
+            combo.setCurrentIndex(
+                0
+            )
             return
 
         for index in range(
@@ -604,6 +619,9 @@ class OpexSmartDecisionDialog(
             option = combo.itemData(
                 index
             )
+
+            if option is None:
+                continue
 
             if (
                 option.nombre_cuenta
@@ -615,8 +633,11 @@ class OpexSmartDecisionDialog(
                 combo.setCurrentIndex(
                     index
                 )
-
                 return
+
+        combo.setCurrentIndex(
+            0
+        )
 
     @staticmethod
     def _select_distribution(
@@ -656,12 +677,36 @@ class OpexSmartDecisionDialog(
                 .currentData()
             )
 
+            if account is None:
+                AppMessageBox.warning(
+                    self,
+                    "Decision pendiente",
+                    (
+                        "Selecciona una opcion "
+                        "oficial de cuenta para "
+                        f"{sheet_name}."
+                    ),
+                )
+                return
+
             distribution_mode = (
                 controls[
                     "distribution"
                 ]
                 .currentData()
             )
+
+            if distribution_mode is None:
+                AppMessageBox.warning(
+                    self,
+                    "Decision pendiente",
+                    (
+                        "Selecciona una "
+                        "distribucion para "
+                        f"{sheet_name}."
+                    ),
+                )
+                return
 
             cebes = tuple(
                 combo.currentData()

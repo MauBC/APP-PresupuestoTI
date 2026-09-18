@@ -1,4 +1,5 @@
 ﻿from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFormLayout,
     QFrame,
@@ -8,6 +9,10 @@
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
+)
+
+from app.services.opex_smart_insert_service import (
+    OpexSmartInsertService,
 )
 
 
@@ -304,6 +309,83 @@ def build_opex_assisted_row_overrides(
     return result
 
 
+def build_opex_assisted_preview_request(
+    service,
+    *,
+    values,
+    mode,
+    allocations_text,
+    annual_total,
+    actor,
+):
+    allocations = (
+        parse_opex_assisted_allocations(
+            allocations_text
+        )
+    )
+
+    base_dimensions = (
+        build_opex_assisted_insert_dimensions(
+            values
+        )
+    )
+
+    row_overrides = (
+        build_opex_assisted_row_overrides(
+            values
+        )
+    )
+
+    normalized_mode = str(
+        mode
+        if mode is not None
+        else ""
+    ).strip().upper()
+
+    if normalized_mode == "PERCENTAGE":
+        total = _clean_text(
+            annual_total
+        )
+
+        if not total:
+            raise ValueError(
+                "Ingresa el total anual "
+                "para distribuir por porcentaje."
+            )
+
+        return (
+            service.preview_percentages(
+                base_dimensions=(
+                    base_dimensions
+                ),
+                allocations=allocations,
+                annual_total=total,
+                actor=actor,
+                row_overrides=(
+                    row_overrides
+                ),
+            )
+        )
+
+    if normalized_mode == "AMOUNT":
+        return (
+            service.preview_amounts(
+                base_dimensions=(
+                    base_dimensions
+                ),
+                allocations=allocations,
+                actor=actor,
+                row_overrides=(
+                    row_overrides
+                ),
+            )
+        )
+
+    raise ValueError(
+        "Modo de distribucion no valido."
+    )
+
+
 def format_opex_assisted_preview(
     preview,
 ):
@@ -551,6 +633,13 @@ class OpexAssistedInsertDialog(
             inference_service
         )
 
+        self._insert_service = (
+            OpexSmartInsertService(
+                inference_service
+            )
+        )
+
+        self._preview = None
         self._inputs = {}
 
         self.setObjectName(
@@ -562,8 +651,8 @@ class OpexAssistedInsertDialog(
         )
 
         self.setMinimumSize(
+            820,
             760,
-            620,
         )
 
         self._apply_style()
@@ -606,6 +695,14 @@ class OpexAssistedInsertDialog(
 
             QLineEdit:focus {
                 border: 2px solid #2F7650;
+            }
+
+            QComboBox {
+                background-color: #FFFFFF;
+                color: #1F2937;
+                border: 1px solid #B7C9C0;
+                border-radius: 6px;
+                padding: 7px 9px;
             }
 
             QPlainTextEdit {
@@ -666,10 +763,10 @@ class OpexAssistedInsertDialog(
         )
 
         subtitle = QLabel(
-            "Indica Presupuestador y Origen. "
-            "Luego proporciona al menos Gasto, "
-            "Proveedor o CECO para consultar "
-            "relaciones historicas."
+            "Indica Presupuestador y Origen, "
+            "agrega referencias del gasto si "
+            "las conoces y distribuye el total "
+            "entre uno o varios CECO."
         )
 
         subtitle.setObjectName(
@@ -743,7 +840,8 @@ class OpexAssistedInsertDialog(
 
         for column in (
             *USER_DIMENSIONS,
-            *INFERENCE_DIMENSIONS,
+            "nombre_gasto",
+            "proveedor",
         ):
             input_widget = QLineEdit()
 
@@ -768,12 +866,110 @@ class OpexAssistedInsertDialog(
             panel
         )
 
+        distribution_panel = QFrame()
+
+        distribution_panel.setObjectName(
+            "assistedFormPanel"
+        )
+
+        distribution_form = QFormLayout(
+            distribution_panel
+        )
+
+        distribution_form.setContentsMargins(
+            18,
+            16,
+            18,
+            16,
+        )
+
+        self.allocation_mode_combo = QComboBox()
+
+        self.allocation_mode_combo.addItem(
+            "Por porcentaje",
+            "PERCENTAGE",
+        )
+
+        self.allocation_mode_combo.addItem(
+            "Por importe",
+            "AMOUNT",
+        )
+
+        self.allocation_mode_combo.currentIndexChanged.connect(
+            self._allocation_mode_changed
+        )
+
+        distribution_form.addRow(
+            "Modo:",
+            self.allocation_mode_combo,
+        )
+
+        self.annual_total_input = QLineEdit()
+
+        self.annual_total_input.setPlaceholderText(
+            "Ej. 100000.00"
+        )
+
+        distribution_form.addRow(
+            "Total anual (USD):",
+            self.annual_total_input,
+        )
+
+        self.allocations_input = QPlainTextEdit()
+
+        self.allocations_input.setMinimumHeight(
+            110
+        )
+
+        distribution_form.addRow(
+            "CECO ; valor:",
+            self.allocations_input,
+        )
+
+        allocation_help = QLabel(
+            "Usa una linea por CECO. "
+            "Ejemplo: 253OP040R2;40"
+        )
+
+        allocation_help.setObjectName(
+            "assistedSubtitle"
+        )
+
+        allocation_help.setWordWrap(
+            True
+        )
+
+        distribution_form.addRow(
+            "",
+            allocation_help,
+        )
+
+        layout.addWidget(
+            distribution_panel
+        )
+
+        self.preview_button = QPushButton(
+            "Generar vista previa"
+        )
+
+        self.preview_button.setObjectName(
+            "analyzeButton"
+        )
+
+        self.preview_button.clicked.connect(
+            self._generate_preview
+        )
+
+        layout.addWidget(
+            self.preview_button
+        )
+
         self.analysis_button = QPushButton(
-            "Analizar coincidencias"
+            "Analizar referencia historica"
         )
 
         self.analysis_button.setObjectName(
-            "analyzeButton"
+            "closeButton"
         )
 
         self.analysis_button.clicked.connect(
@@ -783,6 +979,8 @@ class OpexAssistedInsertDialog(
         layout.addWidget(
             self.analysis_button
         )
+
+        self._allocation_mode_changed()
 
         self.status_label = QLabel(
             "Todavia no se ha realizado "
@@ -804,8 +1002,8 @@ class OpexAssistedInsertDialog(
         )
 
         self.result_box.setPlaceholderText(
-            "El resultado de la inferencia "
-            "aparecera aqui."
+            "La vista previa o el analisis "
+            "historico apareceran aqui."
         )
 
         layout.addWidget(
@@ -836,6 +1034,110 @@ class OpexAssistedInsertDialog(
         layout.addLayout(
             actions
         )
+
+    def _allocation_mode_changed(
+        self,
+        *_,
+    ):
+        mode = (
+            self.allocation_mode_combo
+            .currentData()
+        )
+
+        is_percentage = (
+            mode == "PERCENTAGE"
+        )
+
+        self.annual_total_input.setEnabled(
+            is_percentage
+        )
+
+        if is_percentage:
+            self.annual_total_input.setPlaceholderText(
+                "Ej. 100000.00"
+            )
+
+            self.allocations_input.setPlaceholderText(
+                "253OP040R2;40\n"
+                "253OP040R3;35\n"
+                "253OP040R4;25"
+            )
+
+        else:
+            self.annual_total_input.setPlaceholderText(
+                "Se calcula automaticamente"
+            )
+
+            self.allocations_input.setPlaceholderText(
+                "253OP040R2;40000\n"
+                "253OP040R3;35000\n"
+                "253OP040R4;25000"
+            )
+
+        self._preview = None
+
+    def _generate_preview(
+        self,
+    ):
+        try:
+            preview = (
+                build_opex_assisted_preview_request(
+                    self._insert_service,
+                    values=self.values(),
+                    mode=(
+                        self.allocation_mode_combo
+                        .currentData()
+                    ),
+                    allocations_text=(
+                        self.allocations_input
+                        .toPlainText()
+                    ),
+                    annual_total=(
+                        self.annual_total_input
+                        .text()
+                    ),
+                    actor=self._actor,
+                )
+            )
+
+        except Exception as exc:
+            self._preview = None
+            self.result_box.clear()
+
+            self._set_status(
+                (
+                    f"{type(exc).__name__}: "
+                    f"{exc}"
+                ),
+                tone="error",
+            )
+
+            return
+
+        self._preview = preview
+
+        self.result_box.setPlainText(
+            format_opex_assisted_preview(
+                preview
+            )
+        )
+
+        if preview.is_ready:
+            self._set_status(
+                "Vista previa lista. "
+                f"{preview.ready_count:,} fila(s) "
+                "pueden generarse de forma segura.",
+                tone="success",
+            )
+
+        else:
+            self._set_status(
+                "Vista previa generada, pero "
+                f"{preview.blocked_count:,} fila(s) "
+                "requieren resolver historial "
+                "o ambiguedades.",
+                tone="warning",
+            )
 
     def values(
         self,

@@ -19,6 +19,24 @@ from app.services.opex_template_distribution_service import (
 pytestmark = pytest.mark.unit
 
 
+DEFAULT_ACCOUNT_GROUP = (
+    SimpleNamespace(
+        categoria_gasto=(
+            OpexSmartDefaultResolutionService
+            .DEFAULT_CATEGORY
+        ),
+        nombre_cuenta=(
+            OpexSmartDefaultResolutionService
+            .DEFAULT_ACCOUNT_NAME
+        ),
+        atributos_2=(
+            OpexSmartDefaultResolutionService
+            .DEFAULT_ATTRIBUTE_2,
+        ),
+    )
+)
+
+
 def budget(
     *,
     percentages=True,
@@ -84,10 +102,20 @@ class FakeStateService:
     def __init__(
         self,
         requirements=(),
+        account_groups=None,
     ):
         self.requirements = tuple(
             requirements
         )
+
+        self.account_groups = tuple(
+            (
+                DEFAULT_ACCOUNT_GROUP,
+            )
+            if account_groups is None
+            else account_groups
+        )
+
         self.account_calls = []
         self.cebe_calls = []
 
@@ -97,10 +125,17 @@ class FakeStateService:
         **kwargs,
     ):
         current.account_selection = (
-            kwargs
+            SimpleNamespace(
+                **kwargs
+            )
         )
+
         self.account_calls.append(
             kwargs
+        )
+
+        return (
+            current.account_selection
         )
 
     def select_cebe(
@@ -157,11 +192,25 @@ class FakeStateService:
         )
 
         return SimpleNamespace(
+            account_groups=(
+                self.account_groups
+            ),
+            account_resolved=(
+                current.account_selection
+                is not None
+            ),
             cebe_requirements=(
                 self.requirements
             ),
+            cebe_resolved=(
+                cebe_ready
+            ),
             distribution_status=(
                 distribution_status
+            ),
+            distribution_resolved=(
+                current.resolved_distribution
+                is not None
             ),
             issues=(),
             ready=ready,
@@ -385,5 +434,155 @@ def test_applies_defaults_to_full_workbook():
         for current in (
             first,
             second,
+        )
+    )
+
+
+
+def test_multiple_official_accounts_remain_pending_for_user():
+    current = state()
+
+    groups = (
+        SimpleNamespace(
+            categoria_gasto=(
+                "Licencias / Suscripciones"
+            ),
+            nombre_cuenta=(
+                "Consultoria TI"
+            ),
+            atributos_2=(
+                "GASTOS TI",
+                "OTROS GASTOS",
+            ),
+        ),
+        SimpleNamespace(
+            categoria_gasto=(
+                "Licencias / Suscripciones"
+            ),
+            nombre_cuenta=(
+                "Mantenimiento de Licencias "
+                "Infraestructura TI"
+            ),
+            atributos_2=(
+                "GASTOS TI",
+            ),
+        ),
+    )
+
+    manager = FakeStateService(
+        account_groups=groups
+    )
+
+    result = (
+        OpexSmartDefaultResolutionService(
+            state_service=manager
+        )
+        .apply_budget_defaults(
+            current
+        )
+    )
+
+    assert (
+        current.account_selection
+        is None
+    )
+
+    assert result.account_name is None
+
+    assert (
+        current.resolved_distribution
+        is not None
+    )
+
+
+def test_single_official_account_is_selected_safely():
+    current = state()
+
+    groups = (
+        SimpleNamespace(
+            categoria_gasto=(
+                "Licencias / Suscripciones"
+            ),
+            nombre_cuenta=(
+                "Consultoria TI"
+            ),
+            atributos_2=(
+                "GASTOS TI",
+            ),
+        ),
+    )
+
+    manager = FakeStateService(
+        account_groups=groups
+    )
+
+    result = (
+        OpexSmartDefaultResolutionService(
+            state_service=manager
+        )
+        .apply_budget_defaults(
+            current
+        )
+    )
+
+    assert (
+        current
+        .account_selection
+        .nombre_cuenta
+        == "Consultoria TI"
+    )
+
+    assert (
+        result.account_name
+        == "Consultoria TI"
+    )
+
+
+def test_workbook_defaults_allow_pending_account_decision():
+    current = state()
+
+    groups = (
+        SimpleNamespace(
+            categoria_gasto="CAT",
+            nombre_cuenta="CUENTA",
+            atributos_2=(
+                "A",
+                "B",
+            ),
+        ),
+    )
+
+    manager = FakeStateService(
+        account_groups=groups
+    )
+
+    workbook_state = (
+        SimpleNamespace(
+            budgets={
+                "Sheet1":
+                    current,
+            }
+        )
+    )
+
+    decisions = (
+        OpexSmartDefaultResolutionService(
+            state_service=manager
+        )
+        .apply_workbook_defaults(
+            workbook_state
+        )
+    )
+
+    assert len(decisions) == 1
+
+    assert (
+        current.account_selection
+        is None
+    )
+
+    assert not (
+        manager.workbook_ready(
+            workbook_state
         )
     )

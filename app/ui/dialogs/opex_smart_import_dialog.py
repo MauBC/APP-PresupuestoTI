@@ -789,17 +789,49 @@ class OpexSmartImportDialog(
         self,
         result,
     ):
+        if not result.rows:
+            self.summary_label.setText(
+                "[OK] "
+                f"{result.budget_count} "
+                "presupuestos encontrados\n"
+                "[PENDIENTE] Existen decisiones "
+                "de cuenta que debes revisar "
+                "antes de generar las filas.\n"
+                "Pulsa Revisar decisiones."
+            )
+
+            self.total_usd_label.setText(
+                "Equivalente total USD: "
+                "pendiente de decisiones"
+            )
+
+            self.review_button.setEnabled(
+                bool(
+                    result.review_options
+                )
+            )
+
+            self.import_button.setEnabled(
+                False
+            )
+
+            self.import_button.setText(
+                "Importar"
+            )
+
+            return
+
         self.summary_label.setText(
-            "✓ "
+            "[OK] "
             f"{result.budget_count} "
             "presupuestos encontrados\n"
-            "✓ "
+            "[OK] "
             f"{len(result.rows):,} "
             "filas a generar\n"
-            "✓ Maestros CUENTA / CEBE / "
+            "[OK] Maestros CUENTA / CEBE / "
             "RECUPERABLES cargados\n"
-            "✓ TC 2027 cargado\n"
-            "✓ "
+            "[OK] TC 2027 cargado\n"
+            "[OK] "
             f"{result.auto_cebe_count} "
             "CEBE ambiguos resueltos "
             "automaticamente"
@@ -867,11 +899,16 @@ class OpexSmartImportDialog(
 
         if self._result is not None:
             self.review_button.setEnabled(
-                True
+                bool(
+                    self._result
+                    .review_options
+                )
             )
 
             self.import_button.setEnabled(
-                True
+                bool(
+                    self._result.rows
+                )
             )
 
         worker = self._worker

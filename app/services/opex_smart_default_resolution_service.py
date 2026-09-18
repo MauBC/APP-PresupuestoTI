@@ -17,15 +17,15 @@ class OpexSmartDefaultResolutionError(
 )
 class OpexSmartDefaultDecision:
     sheet_name: str
-    account_name: str
-    atributo_2: str
+    account_name: str | None
+    atributo_2: str | None
     distribution_mode: str
     cebe_defaults: tuple[str, ...]
 
 
 class OpexSmartDefaultResolutionService:
     DEFAULT_CATEGORY = (
-        "Equipo informático"
+        "Equipo inform\u00e1tico"
     )
 
     DEFAULT_ACCOUNT_NAME = (
@@ -45,23 +45,102 @@ class OpexSmartDefaultResolutionService:
             state_service
         )
 
+    @staticmethod
+    def _account_combinations(
+        plan,
+    ):
+        result = []
+
+        for group in getattr(
+            plan,
+            "account_groups",
+            (),
+        ):
+            for atributo in (
+                group.atributos_2
+            ):
+                result.append(
+                    (
+                        str(
+                            group.categoria_gasto
+                        ),
+                        str(
+                            group.nombre_cuenta
+                        ),
+                        str(
+                            atributo
+                        ),
+                    )
+                )
+
+        return tuple(
+            result
+        )
+
+    def _apply_safe_account_default(
+        self,
+        state,
+        plan,
+    ):
+        combinations = (
+            self._account_combinations(
+                plan
+            )
+        )
+
+        if not combinations:
+            return None
+
+        recommended = (
+            self.DEFAULT_CATEGORY,
+            self.DEFAULT_ACCOUNT_NAME,
+            self.DEFAULT_ATTRIBUTE_2,
+        )
+
+        if recommended in combinations:
+            selected = recommended
+
+        elif len(combinations) == 1:
+            selected = combinations[0]
+
+        else:
+            # Varias definiciones oficiales.
+            # No se inventa una seleccion:
+            # debe decidir el usuario.
+            return None
+
+        (
+            categoria,
+            nombre,
+            atributo,
+        ) = selected
+
+        return (
+            self._state_service
+            .select_account(
+                state,
+                categoria_gasto=categoria,
+                nombre_cuenta=nombre,
+                atributo_2=atributo,
+            )
+        )
+
     def apply_budget_defaults(
         self,
         state,
     ) -> OpexSmartDefaultDecision:
         budget = state.budget
 
-        self._state_service.select_account(
+        initial_plan = (
+            self._state_service
+            .plan(
+                state
+            )
+        )
+
+        self._apply_safe_account_default(
             state,
-            categoria_gasto=(
-                self.DEFAULT_CATEGORY
-            ),
-            nombre_cuenta=(
-                self.DEFAULT_ACCOUNT_NAME
-            ),
-            atributo_2=(
-                self.DEFAULT_ATTRIBUTE_2
-            ),
+            initial_plan,
         )
 
         plan = (
@@ -164,28 +243,56 @@ class OpexSmartDefaultResolutionService:
             )
         )
 
-        if not final_plan.ready:
+        # Los errores reales siguen bloqueando.
+        # ACCOUNT_AMBIGUOUS no llega aqui como
+        # issue: el plan lo representa como una
+        # decision pendiente.
+        if final_plan.issues:
             codes = ", ".join(
                 issue.code
                 for issue
                 in final_plan.issues
             )
 
-            suffix = (
-                f": {codes}"
-                if codes
-                else ""
-            )
-
             raise (
                 OpexSmartDefaultResolutionError(
                     "La hoja "
-                    f"{budget.sheet_name} no quedo "
-                    "lista despues de aplicar "
-                    "los valores recomendados"
-                    f"{suffix}."
+                    f"{budget.sheet_name} conserva "
+                    "problemas despues de aplicar "
+                    "los valores seguros: "
+                    f"{codes}."
                 )
             )
+
+        if not getattr(
+            final_plan,
+            "cebe_resolved",
+            True,
+        ):
+            raise (
+                OpexSmartDefaultResolutionError(
+                    "La hoja "
+                    f"{budget.sheet_name} conserva "
+                    "CEBE pendientes."
+                )
+            )
+
+        if not getattr(
+            final_plan,
+            "distribution_resolved",
+            True,
+        ):
+            raise (
+                OpexSmartDefaultResolutionError(
+                    "La hoja "
+                    f"{budget.sheet_name} conserva "
+                    "la distribucion pendiente."
+                )
+            )
+
+        account = (
+            state.account_selection
+        )
 
         return (
             OpexSmartDefaultDecision(
@@ -193,10 +300,18 @@ class OpexSmartDefaultResolutionService:
                     budget.sheet_name
                 ),
                 account_name=(
-                    self.DEFAULT_ACCOUNT_NAME
+                    None
+                    if account is None
+                    else str(
+                        account.nombre_cuenta
+                    )
                 ),
                 atributo_2=(
-                    self.DEFAULT_ATTRIBUTE_2
+                    None
+                    if account is None
+                    else str(
+                        account.atributo_2
+                    )
                 ),
                 distribution_mode=(
                     resolved.mode
@@ -227,20 +342,11 @@ class OpexSmartDefaultResolutionService:
                 )
             )
 
-        if not (
-            self._state_service
-            .workbook_ready(
-                workbook_state
-            )
-        ):
-            raise (
-                OpexSmartDefaultResolutionError(
-                    "El libro no quedo listo "
-                    "despues de aplicar las "
-                    "resoluciones recomendadas."
-                )
-            )
-
+        # No exigimos workbook_ready aqui.
+        #
+        # Una cuenta con varias alternativas
+        # oficiales puede quedar pendiente para
+        # que el usuario la resuelva en la UI.
         return tuple(
             decisions
         )

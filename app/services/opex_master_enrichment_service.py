@@ -101,26 +101,17 @@ class OpexMasterEnrichmentService:
     def derive_gyp_from_ceco(
         cls,
         value,
-    ) -> str:
+    ) -> str | None:
         ceco = cls.normalize_ceco(
             value
         )
 
-        final_digit = ceco[-1]
-
-        try:
-            return GYP_BY_FINAL_DIGIT[
-                final_digit
-            ]
-        except KeyError as exc:
-            raise OpexMasterEnrichmentError(
-                "INVALID_GYP_DIGIT",
-                "El ultimo caracter del CECO "
-                f"{ceco} es {final_digit}. "
-                "No existe una regla GyP "
-                "para ese valor.",
-                key=ceco,
-            ) from exc
+        return (
+            GYP_BY_FINAL_DIGIT
+            .get(
+                ceco[-1]
+            )
+        )
 
     @classmethod
     def derive_cebe_from_ceco(
@@ -129,11 +120,6 @@ class OpexMasterEnrichmentService:
     ) -> str:
         ceco = cls.normalize_ceco(
             value
-        )
-
-        # Validar tambien el ultimo digito.
-        cls.derive_gyp_from_ceco(
-            ceco
         )
 
         return (
@@ -349,22 +335,22 @@ class OpexMasterEnrichmentService:
     def _prefix_aliases(
         key,
     ):
-        aliases = {
-            key,
-        }
-
-        # Los maestros usan 1, 4 y 5,
-        # mientras los CECO pueden iniciar
-        # con 01, 04 y 05.
+        # Compatibilidad con maestros historicos:
+        # 1 -> 01, 4 -> 04, 5 -> 05.
+        #
+        # No se conserva el prefijo de un digito:
+        # "5" no debe capturar 51..., 52..., etc.
         if (
             key.isdigit()
             and len(key) == 1
         ):
-            aliases.add(
+            return {
                 key.zfill(2)
-            )
+            }
 
-        return aliases
+        return {
+            key
+        }
 
     def resolve_recoverable(
         self,
@@ -600,7 +586,7 @@ class OpexMasterEnrichmentService:
             normalized_ceco
         )
 
-        centro_beneficio = (
+        derived_cebe = (
             self.derive_cebe_from_ceco(
                 normalized_ceco
             )
@@ -613,9 +599,81 @@ class OpexMasterEnrichmentService:
             normalized_ceco
         )
 
-        cebe = self.resolve_cebe(
-            centro_beneficio
-        )
+        try:
+            cebe = self.resolve_cebe(
+                derived_cebe
+            )
+
+        except (
+            OpexMasterEnrichmentError
+        ) as exc:
+            if (
+                exc.code
+                != "CEBE_NOT_FOUND"
+            ):
+                raise
+
+            cebe = None
+
+        if cebe is None:
+            centro_beneficio = None
+            desc_cebe = None
+            macroservicio_cg = None
+            tipo_servicio_cg = None
+            region_cg = None
+            sede_cg = None
+            segmentacion = None
+
+        else:
+            centro_beneficio = (
+                derived_cebe
+            )
+
+            desc_cebe = self._required(
+                cebe.desc_cebe,
+                code="CEBE_DATA_MISSING",
+                field="Desc_CeBe",
+                key=derived_cebe,
+            )
+
+            macroservicio_cg = (
+                self._required(
+                    cebe.macroservicio_cg,
+                    code="CEBE_DATA_MISSING",
+                    field="Macroservicio CG",
+                    key=derived_cebe,
+                )
+            )
+
+            tipo_servicio_cg = (
+                self._required(
+                    cebe.tipo_servicio_cg,
+                    code="CEBE_DATA_MISSING",
+                    field="Tipo Servicio CG",
+                    key=derived_cebe,
+                )
+            )
+
+            region_cg = self._required(
+                cebe.region_cg,
+                code="CEBE_DATA_MISSING",
+                field="Region CG",
+                key=derived_cebe,
+            )
+
+            sede_cg = self._required(
+                cebe.sede_cg,
+                code="CEBE_DATA_MISSING",
+                field="Sede CG",
+                key=derived_cebe,
+            )
+
+            segmentacion = self._required(
+                cebe.segmentacion,
+                code="CEBE_DATA_MISSING",
+                field="Seg Rs",
+                key=derived_cebe,
+            )
 
         return OpexCecoMasterEnrichment(
             ceco_prefix=prefix,
@@ -642,42 +700,16 @@ class OpexMasterEnrichmentService:
                 centro_beneficio
             ),
             gyp=gyp,
-            desc_cebe=self._required(
-                cebe.desc_cebe,
-                code="CEBE_DATA_MISSING",
-                field="Desc_CeBe",
-                key=centro_beneficio,
+            desc_cebe=desc_cebe,
+            macroservicio_cg=(
+                macroservicio_cg
             ),
-            macroservicio_cg=self._required(
-                cebe.macroservicio_cg,
-                code="CEBE_DATA_MISSING",
-                field="Macroservicio CG",
-                key=centro_beneficio,
+            tipo_servicio_cg=(
+                tipo_servicio_cg
             ),
-            tipo_servicio_cg=self._required(
-                cebe.tipo_servicio_cg,
-                code="CEBE_DATA_MISSING",
-                field="Tipo Servicio CG",
-                key=centro_beneficio,
-            ),
-            region_cg=self._required(
-                cebe.region_cg,
-                code="CEBE_DATA_MISSING",
-                field="Region CG",
-                key=centro_beneficio,
-            ),
-            sede_cg=self._required(
-                cebe.sede_cg,
-                code="CEBE_DATA_MISSING",
-                field="Sede CG",
-                key=centro_beneficio,
-            ),
-            segmentacion=self._required(
-                cebe.segmentacion,
-                code="CEBE_DATA_MISSING",
-                field="Seg Rs",
-                key=centro_beneficio,
-            ),
+            region_cg=region_cg,
+            sede_cg=sede_cg,
+            segmentacion=segmentacion,
         )
 
     def enrich(

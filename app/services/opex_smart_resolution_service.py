@@ -448,6 +448,12 @@ class OpexSmartResolutionService:
         ) as exc:
             if (
                 exc.code
+                == "CEBE_NOT_FOUND"
+            ):
+                return None
+
+            if (
+                exc.code
                 != "CEBE_AMBIGUOUS"
             ):
                 self._raise_master_error(
@@ -513,6 +519,86 @@ class OpexSmartResolutionService:
                 ),
             )
         )
+
+        if cebe is None:
+            centro_beneficio_value = None
+            desc_cebe = None
+            macroservicio_cg = None
+            tipo_servicio_cg = None
+            region_cg = None
+            sede_cg = None
+            segmentacion = None
+
+        else:
+            centro_beneficio_value = (
+                centro_beneficio
+            )
+
+            desc_cebe = (
+                self._required_text(
+                    cebe.desc_cebe,
+                    code=(
+                        "CEBE_DATA_MISSING"
+                    ),
+                    field="Desc_CeBe",
+                    key=centro_beneficio,
+                )
+            )
+
+            macroservicio_cg = (
+                self._required_text(
+                    cebe.macroservicio_cg,
+                    code=(
+                        "CEBE_DATA_MISSING"
+                    ),
+                    field="Macroservicio CG",
+                    key=centro_beneficio,
+                )
+            )
+
+            tipo_servicio_cg = (
+                self._required_text(
+                    cebe.tipo_servicio_cg,
+                    code=(
+                        "CEBE_DATA_MISSING"
+                    ),
+                    field="Tipo Servicio CG",
+                    key=centro_beneficio,
+                )
+            )
+
+            region_cg = (
+                self._required_text(
+                    cebe.region_cg,
+                    code=(
+                        "CEBE_DATA_MISSING"
+                    ),
+                    field="Region CG",
+                    key=centro_beneficio,
+                )
+            )
+
+            sede_cg = (
+                self._required_text(
+                    cebe.sede_cg,
+                    code=(
+                        "CEBE_DATA_MISSING"
+                    ),
+                    field="Sede CG",
+                    key=centro_beneficio,
+                )
+            )
+
+            segmentacion = (
+                self._required_text(
+                    cebe.segmentacion,
+                    code=(
+                        "CEBE_DATA_MISSING"
+                    ),
+                    field="Seg Rs",
+                    key=centro_beneficio,
+                )
+            )
 
         return OpexMasterEnrichment(
             numero_cuenta=numero_cuenta,
@@ -583,69 +669,19 @@ class OpexSmartResolutionService:
             ),
             ceco=ceco,
             centro_beneficio=(
-                centro_beneficio
+                centro_beneficio_value
             ),
             gyp=gyp,
-            desc_cebe=(
-                self._required_text(
-                    cebe.desc_cebe,
-                    code=(
-                        "CEBE_DATA_MISSING"
-                    ),
-                    field="Desc_CeBe",
-                    key=centro_beneficio,
-                )
-            ),
+            desc_cebe=desc_cebe,
             macroservicio_cg=(
-                self._required_text(
-                    cebe.macroservicio_cg,
-                    code=(
-                        "CEBE_DATA_MISSING"
-                    ),
-                    field="Macroservicio CG",
-                    key=centro_beneficio,
-                )
+                macroservicio_cg
             ),
             tipo_servicio_cg=(
-                self._required_text(
-                    cebe.tipo_servicio_cg,
-                    code=(
-                        "CEBE_DATA_MISSING"
-                    ),
-                    field="Tipo Servicio CG",
-                    key=centro_beneficio,
-                )
+                tipo_servicio_cg
             ),
-            region_cg=(
-                self._required_text(
-                    cebe.region_cg,
-                    code=(
-                        "CEBE_DATA_MISSING"
-                    ),
-                    field="Region CG",
-                    key=centro_beneficio,
-                )
-            ),
-            sede_cg=(
-                self._required_text(
-                    cebe.sede_cg,
-                    code=(
-                        "CEBE_DATA_MISSING"
-                    ),
-                    field="Sede CG",
-                    key=centro_beneficio,
-                )
-            ),
-            segmentacion=(
-                self._required_text(
-                    cebe.segmentacion,
-                    code=(
-                        "CEBE_DATA_MISSING"
-                    ),
-                    field="Seg Rs",
-                    key=centro_beneficio,
-                )
-            ),
+            region_cg=region_cg,
+            sede_cg=sede_cg,
+            segmentacion=segmentacion,
         )
 
     def build_rows(

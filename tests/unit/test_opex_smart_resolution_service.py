@@ -495,3 +495,166 @@ def test_build_rows_preserves_distribution_order():
         exc_info.value.code
         == "DISTRIBUTION_MISMATCH"
     )
+
+
+
+def test_build_rows_allows_missing_cebe_for_full_alphanumeric_ceco():
+    value_snapshot = (
+        OpexMasterDataSnapshot(
+            accounts={},
+            cebes={},
+            recoverables={
+                "51AD000CC7": (
+                    OpexRecoverableMasterRecord(
+                        inicial=(
+                            "51AD000CC7"
+                        ),
+                        sociedad="2501",
+                        compania="SLA",
+                        pais="PE",
+                    )
+                ),
+            },
+            account_conflicts={
+                "600000001": (
+                    OpexMasterConflict(
+                        key="600000001",
+                        locations=(
+                            "A",
+                            "B",
+                            "C",
+                            "D",
+                        ),
+                        records=(
+                            ACCOUNT_ADM_A,
+                            ACCOUNT_ADM_B,
+                            ACCOUNT_VTAS_A,
+                            ACCOUNT_VTAS_C,
+                        ),
+                    )
+                )
+            },
+            cebe_conflicts={},
+            recoverable_conflicts={},
+            account_source=SOURCE,
+            cebe_source=SOURCE,
+            recoverable_source=SOURCE,
+        )
+    )
+
+    value_service = (
+        OpexSmartResolutionService(
+            OpexMasterEnrichmentService(
+                value_snapshot
+            )
+        )
+    )
+
+    value_budget = (
+        OpexTemplateBudget(
+            sheet_name=(
+                "MdA Stefanini"
+            ),
+            nombre_gasto=(
+                "SERVICIO TEST"
+            ),
+            proveedor="PROVEEDOR",
+            moneda_facturacion="USD",
+            numero_cuenta=(
+                "600000001"
+            ),
+            tipo="ANUAL",
+            monto=Decimal("1000"),
+            distributions=(
+                OpexTemplateDistribution(
+                    excel_row=8,
+                    ceco="51AD000CC7",
+                    percentage=(
+                        Decimal("1")
+                    ),
+                    amount=(
+                        Decimal("1000")
+                    ),
+                ),
+            ),
+        )
+    )
+
+    value_resolved = (
+        OpexTemplateResolvedDistribution(
+            mode="IMPORTE",
+            amounts=(
+                (
+                    "51AD000CC7",
+                    Decimal("1000"),
+                ),
+            ),
+        )
+    )
+
+    rows = (
+        value_service.build_rows(
+            budget=value_budget,
+            resolved=value_resolved,
+            account_selection=(
+                ACCOUNT_ADM_B
+            ),
+        )
+    )
+
+    assert len(rows) == 1
+
+    row = rows[0]
+
+    assert (
+        row.ceco
+        == "51AD000CC7"
+    )
+
+    assert (
+        row.enrichment.ceco
+        == "51AD000CC7"
+    )
+
+    assert (
+        row.enrichment.gyp
+        == "OTROS I/E OPERATIVOS"
+    )
+
+    assert (
+        row.enrichment
+        .centro_beneficio
+        is None
+    )
+
+    assert (
+        row.enrichment.desc_cebe
+        is None
+    )
+
+    assert (
+        row.enrichment
+        .macroservicio_cg
+        is None
+    )
+
+    assert (
+        row.enrichment
+        .tipo_servicio_cg
+        is None
+    )
+
+    assert (
+        row.enrichment.region_cg
+        is None
+    )
+
+    assert (
+        row.enrichment.sede_cg
+        is None
+    )
+
+    assert (
+        row.enrichment.segmentacion
+        is None
+    )

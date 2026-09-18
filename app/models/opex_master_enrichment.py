@@ -11,14 +11,14 @@ class OpexCecoMasterEnrichment:
     compania: str
     pais: str
     ceco: str
-    centro_beneficio: str
-    gyp: str
-    desc_cebe: str
-    macroservicio_cg: str
-    tipo_servicio_cg: str
-    region_cg: str
-    sede_cg: str
-    segmentacion: str
+    centro_beneficio: str | None
+    gyp: str | None
+    desc_cebe: str | None
+    macroservicio_cg: str | None
+    tipo_servicio_cg: str | None
+    region_cg: str | None
+    sede_cg: str | None
+    segmentacion: str | None
 
 
 @dataclass(
@@ -37,12 +37,12 @@ class OpexMasterEnrichment:
     pais: str
 
     ceco: str
-    centro_beneficio: str
-    gyp: str
+    centro_beneficio: str | None
+    gyp: str | None
 
-    desc_cebe: str
-    macroservicio_cg: str
-    tipo_servicio_cg: str
-    region_cg: str
-    sede_cg: str
-    segmentacion: str
+    desc_cebe: str | None
+    macroservicio_cg: str | None
+    tipo_servicio_cg: str | None
+    region_cg: str | None
+    sede_cg: str | None
+    segmentacion: str | None
