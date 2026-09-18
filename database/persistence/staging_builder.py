@@ -83,22 +83,15 @@ def _json_default(
 def _insert_payload(
     row,
 ) -> str | None:
-    if not row.is_insert:
+    if not row.insert_values:
         return None
 
     return json.dumps(
-        dict(
-            row.insert_values
-        ),
+        dict(row.insert_values),
         ensure_ascii=False,
-        separators=(
-            ",",
-            ":",
-        ),
+        separators=(",", ":"),
         default=_json_default,
     )
-
-
 def build_staging_rows(
     batch: PersistenceBatch,
     *,

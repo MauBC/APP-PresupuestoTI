@@ -7,6 +7,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -20,23 +21,31 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.dialogs.app_message_box import (
+    ask_text_input,
+)
 from app.models.budget_excel_import import (
     BudgetImportIssueSeverity,
 )
 from app.ui.models.budget_import_preview_model import (
+    BudgetImportIssueFilterProxyModel,
     BudgetImportIssueModel,
     BudgetImportPreviewModel,
+    format_import_value,
 )
 
 
 class BudgetExcelImportDialog(
     QDialog
 ):
+    REVALIDATE_CODE = 1001
+
     def __init__(
         self,
         *,
         result,
         module_config,
+        corrections=None,
         parent=None,
     ):
         super().__init__(
@@ -51,8 +60,25 @@ class BudgetExcelImportDialog(
             module_config
         )
 
+        self._corrections = dict(
+            corrections
+            or {}
+        )
+
         self._models = []
         self._proxies = []
+
+        self._issue_model = None
+        self._issue_proxy = None
+        self._issue_table = None
+        self._issue_edit_button = None
+
+        self._preview_model = None
+        self._preview_proxy = None
+        self._preview_table = None
+        self._preview_selection_label = None
+        self._status_label = None
+        self._import_button = None
 
         self.setObjectName(
             "budgetExcelImportDialog"
@@ -283,6 +309,10 @@ class BudgetExcelImportDialog(
 
         status = QLabel()
 
+        self._status_label = (
+            status
+        )
+
         status.setWordWrap(
             True
         )
@@ -395,6 +425,10 @@ class BudgetExcelImportDialog(
             "importButton"
         )
 
+        self._import_button = (
+            import_button
+        )
+
         import_button.setEnabled(
             self._result.is_valid
         )
@@ -418,6 +452,8 @@ class BudgetExcelImportDialog(
         layout.addLayout(
             buttons
         )
+
+        self._update_import_selection()
 
     def _build_cards(
         self,
@@ -449,6 +485,11 @@ class BudgetExcelImportDialog(
                 "INFORMATIVOS",
                 self._result
                 .info_count,
+            ),
+            (
+                "IGNORADAS",
+                self._result
+                .ignored_row_count,
             ),
         )
 
@@ -518,10 +559,30 @@ class BudgetExcelImportDialog(
             10,
         )
 
+        controls = QHBoxLayout()
+
         search = QLineEdit()
 
         search.setPlaceholderText(
             "Buscar dentro del preview..."
+        )
+
+        include_all_button = (
+            QPushButton(
+                "Incluir todas"
+            )
+        )
+
+        exclude_button = (
+            QPushButton(
+                "Excluir seleccionadas"
+            )
+        )
+
+        selection_label = QLabel()
+
+        self._preview_selection_label = (
+            selection_label
         )
 
         model = (
@@ -532,14 +593,26 @@ class BudgetExcelImportDialog(
                 module_config=(
                     self._config
                 ),
+                source_row_numbers=(
+                    self._result
+                    .source_row_numbers
+                ),
                 parent=self,
             )
+        )
+
+        self._preview_model = (
+            model
         )
 
         proxy = (
             QSortFilterProxyModel(
                 self
             )
+        )
+
+        self._preview_proxy = (
+            proxy
         )
 
         proxy.setSourceModel(
@@ -562,6 +635,10 @@ class BudgetExcelImportDialog(
 
         table = QTableView()
 
+        self._preview_table = (
+            table
+        )
+
         table.setModel(
             proxy
         )
@@ -579,6 +656,18 @@ class BudgetExcelImportDialog(
             .setFilterFixedString
         )
 
+        include_all_button.clicked.connect(
+            self._include_all_preview_rows
+        )
+
+        exclude_button.clicked.connect(
+            self._exclude_selected_preview_rows
+        )
+
+        model.dataChanged.connect(
+            self._update_import_selection
+        )
+
         self._models.append(
             model
         )
@@ -587,8 +676,25 @@ class BudgetExcelImportDialog(
             proxy
         )
 
-        layout.addWidget(
-            search
+        controls.addWidget(
+            search,
+            1,
+        )
+
+        controls.addWidget(
+            include_all_button
+        )
+
+        controls.addWidget(
+            exclude_button
+        )
+
+        controls.addWidget(
+            selection_label
+        )
+
+        layout.addLayout(
+            controls
         )
 
         layout.addWidget(
@@ -596,7 +702,156 @@ class BudgetExcelImportDialog(
             1,
         )
 
+        self._update_import_selection()
+
         return widget
+
+    def rows_to_import(
+        self,
+    ):
+        if (
+            self._preview_model
+            is None
+        ):
+            return tuple(
+                self._result.rows
+            )
+
+        return (
+            self._preview_model
+            .included_rows()
+        )
+
+    def _include_all_preview_rows(
+        self,
+    ):
+        if (
+            self._preview_model
+            is None
+        ):
+            return
+
+        self._preview_model.include_all()
+
+        self._update_import_selection()
+
+    def _exclude_selected_preview_rows(
+        self,
+    ):
+        if (
+            self._preview_model
+            is None
+            or
+            self._preview_proxy
+            is None
+            or
+            self._preview_table
+            is None
+        ):
+            return
+
+        selection = (
+            self._preview_table
+            .selectionModel()
+        )
+
+        if selection is None:
+            return
+
+        source_rows = set()
+
+        for proxy_index in (
+            selection.selectedRows()
+        ):
+            source_index = (
+                self._preview_proxy
+                .mapToSource(
+                    proxy_index
+                )
+            )
+
+            if (
+                source_index
+                .isValid()
+            ):
+                source_rows.add(
+                    source_index.row()
+                )
+
+        for row_index in (
+            source_rows
+        ):
+            self._preview_model.set_included(
+                row_index,
+                False,
+            )
+
+        self._update_import_selection()
+
+    def _update_import_selection(
+        self,
+        *_,
+    ):
+        included = (
+            self._result
+            .importable_count
+        )
+
+        excluded = 0
+
+        if (
+            self._preview_model
+            is not None
+        ):
+            included = (
+                self._preview_model
+                .included_count
+            )
+
+            excluded = (
+                self._preview_model
+                .excluded_count
+            )
+
+        if (
+            self._preview_selection_label
+            is not None
+        ):
+            self._preview_selection_label.setText(
+                f"Incluidas: "
+                f"{included:,} | "
+                f"Excluidas: "
+                f"{excluded:,}"
+            )
+
+        if (
+            self._import_button
+            is not None
+        ):
+            self._import_button.setText(
+                "Agregar "
+                f"{included:,} filas"
+            )
+
+            self._import_button.setEnabled(
+                bool(
+                    self._result.is_valid
+                    and included > 0
+                )
+            )
+
+        if (
+            self._status_label
+            is not None
+            and self._result.is_valid
+        ):
+            self._status_label.setText(
+                "Archivo valido. "
+                f"{included:,} filas "
+                "estan seleccionadas "
+                "para agregarse "
+                "al Workspace."
+            )
 
     def _build_issue_tab(
         self,
@@ -615,11 +870,43 @@ class BudgetExcelImportDialog(
             10,
         )
 
+        controls = QHBoxLayout()
+
         search = QLineEdit()
 
         search.setPlaceholderText(
-            "Buscar fila, codigo, "
+            "Buscar fila, contexto, codigo, "
             "columna o detalle..."
+        )
+
+        severity = QComboBox()
+
+        severity.addItem(
+            "Todos",
+            None,
+        )
+
+        severity.addItem(
+            "Errores",
+            "ERROR",
+        )
+
+        severity.addItem(
+            "Advertencias",
+            "WARNING",
+        )
+
+        severity.addItem(
+            "Informativos",
+            "INFO",
+        )
+
+        edit_button = QPushButton(
+            "Corregir valor seleccionado"
+        )
+
+        edit_button.setEnabled(
+            False
         )
 
         model = (
@@ -629,26 +916,33 @@ class BudgetExcelImportDialog(
             )
         )
 
+        self._issue_model = (
+            model
+        )
+
         proxy = (
-            QSortFilterProxyModel(
+            BudgetImportIssueFilterProxyModel(
                 self
             )
+        )
+
+        self._issue_proxy = (
+            proxy
         )
 
         proxy.setSourceModel(
             model
         )
 
-        proxy.setFilterKeyColumn(
-            -1
-        )
-
-        proxy.setFilterCaseSensitivity(
-            Qt.CaseSensitivity
-            .CaseInsensitive
-        )
-
         table = QTableView()
+
+        self._issue_table = (
+            table
+        )
+
+        self._issue_edit_button = (
+            edit_button
+        )
 
         table.setModel(
             proxy
@@ -659,9 +953,28 @@ class BudgetExcelImportDialog(
         )
 
         search.textChanged.connect(
-            proxy
-            .setFilterFixedString
+            proxy.set_search_text
         )
+
+        severity.currentIndexChanged.connect(
+            lambda _:
+                proxy.set_severity(
+                    severity.currentData()
+                )
+        )
+
+        edit_button.clicked.connect(
+            self._edit_selected_issue
+        )
+
+        selection = (
+            table.selectionModel()
+        )
+
+        if selection is not None:
+            selection.selectionChanged.connect(
+                self._update_issue_edit_button
+            )
 
         self._models.append(
             model
@@ -671,8 +984,21 @@ class BudgetExcelImportDialog(
             proxy
         )
 
-        layout.addWidget(
-            search
+        controls.addWidget(
+            search,
+            1,
+        )
+
+        controls.addWidget(
+            severity
+        )
+
+        controls.addWidget(
+            edit_button
+        )
+
+        layout.addLayout(
+            controls
         )
 
         layout.addWidget(
@@ -681,6 +1007,243 @@ class BudgetExcelImportDialog(
         )
 
         return widget
+
+    def corrections(
+        self,
+    ):
+        return dict(
+            self._corrections
+        )
+
+    def _selected_issue(
+        self,
+    ):
+        if (
+            self._issue_table
+            is None
+            or self._issue_proxy
+            is None
+            or self._issue_model
+            is None
+        ):
+            return None
+
+        index = (
+            self._issue_table
+            .currentIndex()
+        )
+
+        if not index.isValid():
+            return None
+
+        source_index = (
+            self._issue_proxy
+            .mapToSource(
+                index
+            )
+        )
+
+        if not source_index.isValid():
+            return None
+
+        return (
+            self._issue_model
+            .issue_at(
+                source_index.row()
+            )
+        )
+
+    def _issue_can_be_corrected(
+        self,
+        issue,
+    ):
+        if issue is None:
+            return False
+
+        if (
+            issue.severity
+            != BudgetImportIssueSeverity.ERROR
+            and
+            getattr(
+                issue,
+                "expected_value",
+                None,
+            )
+            is None
+        ):
+            return False
+
+        if (
+            issue.row_number
+            < 2
+        ):
+            return False
+
+        return (
+            issue.column
+            in self._config
+            .insert_columns
+        )
+
+    def _update_issue_edit_button(
+        self,
+        *_,
+    ):
+        if (
+            self._issue_edit_button
+            is None
+        ):
+            return
+
+        self._issue_edit_button.setEnabled(
+            self._issue_can_be_corrected(
+                self._selected_issue()
+            )
+        )
+
+    def _edit_selected_issue(
+        self,
+    ):
+        issue = (
+            self._selected_issue()
+        )
+
+        if not (
+            self._issue_can_be_corrected(
+                issue
+            )
+        ):
+            return
+
+        key = (
+            issue.row_number,
+            issue.column,
+        )
+
+        expected = getattr(
+            issue,
+            "expected_value",
+            None,
+        )
+
+        if key in self._corrections:
+            initial_value = (
+                self._corrections[
+                    key
+                ]
+            )
+
+        elif expected is not None:
+            initial_value = (
+                format_import_value(
+                    expected
+                )
+                .replace(
+                    ",",
+                    "",
+                )
+            )
+
+        else:
+            initial_value = (
+                ""
+                if issue.raw_value is None
+                else str(
+                    issue.raw_value
+                )
+            )
+
+        context = (
+            issue.context
+            or
+            "Sin contexto de negocio disponible."
+        )
+
+        labels = {
+            "anio_ml":
+                "TOTAL ML",
+            "anio_usd":
+                "TOTAL USD",
+        }
+
+        column_label = (
+            labels.get(
+                issue.column,
+                str(
+                    issue.column
+                )
+                .replace(
+                    "_",
+                    " ",
+                )
+                .upper(),
+            )
+        )
+
+        message = (
+            f"Fila Excel: "
+            f"{issue.row_number}\n"
+            f"{context}\n\n"
+            f"Columna: "
+            f"{column_label}\n"
+            f"Valor actual: "
+            f"{format_import_value(issue.raw_value)}\n"
+            f"Detalle: "
+            f"{issue.message}"
+        )
+
+        if (
+            issue.column
+            in {
+                "anio_ml",
+                "anio_usd",
+            }
+            and expected is not None
+        ):
+            message += (
+                "\n\n"
+                "El valor esperado fue "
+                "calculado automaticamente "
+                "como la suma de los "
+                "12 meses."
+            )
+
+        expected_text = (
+            None
+            if expected is None
+            else format_import_value(
+                expected
+            )
+        )
+
+        value, accepted = (
+            ask_text_input(
+                self,
+                "Corregir valor de importacion",
+                message,
+                initial_value=(
+                    initial_value
+                ),
+                expected_value=(
+                    expected_text
+                ),
+                confirm_text=(
+                    "Aplicar correccion"
+                ),
+                cancel_text="Cancelar",
+            )
+        )
+
+        if not accepted:
+            return
+
+        self._corrections[
+            key
+        ] = value
+
+        self.done(
+            self.REVALIDATE_CODE
+        )
 
     @staticmethod
     def _prepare_table(

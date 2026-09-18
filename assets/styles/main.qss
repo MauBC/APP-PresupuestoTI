@@ -225,6 +225,64 @@ QPushButton:disabled {
     border-color: #E0E5E2;
 }
 
+/* ACTION MENUS */
+
+QToolButton#actionMenuButton {
+    min-height: 36px;
+    padding-left: 16px;
+    padding-right: 16px;
+    background-color: #FFFFFF;
+    color: #244D38;
+    border: 1px solid #C9D8CF;
+    border-radius: 6px;
+    font-weight: 600;
+}
+
+QToolButton#actionMenuButton:hover {
+    background-color: #EEF6F1;
+    border-color: #89B39B;
+}
+
+QToolButton#actionMenuButton:pressed {
+    background-color: #E2EFE7;
+}
+
+QToolButton#actionMenuButton:disabled {
+    color: #98A69E;
+    background-color: #F0F3F1;
+    border-color: #DCE3DE;
+}
+
+QMenu#actionMenu {
+    background-color: #FFFFFF;
+    color: #244D38;
+    border: 1px solid #CBD8D0;
+    border-radius: 6px;
+    padding: 6px;
+}
+
+QMenu#actionMenu::item {
+    min-width: 190px;
+    padding: 9px 18px;
+    border-radius: 5px;
+}
+
+QMenu#actionMenu::item:selected {
+    background-color: #EEF6F1;
+    color: #164D36;
+}
+
+QMenu#actionMenu::item:disabled {
+    color: #98A69E;
+    background-color: transparent;
+}
+
+QMenu#actionMenu::separator {
+    height: 1px;
+    background-color: #E3EAE5;
+    margin: 5px 8px;
+}
+
 QLineEdit {
     min-height: 36px;
     padding-left: 12px;
@@ -292,6 +350,11 @@ QTableView {
 
 QTableView::item {
     padding: 4px;
+}
+
+QHeaderView {
+    background-color: #E7F2EB;
+    border: none;
 }
 
 QHeaderView::section {
@@ -416,4 +479,120 @@ QPushButton#warningButton:disabled {
     background-color: #F2F4F7;
     color: #98A2B3;
     border-color: #D0D5DD;
+}
+
+
+/* COLLAPSIBLE SIDEBAR */
+
+#sidebarToggleButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 7px;
+    padding: 8px;
+}
+
+#sidebarToggleButton:hover {
+    background-color: #1D6D4A;
+}
+
+#sidebarButton[compact="true"] {
+    padding: 11px 8px;
+    text-align: center;
+}
+
+#sidebarButton[pending="true"] {
+    border-right: 3px solid #E58B2A;
+}
+
+#navigationContext {
+    background-color: #F8FAF9;
+    color: #476253;
+    border-bottom: 1px solid #DCE6DF;
+    padding: 8px 18px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+
+/* TABLE STATUS FEEDBACK */
+
+QLabel#tableStatus {
+    min-height: 20px;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    font-weight: 600;
+}
+
+QLabel#tableStatus[statusTone="neutral"] {
+    background-color: #F8FAF9;
+    color: #475467;
+    border-color: #E1E7E3;
+}
+
+QLabel#tableStatus[statusTone="loading"] {
+    background-color: #EFF8FF;
+    color: #175CD3;
+    border-color: #B2DDFF;
+}
+
+QLabel#tableStatus[statusTone="success"] {
+    background-color: #ECFDF3;
+    color: #067647;
+    border-color: #ABEFC6;
+}
+
+QLabel#tableStatus[statusTone="warning"] {
+    background-color: #FFF7ED;
+    color: #B54708;
+    border-color: #FEDF89;
+}
+
+QLabel#tableStatus[statusTone="error"] {
+    background-color: #FEF3F2;
+    color: #B42318;
+    border-color: #FECDCA;
+}
+
+QLabel#tableStatus[statusTone="empty"] {
+    background-color: #F2F4F7;
+    color: #667085;
+    border-color: #D0D5DD;
+}
+
+/* M13A - DASHBOARD SIMULATION IMPACT */
+
+QFrame#simulationImpactCard {
+    background-color: #F8FAF9;
+    border: 1px solid #D7E4DC;
+    border-radius: 10px;
+}
+
+QLabel#impactMetricValue,
+QLabel#impactDifferenceValue,
+QLabel#impactVariationValue {
+    color: #155C3D;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+QLabel#impactSummary {
+    color: #5C6D63;
+    font-size: 12px;
+    padding-top: 4px;
+}
+
+QLabel#impactDifferenceValue[impactState="increase"],
+QLabel#impactVariationValue[impactState="increase"] {
+    color: #B42318;
+}
+
+QLabel#impactDifferenceValue[impactState="decrease"],
+QLabel#impactVariationValue[impactState="decrease"] {
+    color: #067647;
+}
+
+QLabel#impactDifferenceValue[impactState="neutral"],
+QLabel#impactVariationValue[impactState="neutral"] {
+    color: #475467;
 }

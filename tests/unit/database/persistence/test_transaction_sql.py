@@ -1,5 +1,8 @@
-﻿import pytest
+import pytest
 
+from app.config.budget_modules import (
+    OPEX_MODULE_CONFIG,
+)
 from app.config.presupuesto_app_config import (
     USD_COLUMNS,
 )
@@ -171,9 +174,23 @@ def test_audit_uses_is_distinct_from():
         sql.count(
             "IS DISTINCT FROM"
         )
-        == 14
+        == (
+            1
+            + len(
+                OPEX_MODULE_CONFIG.insert_columns
+            )
+        )
     )
 
+
+
+def test_business_update_uses_typed_payload():
+    sql = build_sql()
+    assert (
+        "JSON_VALUE(stage.`insert_payload`, '$.nombre_gasto')"
+        in sql
+    )
+    assert "`nombre_gasto` = IF(" in sql
 
 def test_merge_updates_all_editable_values():
     sql = build_sql()

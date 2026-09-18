@@ -1,4 +1,4 @@
-﻿from datetime import (
+from datetime import (
     datetime,
     timezone,
 )
@@ -77,7 +77,7 @@ def make_business_dataframe(
     )
 
 
-def test_enricher_builds_57_columns():
+def test_enricher_builds_58_columns():
     dataframe = (
         make_business_dataframe()
     )
@@ -110,7 +110,7 @@ def test_enricher_builds_57_columns():
         len(
             enriched.columns
         )
-        == 57
+        == 58
     )
 
     assert (

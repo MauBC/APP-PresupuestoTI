@@ -55,25 +55,39 @@ def _audit_struct(
     *,
     column,
     value_type,
+    after_expression,
 ):
     return f"""
             STRUCT(
                 '{column}' AS column_name,
                 '{value_type}' AS value_type,
-                CAST(
-                    target.`{column}`
-                    AS STRING
-                ) AS before_value,
-                CAST(
-                    stage.`{column}`
-                    AS STRING
-                ) AS after_value,
-                target.`{column}`
-                    IS DISTINCT FROM
-                stage.`{column}`
-                    AS changed
+                CAST(target.`{column}` AS STRING) AS before_value,
+                CAST({after_expression} AS STRING) AS after_value,
+                target.`{column}` IS DISTINCT FROM {after_expression} AS changed
             )
     """.strip()
+def _payload_value_expression(
+    *,
+    column,
+    value_type,
+):
+    json_value = (
+        "JSON_VALUE("
+        "stage.`insert_payload`, "
+        f"'$.{column}'"
+        ")"
+    )
+    if value_type == "STRING":
+        return json_value
+    if value_type == "INTEGER":
+        return f"CAST({json_value} AS INT64)"
+    if value_type == "NUMERIC":
+        return f"CAST({json_value} AS NUMERIC)"
+    if value_type == "BOOLEAN":
+        return f"CAST({json_value} AS BOOL)"
+    raise TransactionSqlError(
+        "Tipo de payload no soportado: " f"{value_type}"
+    )
 
 
 def _insert_value_expression(
@@ -81,45 +95,26 @@ def _insert_value_expression(
     column,
     value_type,
 ):
-    if (
-        column in EDITABLE_COLUMNS
-        and column != HABILITADO_COLUMN
-    ):
-        return (
-            f"stage.`{column}`"
-        )
+    if column in EDITABLE_COLUMNS and column != HABILITADO_COLUMN:
+        return f"stage.`{column}`"
+    return _payload_value_expression(column=column, value_type=value_type)
 
-    json_value = (
-        "JSON_VALUE("
-        "stage.`insert_payload`, "
-        f"'$.{column}'"
+
+def _update_value_expression(
+    *,
+    column,
+    value_type,
+):
+    if column in EDITABLE_COLUMNS:
+        return f"stage.`{column}`"
+    payload_value = _payload_value_expression(column=column, value_type=value_type)
+    return (
+        "IF("
+        "stage.`insert_payload` IS NULL, "
+        f"target.`{column}`, "
+        f"{payload_value}"
         ")"
     )
-
-    if value_type == "STRING":
-        return json_value
-
-    if value_type == "INTEGER":
-        return (
-            f"CAST({json_value} AS INT64)"
-        )
-
-    if value_type == "NUMERIC":
-        return (
-            f"CAST({json_value} AS NUMERIC)"
-        )
-
-    if value_type == "BOOLEAN":
-        return (
-            f"CAST({json_value} AS BOOL)"
-        )
-
-    raise TransactionSqlError(
-        "Tipo INSERT no soportado: "
-        f"{value_type}"
-    )
-
-
 def _insert_audit_struct(
     *,
     column,
@@ -196,86 +191,57 @@ def build_apply_staged_batch_sql(
         )
     )
 
-    update_audit_structs = []
+    update_column_types = (
+        (HABILITADO_COLUMN, "BOOLEAN"),
+        *config.insert_column_types,
+    )
 
-    for column in EDITABLE_COLUMNS:
+    update_audit_structs = []
+    for column, value_type in update_column_types:
+        after_expression = _update_value_expression(
+            column=column,
+            value_type=value_type,
+        )
         update_audit_structs.append(
             _audit_struct(
                 column=column,
-                value_type=(
-                    EDITABLE_VALUE_TYPES[
-                        column
-                    ]
-                ),
+                value_type=value_type,
+                after_expression=after_expression,
             )
         )
 
-    update_audit_array = (
-        ",\n\n            ".join(
-            update_audit_structs
-        )
-    )
+    update_audit_array = ",\n\n            ".join(update_audit_structs)
 
     insert_audit_structs = [
         f"""
             STRUCT(
-                '{HABILITADO_COLUMN}'
-                    AS column_name,
-                'BOOLEAN'
-                    AS value_type,
-                CAST(NULL AS STRING)
-                    AS before_value,
-                CAST(
-                    stage.`{HABILITADO_COLUMN}`
-                    AS STRING
-                ) AS after_value,
+                '{HABILITADO_COLUMN}' AS column_name,
+                'BOOLEAN' AS value_type,
+                CAST(NULL AS STRING) AS before_value,
+                CAST(stage.`{HABILITADO_COLUMN}` AS STRING) AS after_value,
                 TRUE AS changed
             )
         """.strip()
     ]
-
-    for (
-        column,
-        value_type,
-    ) in config.insert_column_types:
+    for column, value_type in config.insert_column_types:
         insert_audit_structs.append(
-            _insert_audit_struct(
-                column=column,
-                value_type=value_type,
-            )
+            _insert_audit_struct(column=column, value_type=value_type)
         )
-
-    insert_audit_array = (
-        ",\n\n            ".join(
-            insert_audit_structs
-        )
-    )
+    insert_audit_array = ",\n\n            ".join(insert_audit_structs)
 
     merge_assignments = [
-        (
-            f"`{column}` = "
-            f"stage.`{column}`"
-        )
-        for column
-        in EDITABLE_COLUMNS
+        f"`{column}` = "
+        + _update_value_expression(column=column, value_type=value_type)
+        for column, value_type in update_column_types
     ]
-
     merge_assignments.extend(
         (
-            "version = "
-            "target.version + 1",
-            "updated_at = "
-            "CURRENT_TIMESTAMP()",
-            "updated_by = "
-            "@actor",
+            "version = target.version + 1",
+            "updated_at = CURRENT_TIMESTAMP()",
+            "updated_by = @actor",
         )
     )
-
-    merge_set = (
-        ",\n                ".join(
-            merge_assignments
-        )
-    )
+    merge_set = ",\n                ".join(merge_assignments)
 
     insert_columns = [
         "row_id",
@@ -407,8 +373,10 @@ BEGIN
                         = '{UPDATE_OPERATION}'
                         AND (
                             expected_version < 1
-                            OR insert_payload
-                                IS NOT NULL
+                            OR (
+                                insert_payload IS NOT NULL
+                                AND TRIM(insert_payload) = ''
+                            )
                         )
                     )
                     OR

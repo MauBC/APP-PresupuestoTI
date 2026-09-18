@@ -18,6 +18,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config.grouping_config import (
+    MAX_GROUPING_LEVELS,
+)
 from app.services.dimension_allocation_service import (
     DimensionAllocationService,
 )
@@ -30,6 +33,12 @@ from app.services.presupuesto_change_summary_service import (
 from app.services.presupuesto_group_edit_service import (
     PresupuestoGroupEditError,
     PresupuestoGroupEditService,
+)
+from app.ui.action_menu import (
+    ActionMenuController,
+)
+from app.ui.status_feedback import (
+    set_status_feedback,
 )
 from app.ui.dialogs.app_message_box import (
     AppMessageBox,
@@ -50,6 +59,18 @@ from app.ui.dialogs.dimension_allocation_dialog import (
 from app.ui.models.result_table_model import (
     ResultTableModel,
 )
+from app.ui.table_column_visibility import (
+    apply_month_column_visibility,
+)
+from app.ui.table_productivity import (
+    capture_table_layout,
+    install_table_productivity_shortcuts,
+    merge_column_widths,
+    restore_table_layout,
+)
+from app.ui.view_state_store import (
+    AggregationViewState,
+)
 
 
 ZERO = Decimal("0.00")
@@ -63,6 +84,7 @@ class AggregationPage(QWidget):
         *,
         workspace,
         analysis_service,
+        view_state_store=None,
     ):
         super().__init__()
 
@@ -70,6 +92,10 @@ class AggregationPage(QWidget):
 
         self._analysis_service = (
             analysis_service
+        )
+
+        self._view_state_store = (
+            view_state_store
         )
 
         self._group_edit_service = (
@@ -99,8 +125,16 @@ class AggregationPage(QWidget):
         self._workspace_ready = False
         self._loaded_once = False
         self._current_result = None
+        self._months_visible = False
+
+        self._table_column_widths = ()
+        self._table_sort_column = None
+        self._table_sort_order = "asc"
+        self._restoring_table_layout = False
 
         self._setup_ui()
+        self._restore_view_state()
+        self._connect_view_state_signals()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -124,8 +158,9 @@ class AggregationPage(QWidget):
 
         subtitle = QLabel(
             "Agrupa el presupuesto por hasta "
-            "tres dimensiones y modifica "
-            "totales USD de forma masiva."
+            f"{MAX_GROUPING_LEVELS} dimensiones "
+            "y modifica totales USD "
+            "de forma masiva."
         )
 
         subtitle.setObjectName(
@@ -135,25 +170,30 @@ class AggregationPage(QWidget):
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
-        group_layout = QHBoxLayout()
+        group_layout = QVBoxLayout()
 
-        self.group_1 = (
+        group_row_1 = QHBoxLayout()
+        group_row_2 = QHBoxLayout()
+
+        self.group_combos = tuple(
             self._create_group_combo(
-                allow_none=False
+                allow_none=(
+                    index > 0
+                )
+            )
+            for index
+            in range(
+                MAX_GROUPING_LEVELS
             )
         )
 
-        self.group_2 = (
-            self._create_group_combo(
-                allow_none=True
-            )
-        )
-
-        self.group_3 = (
-            self._create_group_combo(
-                allow_none=True
-            )
-        )
+        (
+            self.group_1,
+            self.group_2,
+            self.group_3,
+            self.group_4,
+            self.group_5,
+        ) = self.group_combos
 
         default_group = (
             self._workspace
@@ -197,24 +237,46 @@ class AggregationPage(QWidget):
             False
         )
 
-        group_layout.addWidget(
+        group_row_1.addWidget(
             QLabel("Agrupar por:")
         )
 
-        group_layout.addWidget(
+        group_row_1.addWidget(
             self.group_1
         )
 
-        group_layout.addWidget(
+        group_row_1.addWidget(
             self.group_2
         )
 
-        group_layout.addWidget(
+        group_row_1.addWidget(
             self.group_3
         )
 
-        group_layout.addWidget(
+        group_row_2.addWidget(
+            QLabel("Niveles 4-5:")
+        )
+
+        group_row_2.addWidget(
+            self.group_4
+        )
+
+        group_row_2.addWidget(
+            self.group_5
+        )
+
+        group_row_2.addWidget(
             self.group_button
+        )
+
+        group_row_2.addStretch()
+
+        group_layout.addLayout(
+            group_row_1
+        )
+
+        group_layout.addLayout(
+            group_row_2
         )
 
         layout.addLayout(
@@ -261,16 +323,24 @@ class AggregationPage(QWidget):
             False
         )
 
-        distribution_layout.addWidget(
-            self.distribute_group_months_button
+        self.distribution_menu = (
+            ActionMenuController(
+                parent=self,
+                sources=(
+                    self.distribute_group_months_button,
+                    self.distribute_ceco_button,
+                    self.distribute_country_button,
+                ),
+                text="Distribuir",
+                tooltip=(
+                    "Opciones de distribucion "
+                    "para la agrupacion seleccionada."
+                ),
+            )
         )
 
         distribution_layout.addWidget(
-            self.distribute_ceco_button
-        )
-
-        distribution_layout.addWidget(
-            self.distribute_country_button
+            self.distribution_menu.button
         )
 
         distribution_layout.addStretch()
@@ -287,6 +357,19 @@ class AggregationPage(QWidget):
             "Buscar dentro del resultado agrupado..."
         )
 
+        self.months_button = QPushButton(
+            "Mostrar meses"
+        )
+
+        self.months_button.setEnabled(
+            False
+        )
+
+        self.months_button.setToolTip(
+            "Muestra u oculta las columnas "
+            "mensuales sin cambiar la agrupacion."
+        )
+
         self.summary_label = QLabel(
             "Sin resultados"
         )
@@ -298,6 +381,10 @@ class AggregationPage(QWidget):
         search_layout.addWidget(
             self.search_input,
             1,
+        )
+
+        search_layout.addWidget(
+            self.months_button
         )
 
         search_layout.addWidget(
@@ -461,6 +548,11 @@ class AggregationPage(QWidget):
                 .module_config
                 .amount_columns
             ),
+            annual_columns=(
+                self._workspace
+                .module_config
+                .annual_column,
+            ),
         )
 
         self.proxy_model = (
@@ -547,6 +639,14 @@ class AggregationPage(QWidget):
             145
         )
 
+        header.sectionResized.connect(
+            self._on_table_layout_changed
+        )
+
+        header.sortIndicatorChanged.connect(
+            self._on_table_layout_changed
+        )
+
         layout.addWidget(
             self.table,
             1,
@@ -560,6 +660,12 @@ class AggregationPage(QWidget):
             "tableStatus"
         )
 
+        set_status_feedback(
+            self.status_label,
+            "Esperando carga del presupuesto...",
+            tone="neutral",
+        )
+
         layout.addWidget(
             self.status_label
         )
@@ -567,6 +673,10 @@ class AggregationPage(QWidget):
         self.search_input.textChanged.connect(
             self.proxy_model
             .setFilterFixedString
+        )
+
+        self.months_button.clicked.connect(
+            self._toggle_month_columns
         )
 
         self.group_button.clicked.connect(
@@ -633,6 +743,16 @@ class AggregationPage(QWidget):
 
         self._update_change_controls()
 
+        self._table_shortcuts = (
+            install_table_productivity_shortcuts(
+                self,
+                search_input=self.search_input,
+                table=self.table,
+                refresh_callback=self.load_grouping,
+                undo_callback=self.undo_last,
+            )
+        )
+
     def set_workspace_ready(self):
         self._workspace_ready = True
         self._update_distribution_controls()
@@ -641,8 +761,10 @@ class AggregationPage(QWidget):
             True
         )
 
-        self.status_label.setText(
-            "Presupuesto local disponible."
+        set_status_feedback(
+            self.status_label,
+            "Presupuesto local disponible.",
+            tone="success",
         )
 
         self._update_change_controls()
@@ -658,14 +780,200 @@ class AggregationPage(QWidget):
             False
         )
 
-        self.status_label.setText(
-            "Error al preparar presupuesto: "
-            + message
+        set_status_feedback(
+            self.status_label,
+            (
+                "Error al preparar presupuesto: "
+                + message
+            ),
+            tone="error",
         )
 
         self.group_state_button.setEnabled(
             False
         )
+
+    def _restore_view_state(
+        self,
+    ):
+        if self._view_state_store is None:
+            return
+
+        state = (
+            self._view_state_store
+            .aggregation_state(
+                self._workspace
+                .module_config
+                .module
+            )
+        )
+
+        self._months_visible = (
+            state.months_visible
+        )
+
+        self._table_column_widths = (
+            state.column_widths
+        )
+
+        self._table_sort_column = (
+            state.sort_column
+        )
+
+        self._table_sort_order = (
+            state.sort_order
+        )
+
+        self.search_input.setText(
+            state.search
+        )
+
+        if state.groups:
+            for combo, value in zip(
+                self.group_combos,
+                state.groups,
+            ):
+                self._set_combo_value(
+                    combo,
+                    value,
+                )
+
+        self._apply_month_column_visibility()
+
+    def _connect_view_state_signals(
+        self,
+    ):
+        self.search_input.textChanged.connect(
+            self._view_state_changed
+        )
+
+        for combo in self.group_combos:
+            combo.currentIndexChanged.connect(
+                self._view_state_changed
+            )
+
+    def save_view_state(
+        self,
+    ):
+        if self._view_state_store is None:
+            return
+
+        columns = (
+            self._current_result.columns
+            if self._current_result
+            is not None
+            else ()
+        )
+
+        if (
+            columns
+            and not self._restoring_table_layout
+        ):
+            (
+                current_widths,
+                sort_column,
+                sort_order,
+            ) = capture_table_layout(
+                table=self.table,
+                columns=columns,
+            )
+
+            self._table_column_widths = (
+                merge_column_widths(
+                    self._table_column_widths,
+                    current_widths,
+                )
+            )
+
+            self._table_sort_column = (
+                sort_column
+            )
+
+            self._table_sort_order = (
+                sort_order
+            )
+
+        state = AggregationViewState(
+            search=(
+                self.search_input.text()
+            ),
+            months_visible=(
+                self._months_visible
+            ),
+            groups=tuple(
+                combo.currentData()
+                for combo
+                in self.group_combos
+            ),
+            column_widths=(
+                self._table_column_widths
+            ),
+            sort_column=(
+                self._table_sort_column
+            ),
+            sort_order=(
+                self._table_sort_order
+            ),
+        )
+
+        self._view_state_store.set_aggregation_state(
+            self._workspace
+            .module_config
+            .module,
+            state,
+        )
+
+    def _view_state_changed(
+        self,
+        *_,
+    ):
+        self.save_view_state()
+
+    def _restore_table_layout_state(
+        self,
+    ):
+        if self._current_result is None:
+            return
+
+        columns = tuple(
+            self._current_result.columns
+        )
+
+        if not columns:
+            return
+
+        self._restoring_table_layout = (
+            True
+        )
+
+        try:
+            restore_table_layout(
+                table=self.table,
+                columns=columns,
+                column_widths=(
+                    self._table_column_widths
+                ),
+                sort_column=(
+                    self._table_sort_column
+                ),
+                sort_order=(
+                    self._table_sort_order
+                ),
+            )
+
+        finally:
+            self._restoring_table_layout = (
+                False
+            )
+
+    def _on_table_layout_changed(
+        self,
+        *_,
+    ):
+        if self._restoring_table_layout:
+            return
+
+        self.save_view_state()
 
     def invalidate(self):
         self._loaded_once = False
@@ -722,31 +1030,32 @@ class AggregationPage(QWidget):
             self.load_grouping()
 
     def _selected_groups(self):
-        combos = (
-            self.group_1,
-            self.group_2,
-            self.group_3,
-        )
-
         return [
             combo.currentData()
-            for combo in combos
+            for combo
+            in self.group_combos
             if combo.currentData()
         ]
 
     def load_grouping(self):
         if not self._workspace_ready:
-            self.status_label.setText(
-                "Esperando carga del presupuesto..."
+            set_status_feedback(
+                self.status_label,
+                "Esperando carga del presupuesto...",
+                tone="neutral",
             )
             return
 
         groups = self._selected_groups()
 
         if len(groups) != len(set(groups)):
-            self.status_label.setText(
-                "No se puede repetir una columna "
-                "en la agrupacion."
+            set_status_feedback(
+                self.status_label,
+                (
+                    "No se puede repetir una columna "
+                    "en la agrupacion."
+                ),
+                tone="warning",
             )
             return
 
@@ -754,8 +1063,10 @@ class AggregationPage(QWidget):
             False
         )
 
-        self.status_label.setText(
-            "Calculando agrupacion local..."
+        set_status_feedback(
+            self.status_label,
+            "Calculando agrupacion local...",
+            tone="loading",
         )
 
         try:
@@ -771,9 +1082,13 @@ class AggregationPage(QWidget):
             )
 
         except Exception as exc:
-            self.status_label.setText(
-                "Error: "
-                f"{type(exc).__name__}: {exc}"
+            set_status_feedback(
+                self.status_label,
+                (
+                    "Error al calcular la agrupacion: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+                tone="error",
             )
 
         finally:
@@ -792,7 +1107,7 @@ class AggregationPage(QWidget):
             result.columns,
         )
 
-        self.search_input.clear()
+        self._apply_month_column_visibility()
 
         self._loaded_once = True
 
@@ -821,10 +1136,25 @@ class AggregationPage(QWidget):
             in result.group_columns
         )
 
-        self.status_label.setText(
-            "Agrupacion local por: "
-            + group_names
-        )
+        if result.rows:
+            set_status_feedback(
+                self.status_label,
+                (
+                    "Agrupacion local por: "
+                    + group_names
+                ),
+                tone="success",
+            )
+
+        else:
+            set_status_feedback(
+                self.status_label,
+                (
+                    "La agrupacion no devolvio "
+                    "registros para la vista actual."
+                ),
+                tone="empty",
+            )
 
         has_rows = bool(
             result.rows
@@ -846,6 +1176,52 @@ class AggregationPage(QWidget):
         self._update_change_controls()
 
         self._update_group_state_button()
+
+    def _toggle_month_columns(
+        self,
+    ):
+        self._months_visible = (
+            not self._months_visible
+        )
+
+        self._apply_month_column_visibility()
+        self.save_view_state()
+
+    def _apply_month_column_visibility(
+        self,
+    ):
+        columns = (
+            self._current_result.columns
+            if self._current_result is not None
+            else ()
+        )
+
+        matched = (
+            apply_month_column_visibility(
+                table=self.table,
+                columns=columns,
+                month_columns=(
+                    self._workspace
+                    .module_config
+                    .month_columns
+                ),
+                months_visible=(
+                    self._months_visible
+                ),
+            )
+        )
+
+        self.months_button.setEnabled(
+            bool(matched)
+        )
+
+        self.months_button.setText(
+            "Ocultar meses"
+            if self._months_visible
+            else "Mostrar meses"
+        )
+
+        self._restore_table_layout_state()
 
     def _update_selected_context(
         self,
@@ -1739,22 +2115,21 @@ class AggregationPage(QWidget):
         if not self._workspace.has_changes:
             return
 
-        result = AppMessageBox.question(
+        confirmed = ask_confirmation(
             self,
             "Descartar cambios",
-            "Se descartaran todos los "
-            "cambios de la simulacion local.\n\n"
-            "¿Desea continuar?",
-            AppMessageBox.StandardButton.Yes
-            |
-            AppMessageBox.StandardButton.No,
-            AppMessageBox.StandardButton.No,
+            (
+                "Se descartaran todos los "
+                "cambios de la simulacion local.\n\n"
+                "Esta accion afecta solo al "
+                "Workspace local y no modifica "
+                "BigQuery."
+            ),
+            confirm_text="Descartar cambios",
+            cancel_text="Cancelar",
         )
 
-        if (
-            result
-            != AppMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         self._workspace.discard_all()
@@ -1763,9 +2138,13 @@ class AggregationPage(QWidget):
 
         self.load_grouping()
 
-        self.status_label.setText(
-            "Todos los cambios locales "
-            "fueron descartados."
+        set_status_feedback(
+            self.status_label,
+            (
+                "Todos los cambios locales "
+                "fueron descartados."
+            ),
+            tone="success",
         )
 
     def _update_change_controls(self):

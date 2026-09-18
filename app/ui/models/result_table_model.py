@@ -5,7 +5,10 @@ from PySide6.QtCore import (
     QModelIndex,
     Qt,
 )
-from PySide6.QtGui import QColor
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+)
 
 
 class ResultTableModel(
@@ -15,16 +18,29 @@ class ResultTableModel(
         "#EEF8F1"
     )
 
+    ANNUAL_BACKGROUND = QColor(
+        "#DDEFE3"
+    )
+
+    ANNUAL_FOREGROUND = QColor(
+        "#174B35"
+    )
+
     def __init__(
         self,
         parent=None,
         *,
         amount_columns=(),
+        annual_columns=(),
     ):
         super().__init__(parent)
 
         self._amount_columns = set(
             amount_columns
+        )
+
+        self._annual_columns = set(
+            annual_columns
         )
 
         self._rows = ()
@@ -145,11 +161,30 @@ class ResultTableModel(
             return value
 
         if role == Qt.ItemDataRole.BackgroundRole:
+            if column in self._annual_columns:
+                return self.ANNUAL_BACKGROUND
+
             if (
                 column
                 in self._amount_columns
             ):
                 return self.USD_BACKGROUND
+
+        if (
+            role == Qt.ItemDataRole.FontRole
+            and column in self._annual_columns
+        ):
+            font = QFont()
+            font.setBold(
+                True
+            )
+            return font
+
+        if (
+            role == Qt.ItemDataRole.ForegroundRole
+            and column in self._annual_columns
+        ):
+            return self.ANNUAL_FOREGROUND
 
         if role == Qt.ItemDataRole.TextAlignmentRole:
             if isinstance(
@@ -162,6 +197,12 @@ class ResultTableModel(
                 )
 
         if role == Qt.ItemDataRole.ToolTipRole:
+            if column in self._annual_columns:
+                return (
+                    "Total anual del grupo. "
+                    "Doble clic para modificarlo."
+                )
+
             if (
                 column
                 in self._amount_columns

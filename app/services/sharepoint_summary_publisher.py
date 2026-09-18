@@ -22,6 +22,12 @@ class SharePointSummaryPublishError(
     pass
 
 
+class SharePointLargeDeleteGuardError(
+    SharePointSummaryPublishError
+):
+    pass
+
+
 class SharePointSummaryPublisher:
     def __init__(
         self,
@@ -332,7 +338,7 @@ class SharePointSummaryPublisher:
             and not allow_large_delete
         ):
             raise (
-                SharePointSummaryPublishError(
+                SharePointLargeDeleteGuardError(
                     "Se bloqueo una "
                     "sincronizacion que "
                     "eliminaria todos los "
@@ -358,7 +364,7 @@ class SharePointSummaryPublisher:
             not allow_large_delete
         ):
             raise (
-                SharePointSummaryPublishError(
+                SharePointLargeDeleteGuardError(
                     "Se bloqueo una eliminacion "
                     "masiva de SharePoint. "
                     f"Deletes={plan.delete_count}, "

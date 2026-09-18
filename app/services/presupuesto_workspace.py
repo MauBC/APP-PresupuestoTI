@@ -20,6 +20,10 @@ from app.models.workspace_change import (
     PendingRowChange,
     RowStateChange,
 )
+from app.services.budget_row_edit_service import (
+    BudgetRowEditError,
+    BudgetRowEditService,
+)
 from app.services.usd_allocation_service import (
     UsdAllocationService,
 )
@@ -917,6 +921,27 @@ class PresupuestoWorkspace:
 
         return len(
             replacements
+        )
+
+    def edit_value(
+        self,
+        session_row_id: int,
+        column: str,
+        value,
+    ) -> bool:
+        current = self._require_row(session_row_id)
+        try:
+            updated = BudgetRowEditService(self._module_config).edit_value(
+                current,
+                column,
+                value,
+            )
+        except BudgetRowEditError as exc:
+            raise PresupuestoWorkspaceError(str(exc)) from exc
+
+        return self._apply_batch(
+            description=f"Editar {column} en fila {session_row_id}",
+            replacements={session_row_id: updated},
         )
 
     def edit_month(

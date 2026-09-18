@@ -1,4 +1,4 @@
-﻿from types import SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 from google.api_core.exceptions import (
@@ -104,6 +104,22 @@ def test_capex_schema_matches_expected():
     )
 
 
+def test_capex_schema_match_ignores_field_order():
+    schema = list(
+        build_capex_bigquery_schema()
+    )
+
+    reordered = tuple(
+        reversed(
+            schema
+        )
+    )
+
+    assert capex_schema_matches(
+        reordered
+    )
+
+
 def test_dry_run_does_not_create_table():
     client = FakeClient()
 
@@ -144,7 +160,7 @@ def test_apply_creates_missing_table():
     assert result.exists
     assert result.created
     assert result.schema_matches
-    assert result.column_count == 57
+    assert result.column_count == 58
 
     assert (
         len(

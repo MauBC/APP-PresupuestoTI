@@ -120,6 +120,7 @@ class Settings:
     WINDOW_HEIGHT = 760
 
     SIDEBAR_WIDTH = 240
+    SIDEBAR_COMPACT_WIDTH = 84
 
 
 settings = Settings()

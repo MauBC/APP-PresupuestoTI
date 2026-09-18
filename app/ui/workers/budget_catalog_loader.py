@@ -37,6 +37,11 @@ def catalog_columns_for_config(
             if "sociedad" in dimensions
             else None
         ),
+        (
+            "responsable"
+            if "responsable" in dimensions
+            else None
+        ),
     )
 
     return tuple(

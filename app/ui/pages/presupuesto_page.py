@@ -23,12 +23,28 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config.budget_module_config import (
+    BudgetModule,
+)
+from app.config.capex_schema import (
+    CAPEX_ML_TOTAL_COLUMN,
+    CAPEX_USD_TOTAL_COLUMN,
+)
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
 )
 from app.services.current_actor_service import (
     CurrentActorError,
     resolve_current_actor,
+)
+from app.services.budget_excel_import_service import (
+    BudgetExcelImportService,
+)
+from app.services.capex_new_row_amount_service import (
+    CapexNewRowAmountService,
+)
+from app.services.opex_new_row_amount_service import (
+    OpexNewRowAmountService,
 )
 from app.services.new_budget_row_service import (
     NewBudgetRowService,
@@ -40,8 +56,26 @@ from app.ui.dialogs.app_message_box import (
     AppMessageBox,
     ask_confirmation,
 )
+from app.config.budget_insert_modes import (
+    BudgetInsertMode,
+)
 from app.ui.dialogs.budget_excel_import_dialog import (
     BudgetExcelImportDialog,
+)
+from app.ui.dialogs.budget_insert_mode_dialog import (
+    BudgetInsertModeDialog,
+)
+from app.ui.dialogs.capex_amounts_dialog import (
+    CapexAmountsDialog,
+)
+from app.ui.dialogs.opex_amounts_dialog import (
+    OpexAmountsDialog,
+)
+from app.ui.dialogs.opex_assisted_insert_dialog import (
+    OpexAssistedInsertDialog,
+)
+from app.ui.dialogs.opex_smart_import_dialog import (
+    OpexSmartImportDialog,
 )
 from app.ui.dialogs.change_summary_dialog import (
     ChangeSummaryDialog,
@@ -52,14 +86,41 @@ from app.ui.dialogs.monthly_distribution_dialog import (
 from app.ui.dialogs.new_budget_row_dialog import (
     NewBudgetRowDialog,
 )
+from app.ui.action_menu import (
+    ActionMenuController,
+)
+from app.ui.status_feedback import (
+    set_status_feedback,
+)
+from app.ui.frozen_columns import (
+    FrozenColumnsController,
+)
 from app.ui.models.presupuesto_table_model import (
     PresupuestoTableModel,
+)
+from app.ui.table_column_visibility import (
+    apply_month_column_visibility,
+)
+from app.ui.table_productivity import (
+    capture_table_layout,
+    install_table_productivity_shortcuts,
+    merge_column_widths,
+    restore_table_layout,
+)
+from app.ui.view_state_store import (
+    PresupuestoViewState,
 )
 from app.ui.workers.budget_catalog_loader import (
     BudgetCatalogLoadThread,
 )
 from app.ui.workers.budget_excel_import import (
     BudgetExcelImportThread,
+)
+from app.ui.workers.budget_excel_export import (
+    BudgetExcelExportThread,
+)
+from app.ui.workers.opex_assisted_insert_loader import (
+    OpexAssistedInferenceLoadThread,
 )
 
 
@@ -73,6 +134,7 @@ class PresupuestoPage(QWidget):
         *,
         workspace,
         analysis_service,
+        view_state_store=None,
     ):
         super().__init__()
 
@@ -80,6 +142,10 @@ class PresupuestoPage(QWidget):
 
         self._analysis_service = (
             analysis_service
+        )
+
+        self._view_state_store = (
+            view_state_store
         )
 
         self._change_summary_service = (
@@ -94,15 +160,28 @@ class PresupuestoPage(QWidget):
 
         self._workspace_ready = False
         self._loaded_once = False
+        self._months_visible = False
+        self._current_columns = ()
+
+        self._table_column_widths = ()
+        self._table_sort_column = None
+        self._table_sort_order = "asc"
+        self._restoring_table_layout = False
 
         self._new_row_catalog_thread = None
         self._new_row_actor = None
+
+        self._opex_assisted_thread = None
+        self._opex_assisted_actor = None
 
         self._excel_import_thread = None
         self._excel_import_actor = None
         self._excel_import_path = None
 
+        self._excel_export_thread = None
+
         self._setup_ui()
+        self._restore_view_state()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -144,6 +223,19 @@ class PresupuestoPage(QWidget):
 
         self.search_input.setPlaceholderText(
             "Buscar en la pagina actual..."
+        )
+
+        self.months_button = QPushButton(
+            "Mostrar meses"
+        )
+
+        self.months_button.setEnabled(
+            False
+        )
+
+        self.months_button.setToolTip(
+            "Muestra u oculta las columnas "
+            "mensuales manteniendo la vista actual."
         )
 
         self.page_size_combo = QComboBox()
@@ -214,6 +306,41 @@ class PresupuestoPage(QWidget):
             False
         )
 
+        # Los handlers anteriores se conservan.
+        # Visualmente se usa un unico acceso.
+        self.insert_button = QPushButton(
+            "INSERTAR"
+        )
+
+        self.insert_button.setObjectName(
+            "primaryButton"
+        )
+
+        self.insert_button.setEnabled(
+            False
+        )
+
+        self.insert_button.setToolTip(
+            "Selecciona la forma de insertar "
+            "informacion en el presupuesto."
+        )
+
+        self.export_excel_button = QPushButton(
+            "Exportar Excel"
+        )
+
+        self.export_excel_button.setEnabled(
+            False
+        )
+
+        self.export_excel_button.setToolTip(
+            "Genera una plantilla Excel con "
+            "las filas habilitadas confirmadas "
+            "actualmente en BigQuery. "
+            "No incluye cambios locales "
+            "pendientes."
+        )
+
         self.distribute_months_button = (
             QPushButton(
                 "Distribuir meses"
@@ -238,9 +365,28 @@ class PresupuestoPage(QWidget):
             "sus importes."
         )
 
+        self.more_actions_menu = (
+            ActionMenuController(
+                parent=self,
+                sources=(
+                    self.export_excel_button,
+                    self.enabled_action_button,
+                ),
+                text="Mas acciones",
+                tooltip=(
+                    "Exportacion y acciones "
+                    "sobre la fila seleccionada."
+                ),
+            )
+        )
+
         toolbar.addWidget(
             self.search_input,
             1,
+        )
+
+        toolbar.addWidget(
+            self.months_button
         )
 
         toolbar.addWidget(
@@ -260,27 +406,35 @@ class PresupuestoPage(QWidget):
         )
 
         toolbar.addWidget(
-            self.new_row_button
-        )
-
-        toolbar.addWidget(
-            self.import_excel_button
-        )
-
-        toolbar.addWidget(
-            self.distribute_months_button
-        )
-
-        toolbar.addWidget(
-            self.enabled_action_button
-        )
-
-        toolbar.addWidget(
             self.refresh_button
         )
 
         layout.addLayout(
             toolbar
+        )
+
+        actions_toolbar = QHBoxLayout()
+
+        actions_toolbar.addWidget(
+            QLabel("Acciones:")
+        )
+
+        actions_toolbar.addWidget(
+            self.insert_button
+        )
+
+        actions_toolbar.addWidget(
+            self.distribute_months_button
+        )
+
+        actions_toolbar.addWidget(
+            self.more_actions_menu.button
+        )
+
+        actions_toolbar.addStretch()
+
+        layout.addLayout(
+            actions_toolbar
         )
 
         changes_layout = QHBoxLayout()
@@ -431,6 +585,26 @@ class PresupuestoPage(QWidget):
             80
         )
 
+        header.sectionResized.connect(
+            self._on_table_layout_changed
+        )
+
+        header.sortIndicatorChanged.connect(
+            self._on_table_layout_changed
+        )
+
+        self._frozen_columns = (
+            FrozenColumnsController(
+                main_table=self.table,
+                preferred_columns=(
+                    self._workspace
+                    .module_config
+                    .frozen_context_columns
+                ),
+                parent=self,
+            )
+        )
+
         layout.addWidget(
             self.table,
             1,
@@ -444,6 +618,12 @@ class PresupuestoPage(QWidget):
 
         self.status_label.setObjectName(
             "tableStatus"
+        )
+
+        set_status_feedback(
+            self.status_label,
+            "Esperando carga del presupuesto...",
+            tone="neutral",
         )
 
         self.previous_button = QPushButton(
@@ -484,6 +664,14 @@ class PresupuestoPage(QWidget):
             .setFilterFixedString
         )
 
+        self.search_input.textChanged.connect(
+            self._view_state_changed
+        )
+
+        self.months_button.clicked.connect(
+            self._toggle_month_columns
+        )
+
         self.refresh_button.clicked.connect(
             self.refresh
         )
@@ -494,6 +682,14 @@ class PresupuestoPage(QWidget):
 
         self.import_excel_button.clicked.connect(
             self.show_excel_import
+        )
+
+        self.insert_button.clicked.connect(
+            self.show_insert_dialog
+        )
+
+        self.export_excel_button.clicked.connect(
+            self.show_excel_export
         )
 
         self.distribute_months_button.clicked.connect(
@@ -547,6 +743,16 @@ class PresupuestoPage(QWidget):
         self._update_navigation()
         self._update_change_controls()
 
+        self._table_shortcuts = (
+            install_table_productivity_shortcuts(
+                self,
+                search_input=self.search_input,
+                table=self.table,
+                refresh_callback=self.refresh,
+                undo_callback=self.undo_last,
+            )
+        )
+
     @property
 
     def is_busy(
@@ -568,10 +774,208 @@ class PresupuestoPage(QWidget):
             .isRunning()
         )
 
+        export_busy = (
+            self._excel_export_thread
+            is not None
+            and
+            self._excel_export_thread
+            .isRunning()
+        )
+
+        assisted_busy = (
+            self._opex_assisted_thread
+            is not None
+            and
+            self._opex_assisted_thread
+            .isRunning()
+        )
+
         return bool(
             catalog_busy
             or import_busy
+            or export_busy
+            or assisted_busy
         )
+
+    def _restore_view_state(
+        self,
+    ):
+        if self._view_state_store is None:
+            return
+
+        state = (
+            self._view_state_store
+            .presupuesto_state(
+                self._workspace
+                .module_config
+                .module
+            )
+        )
+
+        self._page_index = (
+            state.page_index
+        )
+
+        self._page_size = (
+            state.page_size
+        )
+
+        self._months_visible = (
+            state.months_visible
+        )
+
+        self._table_column_widths = (
+            state.column_widths
+        )
+
+        self._table_sort_column = (
+            state.sort_column
+        )
+
+        self._table_sort_order = (
+            state.sort_order
+        )
+
+        self.search_input.setText(
+            state.search
+        )
+
+        self.page_size_combo.setCurrentText(
+            str(
+                state.page_size
+            )
+        )
+
+        index = (
+            self.enabled_filter_combo
+            .findData(
+                state.enabled_filter
+            )
+        )
+
+        if index >= 0:
+            self.enabled_filter_combo.setCurrentIndex(
+                index
+            )
+
+        self._apply_month_column_visibility()
+
+    def save_view_state(
+        self,
+    ):
+        if self._view_state_store is None:
+            return
+
+        if (
+            self._current_columns
+            and not self._restoring_table_layout
+        ):
+            (
+                current_widths,
+                sort_column,
+                sort_order,
+            ) = capture_table_layout(
+                table=self.table,
+                columns=(
+                    self._current_columns
+                ),
+            )
+
+            self._table_column_widths = (
+                merge_column_widths(
+                    self._table_column_widths,
+                    current_widths,
+                )
+            )
+
+            self._table_sort_column = (
+                sort_column
+            )
+
+            self._table_sort_order = (
+                sort_order
+            )
+
+        state = PresupuestoViewState(
+            search=(
+                self.search_input.text()
+            ),
+            page_size=(
+                self._page_size
+            ),
+            enabled_filter=(
+                self._enabled_filter_value()
+            ),
+            months_visible=(
+                self._months_visible
+            ),
+            page_index=(
+                self._page_index
+            ),
+            column_widths=(
+                self._table_column_widths
+            ),
+            sort_column=(
+                self._table_sort_column
+            ),
+            sort_order=(
+                self._table_sort_order
+            ),
+        )
+
+        self._view_state_store.set_presupuesto_state(
+            self._workspace
+            .module_config
+            .module,
+            state,
+        )
+
+    def _view_state_changed(
+        self,
+        *_,
+    ):
+        self.save_view_state()
+
+    def _restore_table_layout_state(
+        self,
+    ):
+        if not self._current_columns:
+            return
+
+        self._restoring_table_layout = (
+            True
+        )
+
+        try:
+            restore_table_layout(
+                table=self.table,
+                columns=(
+                    self._current_columns
+                ),
+                column_widths=(
+                    self._table_column_widths
+                ),
+                sort_column=(
+                    self._table_sort_column
+                ),
+                sort_order=(
+                    self._table_sort_order
+                ),
+            )
+
+        finally:
+            self._restoring_table_layout = (
+                False
+            )
+
+    def _on_table_layout_changed(
+        self,
+        *_,
+    ):
+        if self._restoring_table_layout:
+            return
+
+        self.save_view_state()
 
     def set_workspace_ready(self):
         self._workspace_ready = True
@@ -586,9 +990,12 @@ class PresupuestoPage(QWidget):
 
         self._update_new_row_button()
         self._update_import_excel_button()
+        self._update_export_excel_button()
 
-        self.status_label.setText(
-            "Presupuesto local disponible."
+        set_status_feedback(
+            self.status_label,
+            "Presupuesto local disponible.",
+            tone="success",
         )
 
         self._update_navigation()
@@ -623,6 +1030,10 @@ class PresupuestoPage(QWidget):
             False
         )
 
+        self.export_excel_button.setEnabled(
+            False
+        )
+
         self.previous_button.setEnabled(
             False
         )
@@ -635,9 +1046,13 @@ class PresupuestoPage(QWidget):
             False
         )
 
-        self.status_label.setText(
-            "Error al preparar presupuesto: "
-            + message
+        set_status_feedback(
+            self.status_label,
+            (
+                "Error al preparar presupuesto: "
+                + message
+            ),
+            tone="error",
         )
 
     def invalidate(self):
@@ -649,7 +1064,9 @@ class PresupuestoPage(QWidget):
             and
             not self._loaded_once
         ):
-            self._load_page(0)
+            self._load_page(
+                self._page_index
+            )
 
     def refresh(self):
         if not self._workspace_ready:
@@ -694,6 +1111,8 @@ class PresupuestoPage(QWidget):
     ):
         self._page_size = int(text)
 
+        self.save_view_state()
+
         if (
             self._workspace_ready
             and
@@ -709,6 +1128,14 @@ class PresupuestoPage(QWidget):
             return
 
         self._set_loading(True)
+
+        set_status_feedback(
+            self.status_label,
+            "Cargando registros locales...",
+            tone="loading",
+        )
+
+        error_message = None
 
         try:
             result = (
@@ -726,6 +1153,12 @@ class PresupuestoPage(QWidget):
                 result
             )
 
+            self._current_columns = tuple(
+                result.columns
+            )
+
+            self._apply_month_column_visibility()
+
             self._page_index = (
                 result.page_index
             )
@@ -736,10 +1169,10 @@ class PresupuestoPage(QWidget):
 
             self._loaded_once = True
 
-            self.search_input.clear()
+            self.save_view_state()
 
         except Exception as exc:
-            self.status_label.setText(
+            error_message = (
                 "Error al cargar datos locales: "
                 f"{type(exc).__name__}: {exc}"
             )
@@ -751,6 +1184,73 @@ class PresupuestoPage(QWidget):
         self._update_change_controls()
         self._update_distribution_button()
         self._update_enabled_action_button()
+
+        if error_message is not None:
+            set_status_feedback(
+                self.status_label,
+                error_message,
+                tone="error",
+            )
+
+        elif self._total_rows == 0:
+            set_status_feedback(
+                self.status_label,
+                "Sin registros para la vista actual.",
+                tone="empty",
+            )
+
+        else:
+            set_status_feedback(
+                self.status_label,
+                self.status_label.text(),
+                tone="neutral",
+            )
+
+    def _toggle_month_columns(
+        self,
+    ):
+        self._months_visible = (
+            not self._months_visible
+        )
+
+        self._apply_month_column_visibility()
+        self.save_view_state()
+
+    def _apply_month_column_visibility(
+        self,
+    ):
+        matched = (
+            apply_month_column_visibility(
+                table=self.table,
+                columns=(
+                    self._current_columns
+                ),
+                month_columns=(
+                    self._workspace
+                    .module_config
+                    .month_columns
+                ),
+                months_visible=(
+                    self._months_visible
+                ),
+            )
+        )
+
+        self.months_button.setEnabled(
+            bool(matched)
+        )
+
+        self.months_button.setText(
+            "Ocultar meses"
+            if self._months_visible
+            else "Mostrar meses"
+        )
+
+        self._restore_table_layout_state()
+
+        self._frozen_columns.sync(
+            columns=self._current_columns,
+        )
 
     def _on_model_workspace_changed(
         self,
@@ -804,23 +1304,22 @@ class PresupuestoPage(QWidget):
         if not self._workspace.has_changes:
             return
 
-        result = AppMessageBox.question(
+        confirmed = ask_confirmation(
             self,
             "Descartar cambios",
-            "Se descartaran todos los "
-            "cambios realizados durante "
-            "esta simulacion.\n\n"
-            "¿Desea continuar?",
-            AppMessageBox.StandardButton.Yes
-            |
-            AppMessageBox.StandardButton.No,
-            AppMessageBox.StandardButton.No,
+            (
+                "Se descartaran todos los "
+                "cambios realizados durante "
+                "esta simulacion.\n\n"
+                "Esta accion afecta solo al "
+                "Workspace local y no modifica "
+                "BigQuery."
+            ),
+            confirm_text="Descartar cambios",
+            cancel_text="Cancelar",
         )
 
-        if (
-            result
-            != AppMessageBox.StandardButton.Yes
-        ):
+        if not confirmed:
             return
 
         self._workspace.discard_all()
@@ -829,9 +1328,13 @@ class PresupuestoPage(QWidget):
             self._page_index
         )
 
-        self.status_label.setText(
-            "Todos los cambios locales "
-            "fueron descartados."
+        set_status_feedback(
+            self.status_label,
+            (
+                "Todos los cambios locales "
+                "fueron descartados."
+            ),
+            tone="success",
         )
 
         self.workspace_changed.emit()
@@ -860,6 +1363,8 @@ class PresupuestoPage(QWidget):
         self,
         *_,
     ):
+        self.save_view_state()
+
         if not (
             self._workspace_ready
             and
@@ -1172,6 +1677,35 @@ class PresupuestoPage(QWidget):
             bool(enabled)
         )
 
+    def _update_insert_button(
+        self,
+    ):
+        if not hasattr(
+            self,
+            "insert_button",
+        ):
+            return
+
+        enabled = (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+            and
+            not self.is_busy
+        )
+
+        self.insert_button.setEnabled(
+            bool(enabled)
+        )
+
+        self.insert_button.setText(
+            (
+                "PROCESANDO..."
+                if self.is_busy
+                else "INSERTAR"
+            )
+        )
+
     def _update_import_excel_button(
         self,
     ):
@@ -1208,6 +1742,8 @@ class PresupuestoPage(QWidget):
             self.import_excel_button.setText(
                 "Importar Excel"
             )
+
+        self._update_insert_button()
 
     def show_excel_import(
         self,
@@ -1297,35 +1833,121 @@ class PresupuestoPage(QWidget):
         self,
         result,
     ):
-        dialog = (
-            BudgetExcelImportDialog(
-                result=result,
-                module_config=(
-                    self._workspace
-                    .module_config
-                ),
-                parent=self,
+        corrections = {}
+
+        current_result = result
+
+        while True:
+            dialog = (
+                BudgetExcelImportDialog(
+                    result=(
+                        current_result
+                    ),
+                    module_config=(
+                        self._workspace
+                        .module_config
+                    ),
+                    corrections=(
+                        corrections
+                    ),
+                    parent=self,
+                )
             )
-        )
 
-        accepted = (
-            dialog.exec()
-        )
-
-        if not accepted:
-            self.status_label.setText(
-                "Importacion cancelada. "
-                "No se agregaron filas."
+            dialog_code = (
+                dialog.exec()
             )
 
-            self._excel_import_actor = None
-            self._excel_import_path = None
+            corrections = (
+                dialog.corrections()
+            )
 
-            return
+            if (
+                dialog_code
+                ==
+                BudgetExcelImportDialog
+                .REVALIDATE_CODE
+            ):
+                self.status_label.setText(
+                    "Revalidando correcciones "
+                    "del Excel..."
+                )
+
+                try:
+                    current_result = (
+                        BudgetExcelImportService(
+                            self._workspace
+                            .module_config
+                        )
+                        .prepare(
+                            current_result
+                            .source_path,
+                            actor=(
+                                self._excel_import_actor
+                            ),
+                            overrides=(
+                                corrections
+                            ),
+                        )
+                    )
+
+                except Exception as exc:
+                    AppMessageBox.warning(
+                        self,
+                        "No se pudo revalidar",
+                        "La correccion no pudo "
+                        "ser revalidada. "
+                        "El Excel original no "
+                        "fue modificado.\n\n"
+                        f"{type(exc).__name__}: "
+                        f"{exc}",
+                    )
+
+                continue
+
+            if (
+                dialog_code
+                != int(
+                    QDialog
+                    .DialogCode
+                    .Accepted
+                )
+            ):
+                self.status_label.setText(
+                    "Importacion cancelada. "
+                    "No se agregaron filas."
+                )
+
+                self._excel_import_actor = None
+                self._excel_import_path = None
+
+                return
+
+            result = (
+                current_result
+            )
+
+            break
 
         if not result.is_valid:
             self._excel_import_actor = None
             self._excel_import_path = None
+            return
+
+        rows_to_import = (
+            dialog.rows_to_import()
+        )
+
+        if not rows_to_import:
+            self.status_label.setText(
+                "Importacion cancelada: "
+                "no quedaron filas "
+                "incluidas."
+            )
+
+            self._excel_import_actor = None
+            self._excel_import_path = None
+
             return
 
         source_name = (
@@ -1339,7 +1961,7 @@ class PresupuestoPage(QWidget):
             session_ids = (
                 self._workspace
                 .add_new_rows(
-                    result.rows,
+                    rows_to_import,
                     description=(
                         "Importar Excel "
                         f"{source_name}"
@@ -1429,6 +2051,191 @@ class PresupuestoPage(QWidget):
         self._update_new_row_button()
         self._update_import_excel_button()
 
+    def _update_export_excel_button(
+        self,
+    ):
+        if not hasattr(
+            self,
+            "export_excel_button",
+        ):
+            return
+
+        running = (
+            self._excel_export_thread
+            is not None
+            and
+            self._excel_export_thread
+            .isRunning()
+        )
+
+        enabled = (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+            and
+            not self.is_busy
+        )
+
+        self.export_excel_button.setEnabled(
+            bool(enabled)
+        )
+
+        self.export_excel_button.setText(
+            (
+                "Exportando..."
+                if running
+                else "Exportar Excel"
+            )
+        )
+
+    def show_excel_export(
+        self,
+    ):
+        if not (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+        ):
+            return
+
+        if self.is_busy:
+            return
+
+        module = (
+            self._workspace
+            .module_config
+            .module
+            .value
+        )
+
+        default_name = (
+            f"{module}_2027_BigQuery.xlsx"
+        )
+
+        destination, _ = (
+            QFileDialog
+            .getSaveFileName(
+                self,
+                (
+                    "Exportar presupuesto "
+                    f"{module}"
+                ),
+                default_name,
+                (
+                    "Excel (*.xlsx);;"
+                    "Todos los archivos (*.*)"
+                ),
+            )
+        )
+
+        if not destination:
+            return
+
+        self._excel_export_thread = (
+            BudgetExcelExportThread(
+                module_config=(
+                    self._workspace
+                    .module_config
+                ),
+                destination=destination,
+                parent=self,
+            )
+        )
+
+        self._excel_export_thread.exported.connect(
+            self._on_excel_exported
+        )
+
+        self._excel_export_thread.failed.connect(
+            self._on_excel_export_failed
+        )
+
+        self._excel_export_thread.finished.connect(
+            self._on_excel_export_finished
+        )
+
+        self.status_label.setText(
+            "Leyendo datos confirmados "
+            f"de BigQuery y generando "
+            f"Excel {module}..."
+        )
+
+        self._update_new_row_button()
+        self._update_import_excel_button()
+        self._update_export_excel_button()
+        self._update_distribution_button()
+        self._update_enabled_action_button()
+
+        self._excel_export_thread.start()
+
+    def _on_excel_exported(
+        self,
+        result,
+    ):
+        pending_note = ""
+
+        if self._workspace.has_changes:
+            pending_note = (
+                "\n\nLa exportacion contiene "
+                "el estado confirmado en BigQuery. "
+                "Los cambios locales pendientes "
+                "no fueron incluidos."
+            )
+
+        AppMessageBox.information(
+            self,
+            "Excel generado",
+            (
+                f"Se exportaron "
+                f"{result.row_count:,} filas "
+                f"y {result.column_count:,} "
+                "columnas.\n\n"
+                f"Archivo:\n{result.path}"
+                f"{pending_note}"
+            ),
+        )
+
+        self.status_label.setText(
+            f"Exportacion completada: "
+            f"{result.row_count:,} filas."
+        )
+
+    def _on_excel_export_failed(
+        self,
+        message,
+    ):
+        AppMessageBox.warning(
+            self,
+            "No se pudo exportar",
+            (
+                "No fue posible generar "
+                "el archivo Excel desde "
+                "BigQuery.\n\n"
+                f"Detalle: {message}"
+            ),
+        )
+
+        self.status_label.setText(
+            "Exportacion Excel fallida."
+        )
+
+    def _on_excel_export_finished(
+        self,
+    ):
+        if (
+            self._excel_export_thread
+            is not None
+        ):
+            self._excel_export_thread.deleteLater()
+
+            self._excel_export_thread = None
+
+        self._update_new_row_button()
+        self._update_import_excel_button()
+        self._update_export_excel_button()
+        self._update_distribution_button()
+        self._update_enabled_action_button()
+
     def _update_new_row_button(
         self,
     ):
@@ -1461,6 +2268,321 @@ class PresupuestoPage(QWidget):
             self.new_row_button.setText(
                 "Nueva fila"
             )
+
+    def show_insert_dialog(
+        self,
+    ):
+        if not (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+        ):
+            return
+
+        if self.is_busy:
+            return
+
+        dialog = BudgetInsertModeDialog(
+            module_config=(
+                self._workspace
+                .module_config
+            ),
+            parent=self,
+        )
+
+        if not dialog.exec():
+            return
+
+        mode = dialog.selected_mode()
+
+        if (
+            mode
+            == BudgetInsertMode.MANUAL
+        ):
+            self.show_new_row_dialog()
+            return
+
+        if (
+            mode
+            == BudgetInsertMode.ASSISTED
+        ):
+            self.show_opex_assisted_insert()
+            return
+
+        if (
+            mode
+            == BudgetInsertMode.TEMPLATE
+        ):
+            self.show_excel_import()
+            return
+
+        if (
+            mode
+            == BudgetInsertMode.INTELLIGENT
+        ):
+            self.show_intelligent_insert()
+            return
+
+        AppMessageBox.warning(
+            self,
+            "Insercion no disponible",
+            "El tipo de insercion seleccionado "
+            "no esta configurado.",
+        )
+
+    def show_opex_assisted_insert(
+        self,
+    ):
+        if not (
+            self._workspace_ready
+            and
+            self._workspace.is_loaded
+        ):
+            return
+
+        if self.is_busy:
+            return
+
+        if (
+            self._workspace
+            .module_config
+            .module
+            != BudgetModule.OPEX
+        ):
+            AppMessageBox.warning(
+                self,
+                "Alta asistida",
+                "La alta asistida solo esta "
+                "disponible para OPEX.",
+            )
+            return
+
+        try:
+            actor = (
+                resolve_current_actor()
+            )
+
+        except CurrentActorError as exc:
+            AppMessageBox.warning(
+                self,
+                "Usuario no identificado",
+                str(exc),
+            )
+            return
+
+        self._opex_assisted_actor = actor
+
+        self._opex_assisted_thread = (
+            OpexAssistedInferenceLoadThread(
+                self._workspace
+                .module_config,
+                parent=self,
+            )
+        )
+
+        self._opex_assisted_thread.loaded.connect(
+            self._on_opex_assisted_loaded
+        )
+
+        self._opex_assisted_thread.failed.connect(
+            self._on_opex_assisted_failed
+        )
+
+        self._opex_assisted_thread.finished.connect(
+            self._on_opex_assisted_finished
+        )
+
+        self.status_label.setText(
+            "Cargando historial OPEX para "
+            "la alta asistida..."
+        )
+
+        self._update_new_row_button()
+        self._update_import_excel_button()
+        self._update_export_excel_button()
+        self._update_insert_button()
+
+        self._opex_assisted_thread.start()
+
+    def _on_opex_assisted_loaded(
+        self,
+        inference_service,
+    ):
+        actor = (
+            self._opex_assisted_actor
+        )
+
+        if not actor:
+            return
+
+        dialog = (
+            OpexAssistedInsertDialog(
+                actor=actor,
+                inference_service=(
+                    inference_service
+                ),
+                parent=self,
+            )
+        )
+
+        dialog.exec()
+
+        self.status_label.setText(
+            "Alta asistida cerrada. "
+            "En este checkpoint solo se "
+            "analizo el historial; no se "
+            "agregaron filas al Workspace."
+        )
+
+    def _on_opex_assisted_failed(
+        self,
+        message,
+    ):
+        AppMessageBox.warning(
+            self,
+            "Alta asistida no disponible",
+            "No se pudo cargar el historial "
+            "OPEX necesario para la "
+            "inferencia.\n\n"
+            f"Detalle: {message}",
+        )
+
+        self.status_label.setText(
+            "No se pudo preparar "
+            "la alta asistida."
+        )
+
+    def _on_opex_assisted_finished(
+        self,
+    ):
+        if (
+            self._opex_assisted_thread
+            is not None
+        ):
+            (
+                self._opex_assisted_thread
+                .deleteLater()
+            )
+
+            self._opex_assisted_thread = None
+
+        self._opex_assisted_actor = None
+
+        self._update_new_row_button()
+        self._update_import_excel_button()
+        self._update_export_excel_button()
+        self._update_insert_button()
+
+    def show_intelligent_insert(
+        self,
+    ):
+        if (
+            self._workspace
+            .module_config
+            .module
+            != BudgetModule.OPEX
+        ):
+            AppMessageBox.warning(
+                self,
+                "Insercion inteligente",
+                "La insercion inteligente "
+                "solo esta disponible para OPEX.",
+            )
+            return
+
+        try:
+            actor = (
+                resolve_current_actor()
+            )
+
+        except CurrentActorError as exc:
+            AppMessageBox.warning(
+                self,
+                "Usuario no identificado",
+                str(exc),
+            )
+            return
+
+        dialog = (
+            OpexSmartImportDialog(
+                actor=actor,
+                parent=self,
+            )
+        )
+
+        if not dialog.exec():
+            self.status_label.setText(
+                "Insercion inteligente cancelada. "
+                "No se agregaron filas."
+            )
+            return
+
+        rows = dialog.rows()
+
+        if not rows:
+            self.status_label.setText(
+                "Insercion inteligente cancelada: "
+                "no se generaron filas."
+            )
+            return
+
+        source_name = (
+            dialog.source_name()
+            or "plantilla OPEX"
+        )
+
+        try:
+            session_ids = (
+                self._workspace
+                .add_new_rows(
+                    rows,
+                    description=(
+                        "Insercion inteligente "
+                        "OPEX 2027 - "
+                        f"{source_name}"
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            AppMessageBox.warning(
+                self,
+                "No se pudo importar",
+                "La plantilla fue preparada "
+                "correctamente, pero las filas "
+                "no pudieron agregarse al "
+                "Workspace.\n\n"
+                f"{type(exc).__name__}: {exc}",
+            )
+            return
+
+        last_page = max(
+            0,
+            (
+                self._workspace.row_count
+                - 1
+            )
+            // self._page_size,
+        )
+
+        self._load_page(
+            last_page
+        )
+
+        if session_ids:
+            self._select_session_row(
+                session_ids[-1]
+            )
+
+        self.status_label.setText(
+            f"{len(session_ids):,} filas OPEX "
+            "2027 agregadas localmente desde "
+            f"{source_name}. "
+            "BigQuery todavia no ha sido "
+            "modificado."
+        )
+
+        self.workspace_changed.emit()
 
     def show_new_row_dialog(
         self,
@@ -1593,16 +2715,131 @@ class PresupuestoPage(QWidget):
             return
 
         try:
-            draft = (
+            module_config = (
+                self._workspace
+                .module_config
+            )
+
+            row_service = (
                 NewBudgetRowService(
-                    self._workspace
-                    .module_config
+                    module_config
                 )
+            )
+
+            draft = (
+                row_service
                 .create_draft(
                     dialog.dimensions(),
                     actor=actor,
                 )
             )
+
+            if (
+                module_config.module
+                == BudgetModule.CAPEX
+            ):
+                amount_dialog = (
+                    CapexAmountsDialog(
+                        row=draft.row,
+                        parent=self,
+                    )
+                )
+
+                if not (
+                    amount_dialog.exec()
+                ):
+                    self.status_label.setText(
+                        "Alta CAPEX cancelada. "
+                        "No se realizaron cambios."
+                    )
+                    return
+
+                draft = (
+                    CapexNewRowAmountService()
+                    .apply(
+                        draft,
+                        ml_values=(
+                            amount_dialog
+                            .ml_values()
+                        ),
+                        usd_values=(
+                            amount_dialog
+                            .usd_values()
+                        ),
+                    )
+                )
+
+            elif (
+                module_config.module
+                == BudgetModule.OPEX
+            ):
+                amount_dialog = (
+                    OpexAmountsDialog(
+                        row=draft.row,
+                        parent=self,
+                    )
+                )
+
+                if not (
+                    amount_dialog.exec()
+                ):
+                    self.status_label.setText(
+                        "Alta OPEX cancelada. "
+                        "No se realizaron cambios."
+                    )
+                    return
+
+                draft = (
+                    OpexNewRowAmountService()
+                    .apply(
+                        draft,
+                        monthly_values=(
+                            amount_dialog
+                            .monthly_values()
+                        ),
+                    )
+                )
+
+            elif (
+                module_config
+                .capabilities
+                .monthly_distribution
+            ):
+                distribution_dialog = (
+                    MonthlyDistributionDialog(
+                        row=draft.row,
+                        module_config=(
+                            module_config
+                        ),
+                        parent=self,
+                        start_equal=True,
+                    )
+                )
+
+                if not (
+                    distribution_dialog
+                    .exec()
+                ):
+                    self.status_label.setText(
+                        "Alta cancelada. "
+                        "No se realizaron cambios."
+                    )
+                    return
+
+                draft = (
+                    row_service
+                    .with_monthly_distribution(
+                        draft,
+                        percentages=(
+                            distribution_dialog
+                            .percentages()
+                        ),
+                        annual_total=(
+                            distribution_dialog
+                            .annual_total()
+                        ),
+                    )
+                )
 
             session_row_id = (
                 self._workspace
@@ -1638,13 +2875,50 @@ class PresupuestoPage(QWidget):
             session_row_id
         )
 
-        self.status_label.setText(
-            "Nueva fila creada localmente. "
-            "Los importes iniciales son 0. "
-            "Puedes editar USD o usar "
-            "Distribuir meses. BigQuery "
-            "todavia no ha sido modificado."
-        )
+        if (
+            module_config.module
+            == BudgetModule.CAPEX
+        ):
+            ml_total = (
+                draft.row.get(
+                    CAPEX_ML_TOTAL_COLUMN
+                )
+                or Decimal("0.00")
+            )
+
+            usd_total = (
+                draft.row.get(
+                    CAPEX_USD_TOTAL_COLUMN
+                )
+                or Decimal("0.00")
+            )
+
+            self.status_label.setText(
+                "Nueva fila CAPEX creada "
+                "localmente. "
+                f"Total ML: {ml_total:,.2f}. "
+                f"Total USD: "
+                f"US$ {usd_total:,.2f}. "
+                "BigQuery todavia no ha sido "
+                "modificado."
+            )
+
+        else:
+            annual_value = (
+                draft.row.get(
+                    module_config
+                    .annual_column
+                )
+                or Decimal("0.00")
+            )
+
+            self.status_label.setText(
+                "Nueva fila creada localmente. "
+                f"Total anual USD: "
+                f"US$ {annual_value:,.2f}. "
+                "BigQuery todavia no ha sido "
+                "modificado."
+            )
 
         self.workspace_changed.emit()
 

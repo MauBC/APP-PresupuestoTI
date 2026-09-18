@@ -1,4 +1,4 @@
-﻿from decimal import (
+from decimal import (
     Decimal,
     InvalidOperation,
     ROUND_HALF_UP,
@@ -176,6 +176,7 @@ class MonthlyDistributionDialog(
         row,
         module_config,
         parent=None,
+        start_equal=False,
     ):
         super().__init__(
             parent
@@ -223,6 +224,9 @@ class MonthlyDistributionDialog(
 
         self._apply_style()
         self._setup_ui()
+
+        if start_equal:
+            self._set_equal_distribution()
 
     def _apply_style(
         self,

@@ -7,6 +7,9 @@ from decimal import (
 )
 from typing import Any
 
+from app.config.grouping_config import (
+    MAX_GROUPING_LEVELS,
+)
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
 )
@@ -85,7 +88,7 @@ class DimensionAllocationPreview:
 
 
 class DimensionAllocationService:
-    MAX_SCOPE_COLUMNS = 3
+    MAX_SCOPE_COLUMNS = MAX_GROUPING_LEVELS
 
     def __init__(
         self,

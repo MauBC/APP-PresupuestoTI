@@ -9,6 +9,7 @@ from dataclasses import dataclass
 class SharePointSyncRequest:
     source_batch_id: str | None = None
     manual: bool = False
+    allow_large_delete: bool = False
 
     def __post_init__(
         self,
@@ -26,6 +27,14 @@ class SharePointSyncRequest:
             self,
             "source_batch_id",
             value or None,
+        )
+
+        object.__setattr__(
+            self,
+            "allow_large_delete",
+            bool(
+                self.allow_large_delete
+            ),
         )
 
 
@@ -63,6 +72,7 @@ class SharePointSyncRequestQueue:
         *,
         source_batch_id=None,
         manual=False,
+        allow_large_delete=False,
     ):
         request = (
             SharePointSyncRequest(
@@ -71,6 +81,9 @@ class SharePointSyncRequestQueue:
                 ),
                 manual=bool(
                     manual
+                ),
+                allow_large_delete=bool(
+                    allow_large_delete
                 ),
             )
         )
@@ -96,6 +109,13 @@ class SharePointSyncRequestQueue:
                 manual=(
                     self._pending.manual
                     or request.manual
+                ),
+                allow_large_delete=(
+                    self._pending
+                    .allow_large_delete
+                    or
+                    request
+                    .allow_large_delete
                 ),
             )
         )

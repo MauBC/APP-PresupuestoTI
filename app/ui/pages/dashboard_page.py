@@ -20,6 +20,7 @@ from PySide6.QtCharts import (
     QBarSet,
     QChart,
     QChartView,
+    QHorizontalBarSeries,
     QValueAxis,
 )
 from PySide6.QtWidgets import (
@@ -45,6 +46,9 @@ from app.config.budget_module_config import (
     BudgetModule,
 )
 
+from app.ui.change_detail_formatting import (
+    change_field_label,
+)
 from app.ui.models.result_table_model import (
     ResultTableModel,
 )
@@ -52,6 +56,54 @@ from app.ui.models.result_table_model import (
 
 MONTHLY_CHART_STEP_K = 100.0
 DASHBOARD_TABLE_MIN_HEIGHT = 300
+
+DASHBOARD_TOP_LIMITS = (
+    5,
+    10,
+    15,
+    20,
+)
+
+DASHBOARD_TOP_DIMENSIONS = {
+    BudgetModule.OPEX: (
+        "pais",
+        "presupuestador",
+        "compania",
+        "proveedor",
+        "nombre_gasto",
+        "ceco",
+        "categoria_gasto",
+        "segmentacion",
+        "moneda_facturacion",
+    ),
+    BudgetModule.CAPEX: (
+        "pais",
+        "presupuestador",
+        "responsable",
+        "vicepresidencia",
+        "gerente_aprobador",
+        "nombre_inversion",
+        "tipo_capex",
+        "tipo_activo",
+        "sociedad",
+        "codigo_cebe",
+        "codigo_ceco",
+    ),
+}
+
+DASHBOARD_DIMENSION_LABELS = {
+    "ceco": "CECO",
+    "codigo_ceco": "Codigo CECO",
+    "codigo_cebe": "Codigo CEBE",
+    "gyp": "GYP",
+    "nombre_gasto": "Nombre del gasto",
+    "nombre_inversion": "Nombre de inversion",
+    "tipo_capex": "Tipo de CAPEX",
+    "tipo_activo": "Tipo de activo",
+    "gerente_aprobador": "Gerente aprobador",
+    "categoria_gasto": "Categoria gasto",
+    "moneda_facturacion": "Moneda de facturacion",
+}
 
 
 MONTH_LABELS = {
@@ -275,6 +327,328 @@ def dashboard_filter_status_text(
     )
 
 
+def dashboard_dimension_label(
+    column,
+):
+    value = str(
+        column
+        if column is not None
+        else ""
+    ).strip()
+
+    if value in DASHBOARD_DIMENSION_LABELS:
+        return DASHBOARD_DIMENSION_LABELS[
+            value
+        ]
+
+    return change_field_label(
+        value
+    )
+
+
+def dashboard_top_dimension_options(
+    module_config,
+):
+    preferred = (
+        DASHBOARD_TOP_DIMENSIONS
+        .get(
+            module_config.module,
+            (),
+        )
+    )
+
+    available = set(
+        getattr(
+            module_config,
+            "groupable_columns",
+            (),
+        )
+        or ()
+    )
+
+    return tuple(
+        column
+        for column in preferred
+        if column in available
+    )
+
+
+def build_dashboard_top_rows(
+    rows,
+    *,
+    dimension,
+    top_n,
+    total_usd,
+):
+    def decimal_value(
+        value,
+    ):
+        if isinstance(
+            value,
+            Decimal,
+        ):
+            return value
+
+        return Decimal(
+            str(
+                value
+                if value is not None
+                else 0
+            )
+        )
+
+    total = decimal_value(
+        total_usd
+    )
+
+    normalized = []
+
+    for row in rows:
+        amount = decimal_value(
+            row.get(
+                "total_usd"
+            )
+        )
+
+        registros = int(
+            row.get(
+                "registros",
+                0,
+            )
+            or 0
+        )
+
+        value = row.get(
+            dimension
+        )
+
+        if (
+            value is None
+            or not str(
+                value
+            ).strip()
+        ):
+            value = "(Sin valor)"
+
+        normalized.append(
+            {
+                dimension: value,
+                "registros": registros,
+                "total_usd": amount,
+            }
+        )
+
+    normalized.sort(
+        key=lambda row: (
+            -row[
+                "total_usd"
+            ],
+            str(
+                row.get(
+                    dimension,
+                    "",
+                )
+            ).casefold(),
+        )
+    )
+
+    limit = max(
+        1,
+        int(
+            top_n
+        ),
+    )
+
+    result = []
+
+    for row in normalized[
+        :limit
+    ]:
+        amount = row[
+            "total_usd"
+        ]
+
+        if total == 0:
+            participation = (
+                Decimal("0.00")
+            )
+
+        else:
+            participation = (
+                (
+                    amount
+                    / total
+                )
+                * Decimal("100")
+            ).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+
+        result.append(
+            {
+                **row,
+                "participacion_pct":
+                    participation,
+            }
+        )
+
+    return tuple(
+        result
+    )
+
+
+def dashboard_top_chart_label(
+    value,
+    *,
+    max_length=34,
+):
+    text = str(
+        value
+        if value is not None
+        else ""
+    ).strip()
+
+    if not text:
+        text = "(Sin valor)"
+
+    limit = max(
+        4,
+        int(max_length),
+    )
+
+    if len(text) <= limit:
+        return text
+
+    return (
+        text[
+            :limit - 3
+        ]
+        + "..."
+    )
+
+
+def build_dashboard_top_chart_data(
+    rows,
+    *,
+    dimension,
+):
+    labels = []
+    values_k = []
+    tooltips = []
+
+    # QBarCategoryAxis horizontal muestra
+    # naturalmente las primeras categorias
+    # desde abajo. Se invierte el Top para
+    # que el mayor quede visualmente arriba.
+    for row in reversed(
+        tuple(rows)
+    ):
+        raw_label = row.get(
+            dimension
+        )
+
+        full_label = str(
+            raw_label
+            if raw_label is not None
+            else "(Sin valor)"
+        ).strip()
+
+        if not full_label:
+            full_label = "(Sin valor)"
+
+        amount = row.get(
+            "total_usd"
+        )
+
+        if not isinstance(
+            amount,
+            Decimal,
+        ):
+            amount = Decimal(
+                str(
+                    amount
+                    if amount is not None
+                    else 0
+                )
+            )
+
+        participation = row.get(
+            "participacion_pct"
+        )
+
+        if not isinstance(
+            participation,
+            Decimal,
+        ):
+            participation = Decimal(
+                str(
+                    participation
+                    if participation is not None
+                    else 0
+                )
+            )
+
+        registros = int(
+            row.get(
+                "registros",
+                0,
+            )
+            or 0
+        )
+
+        labels.append(
+            dashboard_top_chart_label(
+                full_label
+            )
+        )
+
+        values_k.append(
+            float(
+                amount
+            )
+            / 1000.0
+        )
+
+        tooltips.append(
+            (
+                f"{full_label}\n"
+                f"US$ {amount:,.2f}\n"
+                f"{participation:,.2f}%\n"
+                f"{registros:,} registros"
+            )
+        )
+
+    return {
+        "labels": tuple(
+            labels
+        ),
+        "values_k": tuple(
+            values_k
+        ),
+        "tooltips": tuple(
+            tooltips
+        ),
+    }
+
+
+def dashboard_top_axis_max_k(
+    values_k,
+):
+    maximum = max(
+        (
+            float(value)
+            for value in values_k
+        ),
+        default=0.0,
+    )
+
+    if maximum <= 0:
+        return 1.0
+
+    return maximum * 1.15
+
+
 def dashboard_peak_month(
     monthly_totals,
 ):
@@ -403,10 +777,139 @@ def compare_dashboard_months(
     }
 
 
+def build_dashboard_simulation_impact(
+    summary,
+):
+    def decimal_value(
+        value,
+    ):
+        if isinstance(
+            value,
+            Decimal,
+        ):
+            return value
+
+        return Decimal(
+            str(
+                value
+                if value is not None
+                else 0
+            )
+        )
+
+    original = decimal_value(
+        summary.original_total
+    )
+
+    simulated = decimal_value(
+        summary.simulated_total
+    )
+
+    difference = decimal_value(
+        summary.difference
+    )
+
+    variation = (
+        summary.variation_percent
+    )
+
+    if (
+        variation is not None
+        and not isinstance(
+            variation,
+            Decimal,
+        )
+    ):
+        variation = Decimal(
+            str(variation)
+        )
+
+    pending_rows = int(
+        getattr(
+            summary,
+            "pending_rows",
+            0,
+        )
+        or 0
+    )
+
+    pending_fields = int(
+        getattr(
+            summary,
+            "pending_fields",
+            0,
+        )
+        or 0
+    )
+
+    difference_prefix = (
+        "+"
+        if difference > 0
+        else ""
+    )
+
+    if variation is None:
+        variation_text = "N/D"
+
+    else:
+        variation_prefix = (
+            "+"
+            if variation > 0
+            else ""
+        )
+
+        variation_text = (
+            f"{variation_prefix}"
+            f"{variation:,.2f}%"
+        )
+
+    has_changes = (
+        pending_rows > 0
+        or pending_fields > 0
+    )
+
+    if has_changes:
+        summary_text = (
+            "Cambios locales pendientes. "
+            "El impacto mostrado aun no se "
+            "ha aplicado a BigQuery."
+        )
+
+    else:
+        summary_text = (
+            "Sin cambios pendientes "
+            "en el Workspace."
+        )
+
+    return {
+        "original_text":
+            f"US$ {original:,.2f}",
+        "simulated_text":
+            f"US$ {simulated:,.2f}",
+        "difference_text":
+            f"{difference_prefix}"
+            f"US$ {difference:,.2f}",
+        "variation_text":
+            variation_text,
+        "pending_text":
+            f"{pending_rows:,} filas / "
+            f"{pending_fields:,} campos",
+        "state":
+            comparison_visual_state(
+                difference
+            ),
+        "has_changes":
+            has_changes,
+        "summary_text":
+            summary_text,
+    }
+
+
 class DashboardPage(QWidget):
     def __init__(
         self,
         analysis_service,
+        change_summary_service=None,
     ):
         super().__init__()
 
@@ -414,11 +917,19 @@ class DashboardPage(QWidget):
             analysis_service
         )
 
+        self._change_summary_service = (
+            change_summary_service
+        )
+
         self._workspace_ready = False
         self._loaded_once = False
         self._filters_loaded = False
 
         self._current_monthly_totals = ()
+
+        self._current_dashboard_total_usd = (
+            Decimal("0")
+        )
 
         self._setup_ui()
 
@@ -862,6 +1373,178 @@ class DashboardPage(QWidget):
             self.cards_layout
         )
 
+        impact_section_label = QLabel(
+            "IMPACTO DE SIMULACION"
+        )
+
+        impact_section_label.setObjectName(
+            "dashboardSectionEyebrow"
+        )
+
+        layout.addWidget(
+            impact_section_label
+        )
+
+        impact_card = QFrame()
+
+        impact_card.setObjectName(
+            "simulationImpactCard"
+        )
+
+        impact_layout = QVBoxLayout(
+            impact_card
+        )
+
+        impact_layout.setContentsMargins(
+            20,
+            18,
+            20,
+            18,
+        )
+
+        impact_layout.setSpacing(
+            12
+        )
+
+        impact_title = QLabel(
+            "Impacto global de cambios locales"
+        )
+
+        impact_title.setObjectName(
+            "sectionTitle"
+        )
+
+        impact_hint = QLabel(
+            "Vista global del Workspace. "
+            "No cambia con los filtros "
+            "del Dashboard."
+        )
+
+        impact_hint.setObjectName(
+            "pageSubtitle"
+        )
+
+        impact_metrics = QGridLayout()
+
+        impact_metrics.setHorizontalSpacing(
+            24
+        )
+
+        impact_metrics.setVerticalSpacing(
+            6
+        )
+
+        impact_titles = (
+            "Presupuesto base",
+            "Presupuesto simulado",
+            "Diferencia",
+            "Variacion",
+            "Cambios pendientes",
+        )
+
+        for index, title_text in enumerate(
+            impact_titles
+        ):
+            title_label = QLabel(
+                title_text
+            )
+
+            title_label.setObjectName(
+                "cardTitle"
+            )
+
+            impact_metrics.addWidget(
+                title_label,
+                0,
+                index,
+            )
+
+        self.impact_original_value = QLabel(
+            "-"
+        )
+
+        self.impact_simulated_value = QLabel(
+            "-"
+        )
+
+        self.impact_difference_value = QLabel(
+            "-"
+        )
+
+        self.impact_variation_value = QLabel(
+            "-"
+        )
+
+        self.impact_pending_value = QLabel(
+            "-"
+        )
+
+        for widget in (
+            self.impact_original_value,
+            self.impact_simulated_value,
+            self.impact_pending_value,
+        ):
+            widget.setObjectName(
+                "impactMetricValue"
+            )
+
+        self.impact_difference_value.setObjectName(
+            "impactDifferenceValue"
+        )
+
+        self.impact_variation_value.setObjectName(
+            "impactVariationValue"
+        )
+
+        impact_values = (
+            self.impact_original_value,
+            self.impact_simulated_value,
+            self.impact_difference_value,
+            self.impact_variation_value,
+            self.impact_pending_value,
+        )
+
+        for index, widget in enumerate(
+            impact_values
+        ):
+            impact_metrics.addWidget(
+                widget,
+                1,
+                index,
+            )
+
+        self.impact_summary_label = QLabel(
+            "Esperando resumen de cambios..."
+        )
+
+        self.impact_summary_label.setObjectName(
+            "impactSummary"
+        )
+
+        self.impact_summary_label.setWordWrap(
+            True
+        )
+
+        impact_layout.addWidget(
+            impact_title
+        )
+
+        impact_layout.addWidget(
+            impact_hint
+        )
+
+        impact_layout.addLayout(
+            impact_metrics
+        )
+
+        impact_layout.addWidget(
+            self.impact_summary_label
+        )
+
+        layout.addWidget(
+            impact_card
+        )
+
         dimensions_label = QLabel(
             "ANÁLISIS POR DIMENSIONES"
         )
@@ -1042,6 +1725,205 @@ class DashboardPage(QWidget):
             layout.addLayout(
                 extra_tables_layout
             )
+
+        top_section_label = QLabel(
+            "ANALISIS TOP"
+        )
+
+        top_section_label.setObjectName(
+            "dashboardSectionEyebrow"
+        )
+
+        layout.addWidget(
+            top_section_label
+        )
+
+        top_card = QFrame()
+
+        top_card.setObjectName(
+            "dashboardCard"
+        )
+
+        top_layout = QVBoxLayout(
+            top_card
+        )
+
+        top_layout.setContentsMargins(
+            20,
+            18,
+            20,
+            18,
+        )
+
+        top_layout.setSpacing(
+            12
+        )
+
+        top_controls = QHBoxLayout()
+
+        top_controls.setSpacing(
+            10
+        )
+
+        dimension_label = QLabel(
+            "Dimension"
+        )
+
+        dimension_label.setObjectName(
+            "filterLabel"
+        )
+
+        self.top_dimension_combo = (
+            QComboBox()
+        )
+
+        self.top_dimension_combo.setMinimumWidth(
+            230
+        )
+
+        top_dimensions = (
+            dashboard_top_dimension_options(
+                module_config
+            )
+        )
+
+        for column in top_dimensions:
+            self.top_dimension_combo.addItem(
+                dashboard_dimension_label(
+                    column
+                ),
+                column,
+            )
+
+        limit_label = QLabel(
+            "Cantidad"
+        )
+
+        limit_label.setObjectName(
+            "filterLabel"
+        )
+
+        self.top_limit_combo = (
+            QComboBox()
+        )
+
+        self.top_limit_combo.setMinimumWidth(
+            110
+        )
+
+        for limit in DASHBOARD_TOP_LIMITS:
+            self.top_limit_combo.addItem(
+                f"Top {limit}",
+                limit,
+            )
+
+        default_limit_index = (
+            self.top_limit_combo.findData(
+                10
+            )
+        )
+
+        if default_limit_index >= 0:
+            self.top_limit_combo.setCurrentIndex(
+                default_limit_index
+            )
+
+        top_controls.addWidget(
+            dimension_label
+        )
+
+        top_controls.addWidget(
+            self.top_dimension_combo
+        )
+
+        top_controls.addSpacing(
+            12
+        )
+
+        top_controls.addWidget(
+            limit_label
+        )
+
+        top_controls.addWidget(
+            self.top_limit_combo
+        )
+
+        top_controls.addStretch(
+            1
+        )
+
+        self.top_title_label = QLabel(
+            "Top por dimension"
+        )
+
+        self.top_title_label.setObjectName(
+            "sectionTitle"
+        )
+
+        self.top_status_label = QLabel(
+            "Esperando calculo del Dashboard."
+        )
+
+        self.top_status_label.setObjectName(
+            "pageSubtitle"
+        )
+
+        self.top_model = ResultTableModel(
+            self,
+            amount_columns=(
+                "total_usd",
+            ),
+        )
+
+        self.top_table = (
+            self._create_table(
+                self.top_model
+            )
+        )
+
+        self.top_table.setMinimumHeight(
+            320
+        )
+
+        top_layout.addLayout(
+            top_controls
+        )
+
+        top_layout.addWidget(
+            self.top_title_label
+        )
+
+        top_layout.addWidget(
+            self.top_status_label
+        )
+
+        top_layout.addWidget(
+            self.top_table
+        )
+
+        self.top_chart_view = QChartView(
+            self
+        )
+
+        self.top_chart_view.setRenderHint(
+            QPainter.RenderHint.Antialiasing
+        )
+
+        self.top_chart_view.setMinimumHeight(
+            360
+        )
+
+        self.top_chart_view.setMaximumHeight(
+            720
+        )
+
+        top_layout.addWidget(
+            self.top_chart_view
+        )
+
+        layout.addWidget(
+            top_card
+        )
 
         monthly_container = QVBoxLayout()
 
@@ -1378,6 +2260,14 @@ class DashboardPage(QWidget):
 
         self.clear_filters_button.clicked.connect(
             self._clear_dashboard_filters
+        )
+
+        self.top_dimension_combo.currentIndexChanged.connect(
+            self._update_top_analysis
+        )
+
+        self.top_limit_combo.currentIndexChanged.connect(
+            self._update_top_analysis
         )
 
         self.comparison_base_combo.currentIndexChanged.connect(
@@ -1719,6 +2609,121 @@ class DashboardPage(QWidget):
                 if variation is not None
                 else "neutral"
             ),
+        )
+
+    def _set_simulation_impact_state(
+        self,
+        state,
+    ):
+        for widget in (
+            self.impact_difference_value,
+            self.impact_variation_value,
+        ):
+            widget.setProperty(
+                "impactState",
+                state,
+            )
+
+            style = widget.style()
+
+            style.unpolish(
+                widget
+            )
+
+            style.polish(
+                widget
+            )
+
+            widget.update()
+
+    def _update_simulation_impact(
+        self,
+    ):
+        service = (
+            self._change_summary_service
+        )
+
+        if service is None:
+            self.impact_summary_label.setText(
+                "Resumen de cambios "
+                "no disponible."
+            )
+
+            return
+
+        try:
+            summary = service.build()
+
+            view = (
+                build_dashboard_simulation_impact(
+                    summary
+                )
+            )
+
+        except Exception as exc:
+            for widget in (
+                self.impact_original_value,
+                self.impact_simulated_value,
+                self.impact_difference_value,
+                self.impact_variation_value,
+                self.impact_pending_value,
+            ):
+                widget.setText(
+                    "-"
+                )
+
+            self._set_simulation_impact_state(
+                "neutral"
+            )
+
+            self.impact_summary_label.setText(
+                "No se pudo calcular "
+                "el impacto local: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+            return
+
+        self.impact_original_value.setText(
+            view[
+                "original_text"
+            ]
+        )
+
+        self.impact_simulated_value.setText(
+            view[
+                "simulated_text"
+            ]
+        )
+
+        self.impact_difference_value.setText(
+            view[
+                "difference_text"
+            ]
+        )
+
+        self.impact_variation_value.setText(
+            view[
+                "variation_text"
+            ]
+        )
+
+        self.impact_pending_value.setText(
+            view[
+                "pending_text"
+            ]
+        )
+
+        self.impact_summary_label.setText(
+            view[
+                "summary_text"
+            ]
+        )
+
+        self._set_simulation_impact_state(
+            view[
+                "state"
+            ]
         )
 
     def _create_card(
@@ -2123,6 +3128,434 @@ class DashboardPage(QWidget):
                 ),
             }
             for row in result.rows
+        )
+
+    def _selected_top_limit(
+        self,
+    ):
+        value = (
+            self.top_limit_combo
+            .currentData()
+        )
+
+        try:
+            return max(
+                1,
+                int(value),
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return 10
+
+    def _update_top_analysis(
+        self,
+        *_,
+    ):
+        if not self._workspace_ready:
+            self.top_model.clear()
+
+            self._clear_top_chart(
+                "Esperando carga del presupuesto."
+            )
+
+            self.top_status_label.setText(
+                "Esperando carga "
+                "del presupuesto."
+            )
+
+            return
+
+        dimension = (
+            self.top_dimension_combo
+            .currentData()
+        )
+
+        if not dimension:
+            self.top_model.clear()
+
+            self._clear_top_chart(
+                "Sin dimensiones disponibles."
+            )
+
+            self.top_status_label.setText(
+                "No existen dimensiones "
+                "disponibles para analizar."
+            )
+
+            return
+
+        limit = (
+            self._selected_top_limit()
+        )
+
+        try:
+            all_rows = (
+                self._dashboard_dimension_rows(
+                    dimension
+                )
+            )
+
+            top_rows = (
+                build_dashboard_top_rows(
+                    all_rows,
+                    dimension=dimension,
+                    top_n=limit,
+                    total_usd=(
+                        self
+                        ._current_dashboard_total_usd
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            self.top_model.clear()
+
+            self._clear_top_chart(
+                "No se pudo calcular el Top."
+            )
+
+            self.top_status_label.setText(
+                "Error al calcular el Top: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+            return
+
+        dimension_title = (
+            dashboard_dimension_label(
+                dimension
+            )
+        )
+
+        self.top_title_label.setText(
+            f"Top por {dimension_title}"
+        )
+
+        self.top_model.set_data(
+            top_rows,
+            (
+                dimension,
+                "registros",
+                "total_usd",
+                "participacion_pct",
+            ),
+        )
+
+        self._update_top_chart(
+            top_rows,
+            dimension=dimension,
+        )
+
+        if not all_rows:
+            self.top_status_label.setText(
+                "Sin datos para esta "
+                "dimension con los "
+                "filtros actuales."
+            )
+
+            return
+
+        visible_count = len(
+            top_rows
+        )
+
+        total_count = len(
+            all_rows
+        )
+
+        self.top_status_label.setText(
+            f"Mostrando {visible_count:,} "
+            f"de {total_count:,} valores. "
+            "Participacion sobre el "
+            "presupuesto filtrado actual."
+        )
+
+    def _replace_top_chart(
+        self,
+        chart,
+    ):
+        old_chart = (
+            self.top_chart_view
+            .chart()
+        )
+
+        self.top_chart_view.setChart(
+            chart
+        )
+
+        if (
+            old_chart is not None
+            and old_chart is not chart
+        ):
+            old_chart.deleteLater()
+
+    def _clear_top_chart(
+        self,
+        message,
+    ):
+        chart = QChart()
+
+        chart.legend().hide()
+
+        chart.setBackgroundBrush(
+            QColor(
+                "#FFFFFF"
+            )
+        )
+
+        chart.setBackgroundRoundness(
+            10
+        )
+
+        chart.setTitle(
+            str(message)
+        )
+
+        self._replace_top_chart(
+            chart
+        )
+
+    def _update_top_chart(
+        self,
+        rows,
+        *,
+        dimension,
+    ):
+        data = (
+            build_dashboard_top_chart_data(
+                rows,
+                dimension=dimension,
+            )
+        )
+
+        labels = data[
+            "labels"
+        ]
+
+        values_k = data[
+            "values_k"
+        ]
+
+        tooltips = data[
+            "tooltips"
+        ]
+
+        if not labels:
+            self._clear_top_chart(
+                "Sin datos para graficar."
+            )
+            return
+
+        bar_set = QBarSet(
+            "Presupuesto"
+        )
+
+        for value in values_k:
+            bar_set.append(
+                value
+            )
+
+        bar_set.setColor(
+            QColor(
+                "#08783E"
+            )
+        )
+
+        bar_set.setBorderColor(
+            QColor(
+                "#066333"
+            )
+        )
+
+        series = QHorizontalBarSeries()
+
+        series.append(
+            bar_set
+        )
+
+        series.setBarWidth(
+            0.62
+        )
+
+        chart = QChart()
+
+        chart.addSeries(
+            series
+        )
+
+        chart.legend().hide()
+
+        chart.setAnimationOptions(
+            QChart.AnimationOption
+            .SeriesAnimations
+        )
+
+        chart.setBackgroundBrush(
+            QColor(
+                "#FFFFFF"
+            )
+        )
+
+        chart.setBackgroundRoundness(
+            10
+        )
+
+        title_font = QFont()
+
+        title_font.setPointSize(
+            11
+        )
+
+        title_font.setBold(
+            True
+        )
+
+        chart.setTitleFont(
+            title_font
+        )
+
+        dimension_title = (
+            dashboard_dimension_label(
+                dimension
+            )
+        )
+
+        chart.setTitle(
+            f"Top por {dimension_title} "
+            "(miles de USD)"
+        )
+
+        axis_y = QBarCategoryAxis()
+
+        axis_y.append(
+            list(
+                labels
+            )
+        )
+
+        axis_x = QValueAxis()
+
+        axis_x.setTitleText(
+            "Miles de USD"
+        )
+
+        axis_x.setLabelFormat(
+            "%.0f"
+        )
+
+        axis_x.setRange(
+            0.0,
+            dashboard_top_axis_max_k(
+                values_k
+            ),
+        )
+
+        axis_x.setTickCount(
+            6
+        )
+
+        axis_x.setGridLineColor(
+            QColor(
+                "#E4E7EC"
+            )
+        )
+
+        axis_font = QFont()
+
+        axis_font.setPointSize(
+            9
+        )
+
+        axis_x.setLabelsFont(
+            axis_font
+        )
+
+        axis_y.setLabelsFont(
+            axis_font
+        )
+
+        axis_x.setLabelsColor(
+            QColor(
+                "#475467"
+            )
+        )
+
+        axis_y.setLabelsColor(
+            QColor(
+                "#475467"
+            )
+        )
+
+        chart.addAxis(
+            axis_x,
+            Qt.AlignmentFlag.AlignBottom,
+        )
+
+        chart.addAxis(
+            axis_y,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+
+        series.attachAxis(
+            axis_x
+        )
+
+        series.attachAxis(
+            axis_y
+        )
+
+        def show_top_tooltip(
+            status,
+            index,
+            *_,
+        ):
+            if (
+                not status
+                or index < 0
+                or index >= len(tooltips)
+            ):
+                QToolTip.hideText()
+                return
+
+            QToolTip.showText(
+                QCursor.pos(),
+                tooltips[index],
+                self.top_chart_view,
+            )
+
+        series.hovered.connect(
+            show_top_tooltip
+        )
+
+        self._top_hover_handler = (
+            show_top_tooltip
+        )
+
+        chart_height = min(
+            720,
+            max(
+                360,
+                (
+                    len(labels)
+                    * 31
+                )
+                + 150,
+            ),
+        )
+
+        self.top_chart_view.setMinimumHeight(
+            chart_height
+        )
+
+        self.top_chart_view.setMaximumHeight(
+            chart_height
+        )
+
+        self._replace_top_chart(
+            chart
         )
 
     def _position_monthly_labels(
@@ -2537,6 +3970,10 @@ class DashboardPage(QWidget):
             f"US$ {result.total_usd:,.2f}"
         )
 
+        self._current_dashboard_total_usd = (
+            result.total_usd
+        )
+
         self.rows_value.setText(
             f"{result.total_rows:,}"
         )
@@ -2678,6 +4115,10 @@ class DashboardPage(QWidget):
                     "total_usd",
                 ),
             )
+
+        self._update_top_analysis()
+
+        self._update_simulation_impact()
 
         self._loaded_once = True
 

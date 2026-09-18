@@ -1,4 +1,5 @@
 from PySide6.QtCore import (
+    QSize,
     Qt,
     QTimer,
 )
@@ -38,6 +39,7 @@ from app.services.sharepoint_sync_queue import (
     SharePointSyncRequestQueue,
 )
 from app.ui.dialogs.app_message_box import (
+    ask_confirmation,
     show_error,
     show_info,
     show_warning,
@@ -60,6 +62,16 @@ from app.ui.pages.history_page import (
 )
 from app.ui.pages.presupuesto_page import (
     PresupuestoPage,
+)
+from app.ui.sidebar_navigation import (
+    NAVIGATION_ITEMS,
+    SidebarTextButton,
+    navigation_context_text,
+    sidebar_icon,
+    sidebar_width,
+)
+from app.ui.view_state_store import (
+    UiViewStateStore,
 )
 from app.ui.workers.presupuesto_reversal import (
     PresupuestoReversalThread,
@@ -88,10 +100,32 @@ class MainWindow(QMainWindow):
             settings.WINDOW_HEIGHT,
         )
 
-        self.active_module = (
-            get_budget_module_config(
+        self._view_state_store = (
+            UiViewStateStore()
+        )
+
+        initial_module = (
+            self._view_state_store
+            .active_module(
                 BudgetModule.OPEX
             )
+        )
+
+        initial_config = (
+            get_budget_module_config(
+                initial_module
+            )
+        )
+
+        if not initial_config.configured:
+            initial_config = (
+                get_budget_module_config(
+                    BudgetModule.OPEX
+                )
+            )
+
+        self.active_module = (
+            initial_config
         )
 
         self.workspace = (
@@ -128,6 +162,7 @@ class MainWindow(QMainWindow):
 
         self._sharepoint_sync_last_error = None
         self._sharepoint_sync_current_manual = False
+        self._sharepoint_large_delete_failure = None
 
         self._save_in_progress = False
         self._reversal_in_progress = False
@@ -136,6 +171,13 @@ class MainWindow(QMainWindow):
         self._reversal_reload_after_applied_failure = False
 
         self._initial_load_seconds = None
+
+        self._sidebar_expanded = (
+            self._view_state_store
+            .sidebar_expanded(
+                False
+            )
+        )
 
         self._setup_ui()
 
@@ -164,7 +206,7 @@ class MainWindow(QMainWindow):
 
         main_layout.setSpacing(0)
 
-        sidebar = self._create_sidebar()
+        self.sidebar = self._create_sidebar()
 
         content_widget = QWidget()
 
@@ -181,6 +223,12 @@ class MainWindow(QMainWindow):
 
         content_layout.setSpacing(0)
 
+        self.navigation_context_label = QLabel()
+
+        self.navigation_context_label.setObjectName(
+            "navigationContext"
+        )
+
         self.workspace_banner = QLabel(
             "Preparando presupuesto..."
         )
@@ -196,6 +244,11 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
 
         self._build_module_pages()
+        self._restore_navigation_page()
+
+        content_layout.addWidget(
+            self.navigation_context_label
+        )
 
         content_layout.addWidget(
             self.workspace_banner
@@ -207,7 +260,7 @@ class MainWindow(QMainWindow):
         )
 
         main_layout.addWidget(
-            sidebar
+            self.sidebar
         )
 
         main_layout.addWidget(
@@ -215,12 +268,17 @@ class MainWindow(QMainWindow):
             1,
         )
 
+        self._update_navigation_context()
+
     def _build_module_pages(
         self,
     ):
         self.dashboard_page = (
             DashboardPage(
-                self.analysis_service
+                self.analysis_service,
+                change_summary_service=(
+                    self.change_summary_service
+                ),
             )
         )
 
@@ -230,6 +288,9 @@ class MainWindow(QMainWindow):
                 analysis_service=(
                     self.analysis_service
                 ),
+                view_state_store=(
+                    self._view_state_store
+                ),
             )
         )
 
@@ -238,6 +299,9 @@ class MainWindow(QMainWindow):
                 workspace=self.workspace,
                 analysis_service=(
                     self.analysis_service
+                ),
+                view_state_store=(
+                    self._view_state_store
                 ),
             )
         )
@@ -278,15 +342,106 @@ class MainWindow(QMainWindow):
             self.history_page
         )
 
+    def _restore_navigation_page(
+        self,
+    ):
+        page_index = (
+            self._view_state_store
+            .last_page(
+                self.active_module.module,
+                0,
+            )
+        )
+
+        if (
+            0 <= page_index
+            < self.pages.count()
+        ):
+            self.pages.setCurrentIndex(
+                page_index
+            )
+
+        button = getattr(
+            self,
+            "nav_buttons",
+            {},
+        ).get(
+            self.pages.currentIndex()
+        )
+
+        if button is not None:
+            button.setChecked(
+                True
+            )
+
+        self._update_navigation_context()
+
+    def _persist_view_state(
+        self,
+    ):
+        presupuesto_page = getattr(
+            self,
+            "presupuesto_page",
+            None,
+        )
+
+        if (
+            presupuesto_page is not None
+            and hasattr(
+                presupuesto_page,
+                "save_view_state",
+            )
+        ):
+            presupuesto_page.save_view_state()
+
+        aggregation_page = getattr(
+            self,
+            "aggregation_page",
+            None,
+        )
+
+        if (
+            aggregation_page is not None
+            and hasattr(
+                aggregation_page,
+                "save_view_state",
+            )
+        ):
+            aggregation_page.save_view_state()
+
+        pages = getattr(
+            self,
+            "pages",
+            None,
+        )
+
+        if pages is not None:
+            self._view_state_store.set_last_page(
+                self.active_module.module,
+                pages.currentIndex(),
+            )
+
+        self._view_state_store.set_sidebar_expanded(
+            self._sidebar_expanded
+        )
+
+        self._view_state_store.set_active_module(
+            self.active_module.module
+        )
+
+        self._view_state_store.sync()
+
     def _replace_module_context(
         self,
         config,
     ):
-        page_index = (
-            self.pages.currentIndex()
-        )
+        self._persist_view_state()
 
         self.active_module = config
+
+        self._view_state_store.set_active_module(
+            config.module
+        )
 
         self.workspace = (
             PresupuestoWorkspace(
@@ -321,13 +476,7 @@ class MainWindow(QMainWindow):
 
         self._build_module_pages()
 
-        if (
-            0 <= page_index
-            < self.pages.count()
-        ):
-            self.pages.setCurrentIndex(
-                page_index
-            )
+        self._restore_navigation_page()
 
         self._sync_module_selector()
 
@@ -336,56 +485,103 @@ class MainWindow(QMainWindow):
     def _create_sidebar(self):
         sidebar = QFrame()
 
+        self.sidebar = sidebar
+
         sidebar.setObjectName(
             "sidebar"
         )
 
-        sidebar.setFixedWidth(
-            settings.SIDEBAR_WIDTH
-        )
-
-        layout = QVBoxLayout(
+        self.sidebar_layout = QVBoxLayout(
             sidebar
         )
 
-        layout.setContentsMargins(
-            18,
-            26,
-            18,
-            24,
+        self.sidebar_layout.setSpacing(
+            8
         )
 
-        layout.setSpacing(8)
+        toggle_row = QHBoxLayout()
 
-        title = QLabel(
+        self.sidebar_toggle_button = (
+            QPushButton()
+        )
+
+        self.sidebar_toggle_button.setObjectName(
+            "sidebarToggleButton"
+        )
+
+        self.sidebar_toggle_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+
+        self.sidebar_toggle_button.setIcon(
+            sidebar_icon(
+                "menu",
+                normal="#FFFFFF",
+                active="#FFFFFF",
+            )
+        )
+
+        self.sidebar_toggle_button.setIconSize(
+            QSize(
+                21,
+                21,
+            )
+        )
+
+        self.sidebar_toggle_button.setFixedSize(
+            40,
+            40,
+        )
+
+        self.sidebar_toggle_button.clicked.connect(
+            self._toggle_sidebar
+        )
+
+        toggle_row.addWidget(
+            self.sidebar_toggle_button
+        )
+
+        toggle_row.addStretch()
+
+        self.sidebar_layout.addLayout(
+            toggle_row
+        )
+
+        self.sidebar_title = QLabel(
             "Presupuesto TI"
         )
 
-        title.setObjectName(
+        self.sidebar_title.setObjectName(
             "appTitle"
         )
 
-        subtitle = QLabel(
+        self.sidebar_subtitle = QLabel(
             "Gestion presupuestal"
         )
 
-        subtitle.setObjectName(
+        self.sidebar_subtitle.setObjectName(
             "appSubtitle"
         )
 
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
-        layout.addSpacing(18)
+        self.sidebar_layout.addWidget(
+            self.sidebar_title
+        )
 
-        module_selector = (
+        self.sidebar_layout.addWidget(
+            self.sidebar_subtitle
+        )
+
+        self.module_selector = (
             self._create_module_selector()
         )
 
-        layout.addWidget(
-            module_selector
+        self.sidebar_layout.addWidget(
+            self.module_selector
         )
 
-        layout.addSpacing(18)
+        self.sidebar_layout.addSpacing(
+            10
+        )
 
         self.button_group = (
             QButtonGroup(self)
@@ -395,54 +591,46 @@ class MainWindow(QMainWindow):
             True
         )
 
-        dashboard_button = (
-            self._create_nav_button(
-                "Dashboard",
-                0,
+        self.nav_buttons = {}
+
+        for item in NAVIGATION_ITEMS:
+            button = (
+                self._create_nav_button(
+                    item.label,
+                    item.page_index,
+                    item.icon_name,
+                )
+            )
+
+            self.nav_buttons[
+                item.page_index
+            ] = button
+
+            self.sidebar_layout.addWidget(
+                button
+            )
+
+        self.sidebar_layout.addStretch()
+
+        self.apply_changes_button = (
+            SidebarTextButton(
+                "Aplicar cambios"
             )
         )
 
-        presupuesto_button = (
-            self._create_nav_button(
-                "Presupuesto",
-                1,
+        self.apply_changes_button.setIcon(
+            sidebar_icon(
+                "apply",
+                normal="#FFFFFF",
+                active="#FFFFFF",
             )
         )
 
-        aggregation_button = (
-            self._create_nav_button(
-                "Agrupaciones",
-                2,
+        self.apply_changes_button.setIconSize(
+            QSize(
+                20,
+                20,
             )
-        )
-
-        history_button = (
-            self._create_nav_button(
-                "Historial",
-                3,
-            )
-        )
-
-        layout.addWidget(
-            dashboard_button
-        )
-
-        layout.addWidget(
-            presupuesto_button
-        )
-
-        layout.addWidget(
-            aggregation_button
-        )
-
-        layout.addWidget(
-            history_button
-        )
-
-        layout.addStretch()
-
-        self.apply_changes_button = QPushButton(
-            "Aplicar cambios"
         )
 
         self.apply_changes_button.setEnabled(
@@ -463,7 +651,7 @@ class MainWindow(QMainWindow):
             QPushButton {
                 background-color: #2F7650;
                 color: #FFFFFF;
-                border: 1px solid #2F7650;
+                border: 1px solid #4F8A68;
                 border-radius: 7px;
                 padding: 10px 8px;
                 font-weight: 700;
@@ -474,9 +662,9 @@ class MainWindow(QMainWindow):
             }
 
             QPushButton:disabled {
-                background-color: #D0D5DD;
-                color: #667085;
-                border-color: #D0D5DD;
+                background-color: #466B58;
+                color: #B8C9BF;
+                border-color: #557965;
             }
             """
         )
@@ -485,11 +673,13 @@ class MainWindow(QMainWindow):
             self._show_apply_changes_dialog
         )
 
-        layout.addWidget(
+        self.sidebar_layout.addWidget(
             self.apply_changes_button
         )
 
-        layout.addSpacing(8)
+        self.sidebar_layout.addSpacing(
+            8
+        )
 
         self.sharepoint_sync_status_label = QLabel(
             "SharePoint: listo"
@@ -503,8 +693,25 @@ class MainWindow(QMainWindow):
             True
         )
 
-        self.sharepoint_sync_button = QPushButton(
-            "Actualizar SharePoint"
+        self.sharepoint_sync_button = (
+            SidebarTextButton(
+                "Actualizar SharePoint"
+            )
+        )
+
+        self.sharepoint_sync_button.setIcon(
+            sidebar_icon(
+                "cloud",
+                normal="#2F7650",
+                active="#2F7650",
+            )
+        )
+
+        self.sharepoint_sync_button.setIconSize(
+            QSize(
+                20,
+                20,
+            )
         )
 
         self.sharepoint_sync_button.setCursor(
@@ -516,7 +723,7 @@ class MainWindow(QMainWindow):
             QPushButton {
                 background-color: #FFFFFF;
                 color: #2F7650;
-                border: 1px solid #2F7650;
+                border: 1px solid #D8E8DE;
                 border-radius: 7px;
                 padding: 9px 8px;
                 font-weight: 700;
@@ -527,9 +734,9 @@ class MainWindow(QMainWindow):
             }
 
             QPushButton:disabled {
-                background-color: #F2F4F7;
+                background-color: #E6EBE8;
                 color: #98A2B3;
-                border-color: #D0D5DD;
+                border-color: #BAC7C0;
             }
             """
         )
@@ -538,35 +745,235 @@ class MainWindow(QMainWindow):
             self._request_manual_sharepoint_sync
         )
 
-        layout.addWidget(
+        self.sidebar_layout.addWidget(
             self.sharepoint_sync_status_label
         )
 
-        layout.addWidget(
+        self.sidebar_layout.addWidget(
             self.sharepoint_sync_button
         )
 
-        self._update_sharepoint_sync_ui()
-
-        layout.addSpacing(8)
-
-        version_label = QLabel(
+        self.version_label = QLabel(
             f"Version {settings.APP_VERSION}"
         )
 
-        version_label.setObjectName(
+        self.version_label.setObjectName(
             "appSubtitle"
         )
 
-        layout.addWidget(
-            version_label
+        self.sidebar_layout.addWidget(
+            self.version_label
         )
 
-        dashboard_button.setChecked(
+        self.nav_buttons[
+            0
+        ].setChecked(
             True
         )
 
+        self._update_sharepoint_sync_ui()
+        self._sync_sidebar_mode()
+
         return sidebar
+
+    def _toggle_sidebar(
+        self,
+    ):
+        self._sidebar_expanded = (
+            not self._sidebar_expanded
+        )
+
+        self._sync_sidebar_mode()
+
+        self._view_state_store.set_sidebar_expanded(
+            self._sidebar_expanded
+        )
+
+    def _sync_sidebar_mode(
+        self,
+    ):
+        expanded = bool(
+            self._sidebar_expanded
+        )
+
+        width = sidebar_width(
+            expanded=expanded,
+            expanded_width=(
+                settings.SIDEBAR_WIDTH
+            ),
+            compact_width=(
+                settings
+                .SIDEBAR_COMPACT_WIDTH
+            ),
+        )
+
+        self.sidebar.setFixedWidth(
+            width
+        )
+
+        if expanded:
+            margins = (
+                18,
+                18,
+                18,
+                20,
+            )
+        else:
+            margins = (
+                10,
+                14,
+                10,
+                16,
+            )
+
+        self.sidebar_layout.setContentsMargins(
+            *margins
+        )
+
+        self.sidebar_title.setVisible(
+            expanded
+        )
+
+        self.sidebar_subtitle.setVisible(
+            expanded
+        )
+
+        self.sharepoint_sync_status_label.setVisible(
+            expanded
+        )
+
+        self.version_label.setVisible(
+            expanded
+        )
+
+        self.opex_module_button.set_sidebar_expanded(
+            expanded
+        )
+
+        self.capex_module_button.set_sidebar_expanded(
+            expanded
+        )
+
+        for button in (
+            self.button_group.buttons()
+        ):
+            button.set_sidebar_expanded(
+                expanded
+            )
+
+            button.setProperty(
+                "compact",
+                not expanded,
+            )
+
+            self._refresh_sidebar_style(
+                button
+            )
+
+        for button in (
+            self.apply_changes_button,
+            self.sharepoint_sync_button,
+        ):
+            button.set_sidebar_expanded(
+                expanded
+            )
+
+        self.sidebar_toggle_button.setToolTip(
+            (
+                "Contraer navegacion"
+                if expanded
+                else "Expandir navegacion"
+            )
+        )
+
+    @staticmethod
+    def _refresh_sidebar_style(
+        widget,
+    ):
+        style = widget.style()
+
+        style.unpolish(
+            widget
+        )
+
+        style.polish(
+            widget
+        )
+
+        widget.update()
+
+    def _update_navigation_context(
+        self,
+    ):
+        label = getattr(
+            self,
+            "navigation_context_label",
+            None,
+        )
+
+        pages = getattr(
+            self,
+            "pages",
+            None,
+        )
+
+        if (
+            label is None
+            or pages is None
+        ):
+            return
+
+        label.setText(
+            navigation_context_text(
+                self.active_module.label,
+                pages.currentIndex(),
+            )
+        )
+
+    def _update_pending_navigation(
+        self,
+        pending_rows,
+    ):
+        nav_buttons = getattr(
+            self,
+            "nav_buttons",
+            {}
+        )
+
+        button = nav_buttons.get(
+            1
+        )
+
+        if button is None:
+            return
+
+        pending = (
+            int(
+                pending_rows
+                or 0
+            )
+            > 0
+        )
+
+        button.setProperty(
+            "pending",
+            pending,
+        )
+
+        if pending:
+            button.setToolTip(
+                "Presupuesto\n"
+                f"{int(pending_rows):,} "
+                "filas con cambios pendientes"
+            )
+        else:
+            button.setToolTip(
+                "Presupuesto"
+            )
+
+        self._refresh_sidebar_style(
+            button
+        )
 
     def _create_module_selector(
         self,
@@ -631,12 +1038,19 @@ class MainWindow(QMainWindow):
         text: str,
         module: BudgetModule,
     ):
-        button = QPushButton(
-            text
+        button = SidebarTextButton(
+            text,
+            compact_text=(
+                text[:1]
+            ),
         )
 
         button.setCheckable(
             True
+        )
+
+        button.setToolTip(
+            text
         )
 
         button.setCursor(
@@ -650,7 +1064,7 @@ class MainWindow(QMainWindow):
                 color: #344054;
                 border: 1px solid #D0D5DD;
                 border-radius: 7px;
-                padding: 8px 6px;
+                padding: 8px 5px;
                 font-weight: 700;
             }
 
@@ -755,7 +1169,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Operacion en curso",
                 "Espera a que termine "
-                "la carga de catalogos "
+                "la operacion de Presupuesto "
                 "antes de cambiar de modulo.",
             )
 
@@ -828,6 +1242,7 @@ class MainWindow(QMainWindow):
 
 
         self._update_sharepoint_sync_ui()
+        self._update_navigation_context()
 
     def _sharepoint_sync_is_capex(
         self,
@@ -887,6 +1302,33 @@ class MainWindow(QMainWindow):
 
             return
 
+        if (
+            self._sharepoint_large_delete_failure
+            is not None
+        ):
+            failure = (
+                self._sharepoint_large_delete_failure
+            )
+
+            if not (
+                self._confirm_large_delete_sync(
+                    failure
+                )
+            ):
+                return
+
+            self._sharepoint_large_delete_failure = None
+
+            self._queue_sharepoint_sync(
+                source_batch_id=(
+                    failure.source_batch_id
+                ),
+                manual=True,
+                allow_large_delete=True,
+            )
+
+            return
+
         self._queue_sharepoint_sync(
             source_batch_id=None,
             manual=True,
@@ -897,6 +1339,7 @@ class MainWindow(QMainWindow):
         *,
         source_batch_id=None,
         manual=False,
+        allow_large_delete=False,
     ):
         if not self._sharepoint_sync_is_capex():
             return
@@ -908,6 +1351,9 @@ class MainWindow(QMainWindow):
                     source_batch_id
                 ),
                 manual=manual,
+                allow_large_delete=(
+                    allow_large_delete
+                ),
             )
         )
 
@@ -945,6 +1391,10 @@ class MainWindow(QMainWindow):
                     request.source_batch_id
                 ),
                 parent=self,
+                allow_large_delete=(
+                    request
+                    .allow_large_delete
+                ),
             )
         )
 
@@ -973,6 +1423,7 @@ class MainWindow(QMainWindow):
         )
 
         self._sharepoint_sync_last_error = None
+        self._sharepoint_large_delete_failure = None
 
         result = (
             outcome.publish_result
@@ -1009,6 +1460,35 @@ class MainWindow(QMainWindow):
             failure.message
         )
 
+        if (
+            failure
+            .requires_large_delete_confirmation
+        ):
+            self._sharepoint_large_delete_failure = (
+                failure
+            )
+
+            self._update_sharepoint_sync_ui()
+
+            if (
+                self._confirm_large_delete_sync(
+                    failure
+                )
+            ):
+                self._sharepoint_large_delete_failure = None
+
+                self._queue_sharepoint_sync(
+                    source_batch_id=(
+                        failure.source_batch_id
+                    ),
+                    manual=True,
+                    allow_large_delete=True,
+                )
+
+            return
+
+        self._sharepoint_large_delete_failure = None
+
         self._update_sharepoint_sync_ui()
 
         show_warning(
@@ -1025,6 +1505,44 @@ class MainWindow(QMainWindow):
             "'Reintentar SharePoint'."
             "\n\n"
             f"Detalle: {failure.message}",
+        )
+
+    def _confirm_large_delete_sync(
+        self,
+        failure,
+    ) -> bool:
+        return ask_confirmation(
+            self,
+            "Confirmar eliminacion masiva",
+            "La proteccion de SharePoint "
+            "detecto una eliminacion masiva."
+            "\n\n"
+            f"Crear: "
+            f"{failure.create_count:,}\n"
+            f"Actualizar: "
+            f"{failure.update_count:,}\n"
+            f"Eliminar: "
+            f"{failure.delete_count:,}\n"
+            f"Sin cambios: "
+            f"{failure.unchanged_count:,}\n"
+            f"No administrados: "
+            f"{failure.unmanaged_count:,}\n"
+            f"Items actuales: "
+            f"{failure.current_item_count:,}\n"
+            f"Items objetivo: "
+            f"{failure.desired_item_count:,}"
+            "\n\n"
+            "BigQuery ya permanece guardado. "
+            "Esta autorizacion solo aplica "
+            "a este intento de sincronizacion "
+            "de Resumen_Capex."
+            "\n\n"
+            "Revisa las cantidades antes "
+            "de continuar.",
+            confirm_text=(
+                "Autorizar sincronizacion"
+            ),
+            cancel_text="Cancelar",
         )
 
     def _on_sharepoint_sync_finished(
@@ -1176,14 +1694,36 @@ class MainWindow(QMainWindow):
         self,
         text: str,
         page_index: int,
+        icon_name: str,
     ):
-        button = QPushButton(text)
+        button = SidebarTextButton(
+            text
+        )
 
         button.setObjectName(
             "sidebarButton"
         )
 
-        button.setCheckable(True)
+        button.setCheckable(
+            True
+        )
+
+        button.setToolTip(
+            text
+        )
+
+        button.setIcon(
+            sidebar_icon(
+                icon_name
+            )
+        )
+
+        button.setIconSize(
+            QSize(
+                21,
+                21,
+            )
+        )
 
         button.setCursor(
             Qt.CursorShape.PointingHandCursor
@@ -1207,6 +1747,13 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentIndex(
             page_index
         )
+
+        self._view_state_store.set_last_page(
+            self.active_module.module,
+            page_index,
+        )
+
+        self._update_navigation_context()
 
         page = self.pages.currentWidget()
 
@@ -1267,6 +1814,24 @@ class MainWindow(QMainWindow):
         ):
             return "la consulta del historial"
 
+        presupuesto_page = getattr(
+            self,
+            "presupuesto_page",
+            None,
+        )
+
+        if (
+            presupuesto_page is not None
+            and getattr(
+                presupuesto_page,
+                "is_busy",
+                False,
+            )
+        ):
+            return (
+                "una operacion de Presupuesto"
+            )
+
         return None
 
     def closeEvent(
@@ -1289,6 +1854,8 @@ class MainWindow(QMainWindow):
                 "y vuelve a cerrar la ventana.",
             )
             return
+
+        self._persist_view_state()
 
         super().closeEvent(
             event
@@ -1401,6 +1968,10 @@ class MainWindow(QMainWindow):
                 0
             )
 
+            self._update_pending_navigation(
+                0
+            )
+
             self._update_sharepoint_sync_ui()
             return
 
@@ -1458,6 +2029,9 @@ class MainWindow(QMainWindow):
             pending_rows
         )
 
+        self._update_pending_navigation(
+            pending_rows
+        )
 
         self._update_sharepoint_sync_ui()
 

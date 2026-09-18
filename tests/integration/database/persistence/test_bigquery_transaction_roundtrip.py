@@ -35,6 +35,9 @@ from app.services.presupuesto_reversal_coordinator import (
 from app.services.presupuesto_reversal_service import (
     PresupuestoReversalService,
 )
+from app.services.presupuesto_save_coordinator import (
+    PresupuestoSaveCoordinator,
+)
 from app.services.presupuesto_workspace import (
     PresupuestoWorkspace,
 )
@@ -201,6 +204,8 @@ def insert_synthetic_main_row(
             created_by,
             updated_at,
             updated_by,
+            ceco,
+            proveedor,
             {usd_columns_sql}
         )
 
@@ -212,6 +217,8 @@ def insert_synthetic_main_row(
             @actor,
             @now,
             @actor,
+            @ceco,
+            @proveedor,
             {usd_parameters_sql}
         )
     """
@@ -231,6 +238,16 @@ def insert_synthetic_main_row(
             "actor",
             "STRING",
             ACTOR,
+        ),
+        bigquery.ScalarQueryParameter(
+            "ceco",
+            "STRING",
+            "001234",
+        ),
+        bigquery.ScalarQueryParameter(
+            "proveedor",
+            "STRING",
+            "PROVEEDOR ORIGINAL",
         ),
     ]
 
@@ -337,6 +354,8 @@ def read_main_row(
             row_id,
             habilitado,
             version,
+            ceco,
+            proveedor,
             enero_usd,
             febrero_usd,
             anio_usd,
@@ -1827,6 +1846,363 @@ def test_real_reversal_applied_end_to_end():
             batch_ids=batch_ids,
         )
 
+
+
+def test_real_opex_full_row_save_history_and_reversal():
+    service = BigQueryService()
+
+    token = uuid4().hex
+
+    row_id = (
+        "integration-opex-full-row-"
+        + token
+    )
+
+    source_batch_id = (
+        "integration-opex-full-row-save-"
+        + token
+    )
+
+    reversal_batch_id = (
+        "integration-opex-full-row-revert-"
+        + token
+    )
+
+    batch_ids = (
+        source_batch_id,
+        reversal_batch_id,
+    )
+
+    try:
+        #
+        # Estado inicial:
+        # CECO conserva ceros iniciales.
+        # USD = 100.
+        # version = 1.
+        #
+        insert_synthetic_main_row(
+            service.client,
+            row_id=row_id,
+        )
+
+        workspace = PresupuestoWorkspace()
+
+        (
+            read_repository,
+            persistence_repository,
+            history_service,
+            persistence_service,
+            workspace_loader,
+            reversal_coordinator,
+        ) = build_reversal_stack(
+            service,
+            workspace=workspace,
+        )
+
+        current_rows = (
+            read_repository
+            .get_rows_by_ids(
+                (
+                    row_id,
+                )
+            )
+        )
+
+        assert len(current_rows) == 1
+
+        workspace.load(
+            current_rows
+        )
+
+        initial = read_main_row(
+            service.client,
+            row_id=row_id,
+        )
+
+        assert initial["version"] == 1
+        assert initial["ceco"] == "001234"
+
+        assert (
+            initial["proveedor"]
+            == "PROVEEDOR ORIGINAL"
+        )
+
+        assert (
+            initial["enero_usd"]
+            == Decimal("100.00")
+        )
+
+        #
+        # Cambio completo OPEX:
+        #
+        # STRING codigo:
+        # 001234 -> 009999
+        #
+        # STRING:
+        # proveedor original -> nuevo
+        #
+        # NUMERIC:
+        # 100 -> 125
+        # total anual se recalcula.
+        #
+        workspace.edit_value(
+            0,
+            "ceco",
+            "009999",
+        )
+
+        workspace.edit_value(
+            0,
+            "proveedor",
+            "PROVEEDOR M8J-C",
+        )
+
+        workspace.edit_month(
+            0,
+            "enero_usd",
+            Decimal("125.00"),
+        )
+
+        save_coordinator = (
+            PresupuestoSaveCoordinator(
+                persistence_service,
+                workspace_loader,
+            )
+        )
+
+        save_outcome = (
+            save_coordinator
+            .save_and_reload(
+                actor=ACTOR,
+                batch_id_factory=lambda: (
+                    source_batch_id
+                ),
+            )
+        )
+
+        assert save_outcome.is_applied
+        assert save_outcome.was_reloaded
+        assert not workspace.has_changes
+
+        stored = read_main_row(
+            service.client,
+            row_id=row_id,
+        )
+
+        assert stored["version"] == 2
+        assert stored["ceco"] == "009999"
+
+        assert (
+            stored["proveedor"]
+            == "PROVEEDOR M8J-C"
+        )
+
+        assert (
+            stored["enero_usd"]
+            == Decimal("125.00")
+        )
+
+        assert (
+            stored["anio_usd"]
+            == Decimal("125.00")
+        )
+
+        #
+        # Historial del Apply.
+        #
+        batches = (
+            history_service
+            .list_batches(
+                status="APPLIED",
+                limit=200,
+                offset=0,
+            )
+        )
+
+        source_batch = next(
+            batch
+            for batch in batches
+            if (
+                batch.batch_id
+                == source_batch_id
+            )
+        )
+
+        assert (
+            source_batch.budget_module
+            == "OPEX"
+        )
+
+        detail = (
+            history_service
+            .get_batch_detail(
+                source_batch
+            )
+        )
+
+        assert {
+            change.column_name
+            for change
+            in detail.changes
+        } == {
+            "ceco",
+            "proveedor",
+            "enero_usd",
+            "anio_usd",
+        }
+
+        types = {
+            change.column_name:
+                change.value_type
+            for change
+            in detail.changes
+        }
+
+        assert types["ceco"] == "STRING"
+        assert types["proveedor"] == "STRING"
+
+        assert (
+            types["enero_usd"]
+            == "NUMERIC"
+        )
+
+        assert (
+            types["anio_usd"]
+            == "NUMERIC"
+        )
+
+        #
+        # Reversion completa:
+        # v2 -> v3.
+        #
+        reversal_outcome = (
+            reversal_coordinator
+            .revert_and_reload(
+                source_batch,
+                actor=REVERSAL_ACTOR,
+                batch_id_factory=lambda: (
+                    reversal_batch_id
+                ),
+            )
+        )
+
+        assert reversal_outcome.is_applied
+        assert reversal_outcome.was_reloaded
+
+        restored = read_main_row(
+            service.client,
+            row_id=row_id,
+        )
+
+        assert restored["version"] == 3
+
+        #
+        # El codigo debe recuperar
+        # exactamente los ceros iniciales.
+        #
+        assert restored["ceco"] == "001234"
+
+        assert (
+            restored["proveedor"]
+            == "PROVEEDOR ORIGINAL"
+        )
+
+        assert (
+            restored["enero_usd"]
+            == Decimal("100.00")
+        )
+
+        assert (
+            restored["anio_usd"]
+            == Decimal("100.00")
+        )
+
+        #
+        # Batch compensatorio auditable.
+        #
+        reversal_batches = (
+            history_service
+            .list_batches(
+                status="APPLIED",
+                limit=200,
+                offset=0,
+            )
+        )
+
+        reversal_batch = next(
+            batch
+            for batch
+            in reversal_batches
+            if (
+                batch.batch_id
+                == reversal_batch_id
+            )
+        )
+
+        assert (
+            reversal_batch
+            .reverted_batch_id
+            == source_batch_id
+        )
+
+        reversal_detail = (
+            history_service
+            .get_batch_detail(
+                reversal_batch
+            )
+        )
+
+        assert {
+            change.column_name
+            for change
+            in reversal_detail.changes
+        } == {
+            "ceco",
+            "proveedor",
+            "enero_usd",
+            "anio_usd",
+        }
+
+        for change in (
+            reversal_detail.changes
+        ):
+            assert (
+                change.version_before
+                == 2
+            )
+
+            assert (
+                change.version_after
+                == 3
+            )
+
+        #
+        # Staging limpio.
+        #
+        assert (
+            persistence_repository
+            .count_staging_rows(
+                source_batch_id
+            )
+            == 0
+        )
+
+        assert (
+            persistence_repository
+            .count_staging_rows(
+                reversal_batch_id
+            )
+            == 0
+        )
+
+        assert not workspace.has_changes
+
+    finally:
+        cleanup(
+            service.client,
+            row_id=row_id,
+            batch_ids=batch_ids,
+        )
 
 def test_real_reversal_transaction_blocks_race():
     service = BigQueryService()

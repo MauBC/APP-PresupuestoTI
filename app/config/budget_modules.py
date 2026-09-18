@@ -75,6 +75,11 @@ OPEX_MODULE_CONFIG = (
         country_column="pais",
         budgeter_column="presupuestador",
         ceco_column="ceco",
+        frozen_context_columns=(
+            "presupuestador",
+            "pais",
+            "nombre_gasto",
+        ),
         change_detail_columns=(
             "presupuestador",
             "pais",
@@ -123,9 +128,15 @@ CAPEX_MODULE_CONFIG = (
             )
         ),
         country_column="pais",
-        budgeter_column="responsable",
+        budgeter_column="presupuestador",
         ceco_column="codigo_ceco",
+        frozen_context_columns=(
+            "presupuestador",
+            "pais",
+            "nombre_inversion",
+        ),
         change_detail_columns=(
+            "presupuestador",
             "responsable",
             "pais",
             "sociedad",

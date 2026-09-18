@@ -28,7 +28,6 @@ from database.persistence.batch_builder import (
 )
 from database.persistence.contract import (
     EDITABLE_COLUMNS,
-    EDITABLE_VALUE_TYPES,
     PENDING_STATUS,
 )
 from database.persistence.models import (
@@ -192,6 +191,79 @@ def _boolean_value(
     )
 
 
+def _string_value(
+    value,
+    *,
+    field_name: str,
+):
+    if value is None:
+        return None
+
+    text = str(
+        value
+    ).strip()
+
+    return (
+        text
+        if text
+        else None
+    )
+
+
+def _integer_value(
+    value,
+    *,
+    field_name: str,
+):
+    if value is None:
+        raise PresupuestoReversalError(
+            f"{field_name} no puede "
+            "ser NULL."
+        )
+
+    if isinstance(
+        value,
+        bool,
+    ):
+        raise PresupuestoReversalError(
+            f"{field_name} no es "
+            "un INTEGER valido."
+        )
+
+    if isinstance(
+        value,
+        int,
+    ):
+        return value
+
+    try:
+        numeric = Decimal(
+            str(value).strip()
+        )
+
+    except (
+        InvalidOperation,
+        ValueError,
+    ) as exc:
+        raise PresupuestoReversalError(
+            f"{field_name} no es "
+            "un INTEGER valido."
+        ) from exc
+
+    if (
+        not numeric.is_finite()
+        or numeric != numeric.to_integral_value()
+    ):
+        raise PresupuestoReversalError(
+            f"{field_name} no es "
+            "un INTEGER valido."
+        )
+
+    return int(
+        numeric
+    )
+
+
 def _typed_value(
     value,
     value_type: str,
@@ -205,6 +277,18 @@ def _typed_value(
         .strip()
         .upper()
     )
+
+    if normalized_type == "STRING":
+        return _string_value(
+            value,
+            field_name=field_name,
+        )
+
+    if normalized_type == "INTEGER":
+        return _integer_value(
+            value,
+            field_name=field_name,
+        )
 
     if normalized_type == "NUMERIC":
         return _numeric_value(
@@ -391,12 +475,11 @@ def _validate_row_versions(
 
 def _validate_audit_column(
     change: BudgetAuditChange,
+    value_types: dict[str, str],
 ):
     column = change.column_name
 
-    if column not in (
-        EDITABLE_VALUE_TYPES
-    ):
+    if column not in value_types:
         raise PresupuestoReversalError(
             "La auditoria contiene una "
             "columna no persistible: "
@@ -404,9 +487,13 @@ def _validate_audit_column(
         )
 
     expected_type = (
-        EDITABLE_VALUE_TYPES[
-            column
-        ]
+        str(
+            value_types[
+                column
+            ]
+        )
+        .strip()
+        .upper()
     )
 
     actual_type = (
@@ -548,6 +635,19 @@ class PresupuestoReversalService:
             .upper()
         )
 
+        module_config = (
+            get_budget_module_config(
+                budget_module
+            )
+        )
+
+        editable_value_types = {
+            HABILITADO_COLUMN:
+                "BOOLEAN",
+            **module_config
+            .insert_type_map,
+        }
+
         if expected_module is not None:
             expected_module_value = (
                 _required_text(
@@ -662,10 +762,33 @@ class PresupuestoReversalService:
                 )
             )
 
+            requires_payload = (
+                version_before != 0
+                and any(
+                    change.column_name
+                    not in EDITABLE_COLUMNS
+                    for change in changes
+                )
+            )
+
+            state_columns = (
+                tuple(
+                    dict.fromkeys(
+                        (
+                            *EDITABLE_COLUMNS,
+                            *module_config
+                            .insert_columns,
+                        )
+                    )
+                )
+                if requires_payload
+                else EDITABLE_COLUMNS
+            )
+
             target_state = {}
 
             for column in (
-                EDITABLE_COLUMNS
+                state_columns
             ):
                 if column not in current:
                     raise (
@@ -692,7 +815,7 @@ class PresupuestoReversalService:
             # Su reversion es una baja logica.
             if version_before == 0:
                 enabled_type = (
-                    EDITABLE_VALUE_TYPES[
+                    editable_value_types[
                         HABILITADO_COLUMN
                     ]
                 )
@@ -748,7 +871,8 @@ class PresupuestoReversalService:
                     )
 
                     _validate_audit_column(
-                        enabled_change
+                        enabled_change,
+                        editable_value_types,
                     )
 
                     audited_enabled = (
@@ -802,7 +926,8 @@ class PresupuestoReversalService:
 
                 for change in changes:
                     _validate_audit_column(
-                        change
+                        change,
+                        editable_value_types,
                     )
 
                     column = (
@@ -831,7 +956,7 @@ class PresupuestoReversalService:
                     )
 
                     value_type = (
-                        EDITABLE_VALUE_TYPES[
+                        editable_value_types[
                             column
                         ]
                     )
@@ -943,6 +1068,24 @@ class PresupuestoReversalService:
                 in EDITABLE_COLUMNS
             )
 
+            insert_values = (
+                tuple(
+                    (
+                        column,
+                        deepcopy(
+                            target_state[
+                                column
+                            ]
+                        ),
+                    )
+                    for column
+                    in module_config
+                    .insert_columns
+                )
+                if requires_payload
+                else ()
+            )
+
             persistence_rows.append(
                 PersistenceRowChange(
                     row_id=row_id,
@@ -954,6 +1097,9 @@ class PresupuestoReversalService:
                     ),
                     editable_values=(
                         editable_values
+                    ),
+                    insert_values=(
+                        insert_values
                     ),
                 )
             )

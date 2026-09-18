@@ -77,12 +77,14 @@ def _schema_signature(
     ...
 ]:
     return tuple(
-        (
-            field.name,
-            field.field_type,
-            field.mode,
+        sorted(
+            (
+                field.name,
+                field.field_type,
+                field.mode,
+            )
+            for field in schema
         )
-        for field in schema
     )
 
 

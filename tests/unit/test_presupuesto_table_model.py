@@ -79,25 +79,22 @@ def column_index(
     )
 
 
-def test_dimension_column_is_read_only():
-    _, model = build_model()
-
+def test_dimension_column_is_editable():
+    workspace, model = build_model()
     index = model.index(
         0,
-        column_index(
-            model,
-            "nombre_gasto",
-        ),
+        column_index(model, "nombre_gasto"),
     )
-
     flags = model.flags(index)
+    assert flags & Qt.ItemFlag.ItemIsEditable
 
-    assert not (
-        flags
-        & Qt.ItemFlag.ItemIsEditable
+    changed = model.setData(
+        index,
+        "Servicio editado",
+        Qt.ItemDataRole.EditRole,
     )
-
-
+    assert changed is True
+    assert workspace.get_row(0)["nombre_gasto"] == "Servicio editado"
 def test_usd_column_is_editable():
     _, model = build_model()
 

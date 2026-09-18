@@ -246,6 +246,13 @@ def build_audit_changes(
                     )
                 )
 
+                if (
+                    expected_type is None
+                    and field_change.column in insert_columns
+                    and field_change.value_type in SUPPORTED_VALUE_TYPES
+                ):
+                    expected_type = field_change.value_type
+
                 if expected_type is None:
                     raise AuditBuildError(
                         "Columna no soportada "

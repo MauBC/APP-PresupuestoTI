@@ -84,6 +84,7 @@ def _issue(
     message,
     severity,
     raw_value=None,
+    expected_value=None,
 ):
     return CapexImportIssue(
         row_number=row_number,
@@ -92,6 +93,9 @@ def _issue(
         message=message,
         severity=severity,
         raw_value=raw_value,
+        expected_value=(
+            expected_value
+        ),
     )
 
 
@@ -294,6 +298,9 @@ def clean_and_validate_capex_row(
                     normalized,
                     "anio",
                 ),
+                expected_value=(
+                    expected_year
+                ),
             )
         )
 
@@ -495,6 +502,9 @@ def _validate_total(
                     CapexIssueSeverity.WARNING
                 ),
                 raw_value=raw_total,
+                expected_value=(
+                    calculated
+                ),
             )
         )
 
@@ -535,6 +545,9 @@ def _validate_total(
                     CapexIssueSeverity.ERROR
                 ),
                 raw_value=raw_total,
+                expected_value=(
+                    calculated
+                ),
             )
         )
 
@@ -561,5 +574,8 @@ def _validate_total(
                     CapexIssueSeverity.WARNING
                 ),
                 raw_value=raw_total,
+                expected_value=(
+                    calculated
+                ),
             )
         )

@@ -9,11 +9,15 @@ from openpyxl import load_workbook
 from app.config.capex_schema import (
     CAPEX_EXCEL_SHEET,
     CAPEX_HEADER_ALIASES,
+    CAPEX_INTERNAL_TO_RAW,
     CAPEX_RAW_TO_INTERNAL,
 )
 from app.models.capex_import import (
     CapexCleanRowResult,
     CapexIssueSeverity,
+)
+from app.services.capex_cleaner import (
+    is_blank_like,
 )
 from app.services.capex_validator import (
     clean_and_validate_capex_row,
@@ -40,6 +44,13 @@ class CapexExcelLoadResult:
         ...
     ]
 
+    row_numbers: tuple[
+        int,
+        ...
+    ] = ()
+
+    ignored_empty_count: int = 0
+
     @property
     def valid_results(
         self,
@@ -64,6 +75,36 @@ class CapexExcelLoadResult:
             result
             for result in self.results
             if not result.is_valid
+        )
+
+    @property
+    def valid_row_numbers(
+        self,
+    ) -> tuple[int, ...]:
+        numbers = (
+            self.row_numbers
+        )
+
+        if not numbers:
+            numbers = tuple(
+                range(
+                    self.header_row + 1,
+                    self.header_row
+                    + 1
+                    + len(
+                        self.results
+                    ),
+                )
+            )
+
+        return tuple(
+            row_number
+            for result, row_number
+            in zip(
+                self.results,
+                numbers,
+            )
+            if result.is_valid
         )
 
     @property
@@ -303,32 +344,22 @@ def validate_capex_headers(
             )
         )
 
-    if len(actual) != 50:
+    if len(actual) != 51:
         raise CapexWorkbookError(
             "Se esperaban exactamente "
-            "50 columnas CAPEX de negocio."
+            "51 columnas CAPEX de negocio."
         )
 
 
 def _row_is_empty(
     values: dict[str, Any],
 ) -> bool:
-    for value in values.values():
-        if value is None:
-            continue
-
-        if (
-            isinstance(
-                value,
-                str,
-            )
-            and not value.strip()
-        ):
-            continue
-
-        return False
-
-    return True
+    return all(
+        is_blank_like(
+            value
+        )
+        for value in values.values()
+    )
 
 
 def load_capex_workbook(
@@ -336,6 +367,7 @@ def load_capex_workbook(
     *,
     expected_year: int | None,
     sheet_name: str = CAPEX_EXCEL_SHEET,
+    overrides=None,
 ) -> CapexExcelLoadResult:
     source = Path(
         source_path
@@ -345,6 +377,11 @@ def load_capex_workbook(
         raise CapexWorkbookError(
             f"No existe el archivo: {source}"
         )
+
+    override_values = dict(
+        overrides
+        or {}
+    )
 
     workbook = load_workbook(
         source,
@@ -388,6 +425,8 @@ def load_capex_workbook(
         )
 
         results = []
+        row_numbers = []
+        ignored_empty_count = 0
 
         for (
             row_number,
@@ -410,9 +449,59 @@ def load_capex_workbook(
                 if header
             }
 
+            for (
+                override_key,
+                override_value,
+            ) in override_values.items():
+                try:
+                    (
+                        override_row,
+                        override_column,
+                    ) = override_key
+
+                except (
+                    TypeError,
+                    ValueError,
+                ) as exc:
+                    raise CapexWorkbookError(
+                        "Correccion CAPEX "
+                        "invalida."
+                    ) from exc
+
+                if (
+                    int(
+                        override_row
+                    )
+                    != row_number
+                ):
+                    continue
+
+                internal_column = str(
+                    override_column
+                ).strip().lower()
+
+                raw_header = (
+                    CAPEX_INTERNAL_TO_RAW
+                    .get(
+                        internal_column
+                    )
+                )
+
+                if raw_header is None:
+                    raise CapexWorkbookError(
+                        "No existe la columna "
+                        "CAPEX interna "
+                        f"{internal_column!r}."
+                    )
+
+                raw_row[
+                    raw_header
+                ] = override_value
+
             if _row_is_empty(
                 raw_row
             ):
+                ignored_empty_count += 1
                 continue
 
             result = (
@@ -431,6 +520,10 @@ def load_capex_workbook(
                 result
             )
 
+            row_numbers.append(
+                row_number
+            )
+
         return CapexExcelLoadResult(
             source_path=str(
                 source.resolve()
@@ -442,6 +535,12 @@ def load_capex_workbook(
             ),
             results=tuple(
                 results
+            ),
+            row_numbers=tuple(
+                row_numbers
+            ),
+            ignored_empty_count=(
+                ignored_empty_count
             ),
         )
 

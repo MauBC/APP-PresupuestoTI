@@ -60,6 +60,421 @@ class BudgetExcelImportError(
     pass
 
 
+def _source_value_is_blank(
+    value,
+) -> bool:
+    if value is None:
+        return True
+
+    try:
+        if bool(
+            pd.isna(
+                value
+            )
+        ):
+            return True
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        pass
+
+    if isinstance(
+        value,
+        str,
+    ):
+        return (
+            value.strip()
+            in {
+                "",
+                "-",
+            }
+        )
+
+    return False
+
+
+def _drop_blank_source_rows(
+    dataframe,
+):
+    if dataframe.empty:
+        return (
+            dataframe.copy(
+                deep=True
+            ),
+            0,
+        )
+
+    blank_mask = (
+        dataframe.apply(
+            lambda row: all(
+                _source_value_is_blank(
+                    value
+                )
+                for value
+                in row.values
+            ),
+            axis=1,
+        )
+    )
+
+    ignored = int(
+        blank_mask.sum()
+    )
+
+    filtered = (
+        dataframe.loc[
+            ~blank_mask
+        ]
+        .copy(
+            deep=True
+        )
+    )
+
+    return (
+        filtered,
+        ignored,
+    )
+
+
+def _source_row_numbers(
+    dataframe,
+):
+    result = []
+
+    for fallback, row_index in enumerate(
+        dataframe.index,
+        start=2,
+    ):
+        try:
+            number = (
+                int(
+                    row_index
+                )
+                + 2
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            number = fallback
+
+        result.append(
+            number
+        )
+
+    return tuple(
+        result
+    )
+
+
+def _normalize_import_overrides(
+    overrides,
+):
+    if overrides is None:
+        return {}
+
+    try:
+        supplied = dict(
+            overrides
+        )
+
+    except Exception as exc:
+        raise BudgetExcelImportError(
+            "Las correcciones de importacion "
+            "no tienen un formato valido."
+        ) from exc
+
+    result = {}
+
+    for key, value in (
+        supplied.items()
+    ):
+        if (
+            not isinstance(
+                key,
+                (
+                    tuple,
+                    list,
+                ),
+            )
+            or len(key) != 2
+        ):
+            raise BudgetExcelImportError(
+                "Cada correccion debe usar "
+                "(fila_excel, columna)."
+            )
+
+        try:
+            row_number = int(
+                key[0]
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ) as exc:
+            raise BudgetExcelImportError(
+                "La fila Excel de una "
+                "correccion no es valida."
+            ) from exc
+
+        column = str(
+            key[1]
+            if key[1] is not None
+            else ""
+        ).strip().lower()
+
+        if row_number < 2:
+            raise BudgetExcelImportError(
+                "Solo pueden corregirse "
+                "filas de datos del Excel."
+            )
+
+        if not column:
+            raise BudgetExcelImportError(
+                "La columna de una correccion "
+                "no puede estar vacia."
+            )
+
+        result[
+            (
+                row_number,
+                column,
+            )
+        ] = value
+
+    return result
+
+
+def _apply_opex_overrides(
+    dataframe,
+    overrides,
+):
+    if not overrides:
+        return dataframe
+
+    result = dataframe.copy(
+        deep=True
+    )
+
+    column_map = {
+        str(column)
+        .strip()
+        .lower():
+            column
+        for column
+        in result.columns
+    }
+
+    for (
+        row_number,
+        column,
+    ), value in overrides.items():
+
+        actual_column = (
+            column_map.get(
+                column
+            )
+        )
+
+        if actual_column is None:
+            raise BudgetExcelImportError(
+                "No existe la columna OPEX "
+                f"{column!r} para corregir."
+            )
+
+        row_index = (
+            row_number
+            - 2
+        )
+
+        if (
+            row_index
+            not in result.index
+        ):
+            raise BudgetExcelImportError(
+                "No existe la fila Excel "
+                f"{row_number} para corregir."
+            )
+
+        result.at[
+            row_index,
+            actual_column,
+        ] = value
+
+    return result
+
+
+def _row_for_excel_number(
+    dataframe,
+    row_number,
+):
+    try:
+        row_index = (
+            int(row_number)
+            - 2
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return {}
+
+    if (
+        row_index
+        not in dataframe.index
+    ):
+        return {}
+
+    return (
+        dataframe.loc[
+            row_index
+        ]
+        .to_dict()
+    )
+
+
+def _ensure_current_opex_input_contract(
+    dataframe,
+):
+    result = dataframe.copy()
+
+    normalized_columns = {
+        str(column)
+        .strip()
+        .lower()
+        for column
+        in result.columns
+    }
+
+    # El cleaner historico trabaja con el
+    # contrato fuente de 62 columnas.
+    # vp y vp2 ya no forman parte del
+    # contrato actual OPEX de negocio.
+    #
+    # Se agregan solo como puente interno
+    # para mantener compatibilidad con el
+    # cleaner existente. El projector las
+    # elimina antes de persistir.
+    for column in (
+        "vp",
+        "vp2",
+    ):
+        if (
+            column
+            not in normalized_columns
+        ):
+            result[column] = None
+
+    return result
+
+
+def _context_text(
+    value,
+):
+    if value is None:
+        return ""
+
+    try:
+        if bool(
+            pd.isna(
+                value
+            )
+        ):
+            return ""
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        pass
+
+    return str(
+        value
+    ).strip()
+
+
+def _build_import_issue_context(
+    module_config,
+    row,
+):
+    if not row:
+        return ""
+
+    if (
+        module_config.module
+        == BudgetModule.CAPEX
+    ):
+        definitions = (
+            (
+                "Presupuestador",
+                "presupuestador",
+            ),
+            (
+                "Pais",
+                "pais",
+            ),
+            (
+                "Proyecto",
+                "nombre_inversion",
+            ),
+            (
+                "Responsable",
+                "responsable",
+            ),
+        )
+
+    else:
+        definitions = (
+            (
+                "Presupuestador",
+                "presupuestador",
+            ),
+            (
+                "Pais",
+                "pais",
+            ),
+            (
+                "Gasto",
+                "nombre_gasto",
+            ),
+            (
+                "Proveedor",
+                "proveedor",
+            ),
+            (
+                "CECO",
+                "ceco",
+            ),
+        )
+
+    parts = []
+
+    for label, column in (
+        definitions
+    ):
+        value = _context_text(
+            row.get(
+                column
+            )
+        )
+
+        if not value:
+            continue
+
+        parts.append(
+            f"{label}: {value}"
+        )
+
+    return " | ".join(
+        parts
+    )
+
+
 class BudgetExcelImportService:
     def __init__(
         self,
@@ -84,6 +499,7 @@ class BudgetExcelImportService:
         expected_year=CAPEX_EXPECTED_YEAR,
         timestamp: datetime | None = None,
         row_id_factory=generate_row_id,
+        overrides=None,
     ) -> BudgetExcelImportResult:
         actor_value = str(
             actor
@@ -108,6 +524,12 @@ class BudgetExcelImportService:
                 f"{source}"
             )
 
+        overrides_value = (
+            _normalize_import_overrides(
+                overrides
+            )
+        )
+
         module = (
             self._config
             .module
@@ -125,6 +547,9 @@ class BudgetExcelImportService:
                 timestamp=timestamp,
                 row_id_factory=(
                     row_id_factory
+                ),
+                overrides=(
+                    overrides_value
                 ),
             )
 
@@ -146,6 +571,9 @@ class BudgetExcelImportService:
                 row_id_factory=(
                     row_id_factory
                 ),
+                overrides=(
+                    overrides_value
+                ),
             )
 
         raise BudgetExcelImportError(
@@ -161,6 +589,7 @@ class BudgetExcelImportService:
         sheet_name,
         timestamp,
         row_id_factory,
+        overrides,
     ):
         try:
             dataframe = load_source(
@@ -168,12 +597,38 @@ class BudgetExcelImportService:
                 sheet_name=sheet_name,
             )
 
+            source_column_count = len(
+                dataframe.columns
+            )
+
+            dataframe = (
+                _apply_opex_overrides(
+                    dataframe,
+                    overrides,
+                )
+            )
+
+            (
+                dataframe,
+                ignored_row_count,
+            ) = _drop_blank_source_rows(
+                dataframe
+            )
+
             source_row_count = len(
                 dataframe
             )
 
-            source_column_count = len(
-                dataframe.columns
+            source_row_numbers = (
+                _source_row_numbers(
+                    dataframe
+                )
+            )
+
+            dataframe = (
+                _ensure_current_opex_input_contract(
+                    dataframe
+                )
             )
 
             cleaning = clean_dataframe(
@@ -188,30 +643,45 @@ class BudgetExcelImportService:
                 str(exc)
             ) from exc
 
-        issues = [
-            BudgetImportIssue(
-                row_number=(
-                    issue.row_number
-                ),
-                column=(
-                    issue.column
-                ),
-                code="INVALID_VALUE",
-                message=(
-                    issue.message
-                ),
-                severity=(
-                    BudgetImportIssueSeverity
-                    .ERROR
-                ),
-                raw_value=(
-                    issue.value
-                ),
+        issues = []
+
+        for issue in (
+            cleaning.issues
+        ):
+            context_row = (
+                _row_for_excel_number(
+                    cleaning.dataframe,
+                    issue.row_number,
+                )
             )
-            for issue in (
-                cleaning.issues
+
+            issues.append(
+                BudgetImportIssue(
+                    row_number=(
+                        issue.row_number
+                    ),
+                    column=(
+                        issue.column
+                    ),
+                    code="INVALID_VALUE",
+                    message=(
+                        issue.message
+                    ),
+                    severity=(
+                        BudgetImportIssueSeverity
+                        .ERROR
+                    ),
+                    raw_value=(
+                        issue.value
+                    ),
+                    context=(
+                        _build_import_issue_context(
+                            self._config,
+                            context_row,
+                        )
+                    ),
+                )
             )
-        ]
 
         for column in (
             cleaning.extra_columns
@@ -273,6 +743,10 @@ class BudgetExcelImportService:
                 issues=tuple(
                     issues
                 ),
+                source_row_numbers=(),
+                ignored_row_count=(
+                    ignored_row_count
+                ),
             )
 
         try:
@@ -324,6 +798,12 @@ class BudgetExcelImportService:
             issues=tuple(
                 issues
             ),
+            source_row_numbers=(
+                source_row_numbers
+            ),
+            ignored_row_count=(
+                ignored_row_count
+            ),
         )
 
     def _prepare_capex(
@@ -335,6 +815,7 @@ class BudgetExcelImportService:
         expected_year,
         timestamp,
         row_id_factory,
+        overrides,
     ):
         try:
             import_result = (
@@ -346,6 +827,9 @@ class BudgetExcelImportService:
                     sheet_name=(
                         sheet_name
                     ),
+                    overrides=(
+                        overrides
+                    ),
                 )
             )
 
@@ -353,6 +837,45 @@ class BudgetExcelImportService:
             raise BudgetExcelImportError(
                 str(exc)
             ) from exc
+
+        result_numbers = tuple(
+            getattr(
+                import_result,
+                "row_numbers",
+                (),
+            )
+            or ()
+        )
+
+        if not result_numbers:
+            header_row = int(
+                getattr(
+                    import_result,
+                    "header_row",
+                    1,
+                )
+            )
+
+            result_numbers = tuple(
+                range(
+                    header_row + 1,
+                    header_row
+                    + 1
+                    + len(
+                        import_result.results
+                    ),
+                )
+            )
+
+        context_by_row = {
+            row_number:
+                result.row
+            for row_number, result
+            in zip(
+                result_numbers,
+                import_result.results,
+            )
+        }
 
         issues = tuple(
             BudgetImportIssue(
@@ -375,6 +898,22 @@ class BudgetExcelImportService:
                 ),
                 raw_value=(
                     issue.raw_value
+                ),
+                expected_value=(
+                    getattr(
+                        issue,
+                        "expected_value",
+                        None,
+                    )
+                ),
+                context=(
+                    _build_import_issue_context(
+                        self._config,
+                        context_by_row.get(
+                            issue.row_number,
+                            {},
+                        ),
+                    )
                 ),
             )
             for issue in (
@@ -423,6 +962,11 @@ class BudgetExcelImportService:
                 ),
                 rows=(),
                 issues=issues,
+                source_row_numbers=(),
+                ignored_row_count=(
+                    import_result
+                    .ignored_empty_count
+                ),
             )
 
         records = [
@@ -479,6 +1023,14 @@ class BudgetExcelImportService:
             ),
             rows=rows,
             issues=issues,
+            source_row_numbers=(
+                import_result
+                .valid_row_numbers
+            ),
+            ignored_row_count=(
+                import_result
+                .ignored_empty_count
+            ),
         )
 
     def _validate_prepared_rows(

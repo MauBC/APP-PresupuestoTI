@@ -35,7 +35,7 @@ def test_capex_declares_its_own_dimensions():
     assert (
         CAPEX_MODULE_CONFIG
         .budgeter_column
-        == "responsable"
+        == "presupuestador"
     )
 
 

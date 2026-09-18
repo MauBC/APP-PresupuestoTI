@@ -10,6 +10,7 @@ from app.models.sharepoint_summary_sync import (
     SharePointUpdateAction,
 )
 from app.services.sharepoint_summary_publisher import (
+    SharePointLargeDeleteGuardError,
     SharePointSummaryPublishError,
     SharePointSummaryPublisher,
 )
@@ -244,7 +245,7 @@ def test_mass_delete_is_blocked():
     )
 
     with pytest.raises(
-        SharePointSummaryPublishError,
+        SharePointLargeDeleteGuardError,
         match="masiva",
     ):
         (
@@ -291,3 +292,54 @@ def test_no_changes_makes_no_batch_call():
 
     assert result.write_count == 0
     assert batch.calls == []
+
+def test_mass_delete_can_be_explicitly_authorized():
+    batch = FakeBatch()
+
+    deletes = tuple(
+        SharePointDeleteAction(
+            item_id=str(index),
+            summary_key=(
+                f"key-{index}"
+            ),
+        )
+        for index
+        in range(30)
+    )
+
+    plan = SharePointSummarySyncPlan(
+        creates=(),
+        updates=(),
+        deletes=deletes,
+        unchanged_keys=tuple(
+            f"keep-{index}"
+            for index
+            in range(70)
+        ),
+        unmanaged_item_ids=(),
+        current_item_count=100,
+        desired_item_count=70,
+    )
+
+    result = (
+        SharePointSummaryPublisher(
+            FakeSharePoint(),
+            batch_client=batch,
+        )
+        .publish(
+            list_name="Resumen_Capex",
+            plan=plan,
+            allow_large_delete=True,
+        )
+    )
+
+    assert result.deleted_count == 30
+
+    delete_requests = tuple(
+        request
+        for call in batch.calls
+        for request in call
+        if request.method == "DELETE"
+    )
+
+    assert len(delete_requests) == 30

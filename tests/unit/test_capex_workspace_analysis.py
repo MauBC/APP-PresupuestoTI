@@ -22,6 +22,7 @@ def make_row(
     pais,
     responsable,
     total,
+    presupuestador=None,
 ):
     row = {
         column: None
@@ -38,6 +39,14 @@ def make_row(
     row[
         "responsable"
     ] = responsable
+
+    row[
+        "presupuestador"
+    ] = (
+        responsable
+        if presupuestador is None
+        else presupuestador
+    )
 
     row[
         "row_id"
@@ -102,7 +111,7 @@ def build_service():
     )
 
 
-def test_capex_dashboard_uses_responsable():
+def test_capex_dashboard_uses_presupuestador():
     service = build_service()
 
     result = (
@@ -266,7 +275,7 @@ def test_capex_dashboard_exposes_advanced_metrics():
 
 
 
-def test_capex_dashboard_can_filter_by_responsable():
+def test_capex_dashboard_can_filter_by_presupuestador():
     service = build_service()
 
     result = service.get_dashboard(
@@ -283,7 +292,7 @@ def test_capex_dashboard_can_filter_by_responsable():
     assert result.total_budgeters == 1
 
 
-def test_capex_dashboard_filter_options_use_responsable():
+def test_capex_dashboard_filter_options_use_presupuestador():
     service = build_service()
 
     result = (
@@ -299,3 +308,59 @@ def test_capex_dashboard_filter_options_use_responsable():
         "Ana",
         "Luis",
     )
+
+def test_capex_budgeter_is_independent_from_responsable():
+    workspace = PresupuestoWorkspace(
+        CAPEX_MODULE_CONFIG
+    )
+
+    workspace.load(
+        (
+            make_row(
+                row_id="row-budgeter",
+                pais="PER",
+                responsable="Responsable X",
+                presupuestador="Presupuestador Y",
+                total="100",
+            ),
+        )
+    )
+
+    service = (
+        PresupuestoWorkspaceAnalysisService(
+            workspace
+        )
+    )
+
+    options = (
+        service
+        .get_dashboard_filter_options()
+    )
+
+    assert (
+        options["budgeters"]
+        == (
+            "Presupuestador Y",
+        )
+    )
+
+    result = service.get_dashboard(
+        budgeter_filter=(
+            "Presupuestador Y"
+        )
+    )
+
+    assert result.total_rows == 1
+
+    assert (
+        result.total_usd
+        == Decimal("100")
+    )
+
+    old_semantics = service.get_dashboard(
+        budgeter_filter=(
+            "Responsable X"
+        )
+    )
+
+    assert old_semantics.total_rows == 0

@@ -6,6 +6,9 @@ from decimal import (
 )
 from typing import Any
 
+from app.config.grouping_config import (
+    MAX_GROUPING_LEVELS,
+)
 from app.config.presupuesto_app_config import (
     HABILITADO_COLUMN,
 )
@@ -68,7 +71,7 @@ class GroupMonthlyDistributionPreview:
 
 
 class GroupMonthlyDistributionService:
-    MAX_GROUP_COLUMNS = 3
+    MAX_GROUP_COLUMNS = MAX_GROUPING_LEVELS
 
     def __init__(
         self,

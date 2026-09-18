@@ -24,6 +24,8 @@ class BudgetImportIssue:
     message: str
     severity: BudgetImportIssueSeverity
     raw_value: Any = None
+    context: str = ""
+    expected_value: Any = None
 
 
 @dataclass(
@@ -46,6 +48,13 @@ class BudgetExcelImportResult:
         BudgetImportIssue,
         ...
     ] = ()
+
+    source_row_numbers: tuple[
+        int,
+        ...
+    ] = ()
+
+    ignored_row_count: int = 0
 
     @property
     def error_count(

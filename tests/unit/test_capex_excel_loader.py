@@ -1,7 +1,10 @@
 ﻿from pathlib import Path
 
 import pytest
-from openpyxl import Workbook
+from openpyxl import (
+    Workbook,
+    load_workbook,
+)
 
 from app.config.capex_schema import (
     CAPEX_RAW_TO_INTERNAL,
@@ -174,6 +177,59 @@ def test_loader_skips_blank_rows(
     )
 
     assert result.rows_read == 1
+
+
+
+
+def test_loader_skips_dash_only_rows(
+    tmp_path,
+):
+    path = (
+        tmp_path
+        / "capex.xlsx"
+    )
+
+    make_workbook(
+        path
+    )
+
+    workbook = load_workbook(
+        path
+    )
+
+    worksheet = workbook[
+        "PB 2027"
+    ]
+
+    headers = list(
+        CAPEX_RAW_TO_INTERNAL
+    )
+
+    for index, _ in enumerate(
+        headers,
+        start=2,
+    ):
+        worksheet.cell(
+            row=10,
+            column=index,
+            value="-",
+        )
+
+    workbook.save(
+        path
+    )
+
+    workbook.close()
+
+    result = (
+        load_capex_workbook(
+            path,
+            expected_year=None,
+        )
+    )
+
+    assert result.rows_read == 1
+    assert result.valid_count == 1
 
 
 def test_missing_header_is_rejected(

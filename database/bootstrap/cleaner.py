@@ -176,12 +176,25 @@ def clean_dataframe(
         cleaned_values = []
 
         for (
-            excel_row_number,
-            (_, value),
+            fallback_row_number,
+            (row_index, value),
         ) in enumerate(
             cleaned[column].items(),
             start=2,
         ):
+            try:
+                excel_row_number = (
+                    int(row_index)
+                    + 2
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                excel_row_number = (
+                    fallback_row_number
+                )
             raw_text = (
                 ""
                 if value is None

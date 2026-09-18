@@ -55,6 +55,8 @@ class ProportionalAllocationService:
     def _target(
         cls,
         value,
+        *,
+        quantum=CENT,
     ) -> Decimal:
         target = cls._decimal(
             value
@@ -67,7 +69,7 @@ class ProportionalAllocationService:
             )
 
         return target.quantize(
-            CENT,
+            quantum,
             rounding=ROUND_HALF_UP,
         )
 
@@ -76,6 +78,8 @@ class ProportionalAllocationService:
         cls,
         values,
         target,
+        *,
+        quantum=CENT,
     ):
         items = list(
             values
@@ -83,7 +87,8 @@ class ProportionalAllocationService:
 
         target_amount = (
             cls._target(
-                target
+                target,
+                quantum=quantum,
             )
         )
 
@@ -149,7 +154,9 @@ class ProportionalAllocationService:
 
         if target_amount == ZERO:
             return {
-                key: ZERO
+                key: ZERO.quantize(
+                    quantum
+                )
                 for key, _
                 in normalized
             }
@@ -166,7 +173,7 @@ class ProportionalAllocationService:
                 amount
                 * factor
             ).quantize(
-                CENT,
+                quantum,
                 rounding=ROUND_HALF_UP,
             )
 
@@ -179,7 +186,7 @@ class ProportionalAllocationService:
             target_amount
             - allocated_total
         ).quantize(
-            CENT,
+            quantum,
             rounding=ROUND_HALF_UP,
         )
 
@@ -199,7 +206,7 @@ class ProportionalAllocationService:
                 ]
                 + residual
             ).quantize(
-                CENT,
+                quantum,
                 rounding=ROUND_HALF_UP,
             )
 
@@ -207,7 +214,7 @@ class ProportionalAllocationService:
             result.values(),
             ZERO,
         ).quantize(
-            CENT,
+            quantum,
             rounding=ROUND_HALF_UP,
         )
 

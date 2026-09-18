@@ -189,6 +189,9 @@ def insert_synthetic_capex_row(
             updated_at,
             updated_by,
             moneda_facturacion,
+            responsable,
+            codigo_ceco,
+            cantidad,
             enero_ml,
             anio_ml,
             {column_sql}
@@ -203,6 +206,9 @@ def insert_synthetic_capex_row(
             @now,
             @actor,
             @currency,
+            @responsable,
+            @codigo_ceco,
+            @cantidad,
             @enero_ml,
             @anio_ml,
             {parameter_sql}
@@ -229,6 +235,21 @@ def insert_synthetic_capex_row(
             "currency",
             "STRING",
             "PEN",
+        ),
+        bigquery.ScalarQueryParameter(
+            "responsable",
+            "STRING",
+            "RESPONSABLE ORIGINAL",
+        ),
+        bigquery.ScalarQueryParameter(
+            "codigo_ceco",
+            "STRING",
+            "001234",
+        ),
+        bigquery.ScalarQueryParameter(
+            "cantidad",
+            "INT64",
+            1,
         ),
         bigquery.ScalarQueryParameter(
             "enero_ml",
@@ -277,6 +298,9 @@ def read_capex_row(
             version,
             habilitado,
             moneda_facturacion,
+            responsable,
+            codigo_ceco,
+            cantidad,
             enero_ml,
             anio_ml,
             enero_usd,
@@ -450,13 +474,6 @@ def test_real_capex_save_conflict_history_and_reversal():
         )
     )
 
-    assert initial_count == 173, (
-        "La prueba se detuvo porque "
-        "capex_2027 no contiene "
-        "exactamente 173 filas. "
-        f"Encontradas={initial_count}."
-    )
-
     token = uuid4().hex
 
     row_id = (
@@ -544,6 +561,21 @@ def test_real_capex_save_conflict_history_and_reversal():
             == "PEN"
         )
 
+        assert (
+            original["responsable"]
+            == "RESPONSABLE ORIGINAL"
+        )
+
+        assert (
+            original["codigo_ceco"]
+            == "001234"
+        )
+
+        assert (
+            original["cantidad"]
+            == 1
+        )
+
         #
         # 2. Dos sesiones cargan v1.
         #
@@ -597,6 +629,24 @@ def test_real_capex_save_conflict_history_and_reversal():
         # 100 -> 125
         # v1 -> v2
         #
+        workspace.edit_value(
+            0,
+            "responsable",
+            "RESPONSABLE M8J-C",
+        )
+
+        workspace.edit_value(
+            0,
+            "codigo_ceco",
+            "009999",
+        )
+
+        workspace.edit_value(
+            0,
+            "cantidad",
+            2,
+        )
+
         workspace.edit_month(
             0,
             "enero_usd",
@@ -652,6 +702,21 @@ def test_real_capex_save_conflict_history_and_reversal():
         assert (
             stored["anio_usd"]
             == Decimal("125.00")
+        )
+
+        assert (
+            stored["responsable"]
+            == "RESPONSABLE M8J-C"
+        )
+
+        assert (
+            stored["codigo_ceco"]
+            == "009999"
+        )
+
+        assert (
+            stored["cantidad"]
+            == 2
         )
 
         #
@@ -861,6 +926,9 @@ def test_real_capex_save_conflict_history_and_reversal():
             for change
             in detail.changes
         } == {
+            "responsable",
+            "codigo_ceco",
+            "cantidad",
             "enero_usd",
             "anio_usd",
         }
@@ -931,6 +999,21 @@ def test_real_capex_save_conflict_history_and_reversal():
         assert (
             restored["anio_usd"]
             == Decimal("100.00")
+        )
+
+        assert (
+            restored["responsable"]
+            == "RESPONSABLE ORIGINAL"
+        )
+
+        assert (
+            restored["codigo_ceco"]
+            == "001234"
+        )
+
+        assert (
+            restored["cantidad"]
+            == 1
         )
 
         #
@@ -1009,6 +1092,9 @@ def test_real_capex_save_conflict_history_and_reversal():
             for change
             in reversal_detail.changes
         } == {
+            "responsable",
+            "codigo_ceco",
+            "cantidad",
             "enero_usd",
             "anio_usd",
         }
@@ -1054,9 +1140,9 @@ def test_real_capex_save_conflict_history_and_reversal():
         )
 
     #
-    # Los 173 registros originales
-    # deben quedar exactamente iguales
-    # en cantidad.
+    # La tabla debe conservar exactamente
+    # el mismo baseline que tenia antes
+    # de insertar la fila sintetica.
     #
     assert (
         count_capex_rows(

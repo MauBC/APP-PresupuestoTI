@@ -107,6 +107,15 @@ def history_operation_code(
     ):
         return "REVERTED"
 
+    if bool(
+        getattr(
+            batch,
+            "is_insert",
+            False,
+        )
+    ):
+        return "INSERT"
+
     return "CHANGE"
 
 
@@ -114,6 +123,7 @@ def format_history_operation(
     batch,
 ) -> str:
     labels = {
+        "INSERT": "ALTA",
         "CHANGE": "CAMBIO",
         "REVERTED": "REVERTIDO",
         "REVERSAL": "REVERSION",
@@ -359,6 +369,11 @@ class HistoryPage(QWidget):
         self.type_combo.addItem(
             "Todos los tipos",
             "ALL",
+        )
+
+        self.type_combo.addItem(
+            "Altas",
+            "INSERT",
         )
 
         self.type_combo.addItem(
@@ -660,6 +675,12 @@ class HistoryPage(QWidget):
 
         self._loaded_once = True
 
+        inserts = sum(
+            history_operation_code(batch)
+            == "INSERT"
+            for batch in self._batches
+        )
+
         changes = sum(
             history_operation_code(batch)
             == "CHANGE"
@@ -682,6 +703,7 @@ class HistoryPage(QWidget):
             f"{len(self._batches):,} operaciones"
             f" | Modulo: "
             f"{self._module_config.label}"
+            f" | Altas: {inserts:,}"
             f" | Cambios: {changes:,}"
             f" | Revertidos: {reverted:,}"
             f" | Reversiones: {reversals:,}"
@@ -727,12 +749,14 @@ class HistoryPage(QWidget):
         )
 
         type_colors = {
+            "INSERT": "#067647",
             "CHANGE": "#344054",
             "REVERTED": "#92400E",
             "REVERSAL": "#067647",
         }
 
         type_backgrounds = {
+            "INSERT": "#ECFDF3",
             "CHANGE": "#F2F4F7",
             "REVERTED": "#FFF4E5",
             "REVERSAL": "#ECFDF3",

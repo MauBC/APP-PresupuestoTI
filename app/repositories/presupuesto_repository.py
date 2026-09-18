@@ -45,33 +45,33 @@ class PresupuestoRepository:
     ) -> tuple[str, ...]:
         return (
             *self._module_config
-            .dimension_columns,
+            .insert_columns,
             "habilitado",
-            *self._module_config
-            .amount_columns,
         )
-
     @property
     def load_columns(
         self,
     ) -> tuple[str, ...]:
         return (
             *self._module_config
-            .dimension_columns,
+            .insert_columns,
             "row_id",
             "version",
             "habilitado",
-            *self._module_config
-            .amount_columns,
         )
-
     def get_connection_status(self) -> bool:
         return self._bigquery.test_connection()
 
     def get_all_rows(
         self,
     ) -> tuple[dict, ...]:
-        table = self._bigquery.get_table(
+        table_loader = getattr(
+            self._bigquery,
+            "get_cached_table",
+            self._bigquery.get_table,
+        )
+
+        table = table_loader(
             self._module_config.main_table
         )
 
@@ -90,21 +90,69 @@ class PresupuestoRepository:
             for field in selected_fields
         )
 
+        module_name = str(
+            self._module_config
+            .module
+            .value
+        ).upper()
+
+        if module_name == "OPEX":
+            try:
+                rows_iterator = (
+                    self._bigquery
+                    .client
+                    .list_rows(
+                        table,
+                        selected_fields=(
+                            selected_fields
+                        ),
+                    )
+                )
+
+                arrow_table = (
+                    rows_iterator
+                    .to_arrow(
+                        create_bqstorage_client=True
+                    )
+                )
+
+                return tuple(
+                    arrow_table.to_pylist()
+                )
+
+            except Exception:
+                # Storage API es una
+                # optimizacion opcional.
+                # Si falla, se conserva
+                # la ruta REST tradicional.
+                pass
+
         rows_iterator = (
-            self._bigquery.client.list_rows(
+            self._bigquery
+            .client
+            .list_rows(
                 table,
-                selected_fields=selected_fields,
+                selected_fields=(
+                    selected_fields
+                ),
             )
         )
 
         return tuple(
             {
-                column: values.get(column)
-                for column in selected_names
+                column:
+                    values.get(
+                        column
+                    )
+                for column
+                in selected_names
             }
             for values in (
-                dict(row.items())
-                for row in rows_iterator
+                dict(
+                    row.items()
+                )
+                for row
+                in rows_iterator
             )
         )
 
@@ -187,6 +235,36 @@ class PresupuestoRepository:
                 row.items()
             )
             for row in result
+        )
+
+    def get_history_row_context(
+        self,
+        row_ids,
+    ) -> tuple[dict, ...]:
+        rows = self.get_rows_by_ids(
+            row_ids
+        )
+
+        context_columns = tuple(
+            self._module_config
+            .change_detail_columns
+            or ()
+        )
+
+        selected_columns = (
+            "row_id",
+            *context_columns,
+        )
+
+        return tuple(
+            {
+                column: row.get(
+                    column
+                )
+                for column
+                in selected_columns
+            }
+            for row in rows
         )
 
     def get_catalog_values(
@@ -380,6 +458,87 @@ class PresupuestoRepository:
                 is not None
                 else ""
             ).strip()
+        )
+
+    def get_dimension_snapshot(
+        self,
+        *,
+        enabled_only: bool = True,
+    ) -> tuple[dict, ...]:
+        columns = (
+            *self._module_config
+            .dimension_columns,
+            "habilitado",
+        )
+
+        table_ref = (
+            self._bigquery
+            .get_table_reference(
+                self._module_config
+                .main_table
+            )
+        )
+
+        select_sql = (
+            ",\n                "
+            .join(
+                f"`{column}`"
+                for column
+                in columns
+            )
+        )
+
+        where_sql = (
+            "\n            WHERE "
+            "COALESCE(`habilitado`, TRUE)"
+            if enabled_only
+            else ""
+        )
+
+        sql = f"""
+            SELECT
+                {select_sql}
+
+            FROM `{table_ref}`
+            {where_sql}
+        """
+
+        rows = (
+            self._bigquery
+            .client
+            .query(
+                sql,
+                location=(
+                    self._bigquery
+                    .client
+                    .location
+                    if getattr(
+                        self._bigquery
+                        .client,
+                        "location",
+                        None,
+                    )
+                    else None
+                ),
+            )
+            .result()
+        )
+
+        return tuple(
+            {
+                column:
+                    values.get(
+                        column
+                    )
+                for column
+                in columns
+            }
+            for values in (
+                dict(
+                    row.items()
+                )
+                for row in rows
+            )
         )
 
     def get_page(

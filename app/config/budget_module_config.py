@@ -60,6 +60,11 @@ class BudgetModuleConfig:
         ...
     ] = ()
 
+    frozen_context_columns: tuple[
+        str,
+        ...
+    ] = ()
+
     insert_column_types: tuple[
         tuple[
             str,
@@ -89,6 +94,13 @@ class BudgetModuleConfig:
         str,
         ...
     ]:
+        insert_columns = (
+            self.insert_columns
+        )
+
+        if insert_columns:
+            return insert_columns
+
         return self.amount_columns
 
     @property
