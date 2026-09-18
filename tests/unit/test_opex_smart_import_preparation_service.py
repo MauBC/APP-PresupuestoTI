@@ -148,6 +148,7 @@ def test_build_result_creates_business_summary(
     )
 
     account = SimpleNamespace(
+        categoria_gasto="SERVICIOS",
         nombre_cuenta="SOFTWARE ADM",
         atributo_2="GASTOS TI",
     )
@@ -157,7 +158,9 @@ def test_build_result_creates_business_summary(
     )
 
     cebe = SimpleNamespace(
-        tipo_servicio_cg="TESORERIA"
+        tipo_servicio_cg="TESORERIA",
+        desc_cebe="TESORERIA", macroservicio_cg="CORPORATIVO",
+        region_cg="LIMA", sede_cg="SEDE", segmentacion="SEGMENTO",
     )
 
     state_a = SimpleNamespace(
@@ -278,6 +281,8 @@ def test_build_result_creates_business_summary(
         .tipo_servicio_cg
         == "TESORERIA"
     )
+    assert result.decisions[0].categoria_gasto == "SERVICIOS"
+    assert result.decisions[0].cebe_decisions[0].selected_option.region_cg == "LIMA"
 
 
 

@@ -85,6 +85,7 @@ class OpexSmartImportSheetOverride:
 class OpexSmartImportCebeDecision:
     centro_beneficio: str
     tipo_servicio_cg: str
+    selected_option: OpexSmartImportCebeOption | None = None
 
 
 @dataclass(
@@ -100,6 +101,7 @@ class OpexSmartImportDecision:
         OpexSmartImportCebeDecision,
         ...,
     ]
+    categoria_gasto: str | None = None
 
 
 @dataclass(

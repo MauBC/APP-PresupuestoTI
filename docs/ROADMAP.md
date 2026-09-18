@@ -5,19 +5,18 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 
 ## Base de trabajo
 
-- PR #2: consolidacion del estado probado por el usuario, desde
-  `codex/consolidar-presupuesto-ti` hacia `main`.
+- PR #2: consolidacion del estado probado por el usuario, ya integrado en `main`.
+- PR #3: diagnostico contextual, ya integrado en `main`.
 - Validacion de esa base: 1094 pruebas unitarias aprobadas, 18 excluidas.
 - Cada mejora comienza en una rama limpia y conserva Workspace, staging,
   auditoria, batches y concurrencia optimista.
-- Mientras el PR #2 siga abierto, las mejoras derivadas se comparan contra
-  su rama para que los PR muestren solo el cambio incremental.
+- Las mejoras siguientes parten de `main` actualizado, con PR independientes.
 
 ## Estado por milestone
 
 | Milestone | Estado observado | Criterio de cierre pendiente |
 | --- | --- | --- |
-| H2C/H2D: OPEX inteligente | Editor, workers y manejo de errores implementados; diagnostico contextual mejorado en este checkpoint | Validar decisiones ambiguas, recuperacion ante error y politica de microimportes de extremo a extremo |
+| H2C/H2D: OPEX inteligente | Diagnostico contextual y seleccion explicita de CEBE completados; restauracion exacta de decisiones y GUI verificadas | Validar recuperacion ante error y politica de microimportes de extremo a extremo |
 | M8F: deshabilitar/reactivar | Soporte y pruebas existentes | Verificar circuito completo OPEX/CAPEX con auditoria y reversion |
 | M10: rendimiento | Carga OPEX optimizada, cache de metadatos y benchmarks | Medir carga, filtros, agrupaciones, edicion y memoria con 50.000 filas |
 | M11: Ver cambios | Mejoras implementadas | Validacion funcional de revision de lotes grandes |
@@ -47,15 +46,29 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 
 ## Siguientes checkpoints propuestos
 
-1. H2C/H2D: comprobar decisiones explicitas de cuenta y CEBE. El servicio de
-   defaults aun selecciona la primera alternativa CEBE; revisar esa conducta
-   frente al requisito de decision explicita antes de dar el milestone por cerrado.
-2. H2D/M9: validar microimportes, totales y precision en importacion, Workspace,
+1. H2D/M9: validar microimportes, totales y precision en importacion, Workspace,
    exportacion y persistencia. El codigo usa nueve decimales en importacion
    inteligente; falta cerrar la politica de negocio y su coherencia completa.
-3. M8G/M8E: validacion funcional de altas asistidas y correccion Excel.
-4. M10, M9 y M14: rendimiento, edicion multimoneda y distribucion de la aplicacion.
-5. M16F: SharePoint OPEX, al final.
+2. M8G/M8E: validacion funcional de altas asistidas y correccion Excel.
+3. M10, M9 y M14: rendimiento, edicion multimoneda y distribucion de la aplicacion.
+4. M16F: SharePoint OPEX, al final.
+
+## Checkpoint H2C/H2D: decisiones explicitas y GUI
+
+- Un CEBE con varias alternativas oficiales queda pendiente; no se elige la
+  primera opcion en el servicio ni en el combo. La importacion no genera filas
+  hasta completar las decisiones.
+- La decision conserva todos los atributos CEBE y la categoria de la cuenta.
+  Reabrir el dialogo no cambia una seleccion por otra con el mismo nombre o tipo.
+- El editor muestra pendientes por pestaña y un contador general; Aplicar
+  decisiones solo se habilita al completar todas las selecciones.
+- Los detalles completos de cuenta/CEBE se muestran debajo del selector. Los
+  textos largos se ajustan y el contenido se recorre con scroll en tamaño reducido.
+- Validacion: 1105 pruebas unitarias aprobadas, 18 excluidas; prueba del flujo
+  completo de preparacion pendiente -> seleccion -> generacion y total USD;
+  pruebas GUI de bloqueo, restauracion y scroll. Renders locales revisados en
+  840x620 y 720x520. No se ejecutaron escrituras en BigQuery ni SharePoint.
+- La politica de precision monetaria no cambia en este checkpoint.
 
 ## Recomendaciones adicionales por priorizar
 

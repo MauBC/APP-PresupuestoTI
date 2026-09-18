@@ -795,7 +795,7 @@ class OpexSmartImportDialog(
                 f"{result.budget_count} "
                 "presupuestos encontrados\n"
                 "[PENDIENTE] Existen decisiones "
-                "de cuenta que debes revisar "
+                "de cuenta o CEBE que debes revisar "
                 "antes de generar las filas.\n"
                 "Pulsa Revisar decisiones."
             )
@@ -833,8 +833,7 @@ class OpexSmartImportDialog(
             "[OK] TC 2027 cargado\n"
             "[OK] "
             f"{result.auto_cebe_count} "
-            "CEBE ambiguos resueltos "
-            "automaticamente"
+            "CEBE ambiguos con seleccion confirmada"
         )
 
         self.total_usd_label.setText(
