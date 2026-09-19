@@ -1149,9 +1149,17 @@ class PresupuestoWorkspace:
     ) -> None:
         self._require_loaded()
 
-        self._working_rows = deepcopy(
-            self._original_rows
-        )
+        # Prepare independent originals before mutating the working state.
+        # Unchanged rows need no copy, even in a large Workspace.
+        restored = {
+            row_id: deepcopy(self._original_rows[row_id])
+            for row_id in self._dirty_row_ids
+            if row_id in self._original_rows
+        }
+        for row_id in self._dirty_row_ids:
+            if row_id not in self._original_rows:
+                self._working_rows.pop(row_id, None)
+        self._working_rows.update(restored)
 
         self._history.clear()
         self._dirty_row_ids.clear()
