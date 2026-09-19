@@ -59,6 +59,7 @@ class BudgetImportPreviewModel(
         rows,
         module_config,
         source_row_numbers=(),
+        excluded_source_rows=(),
         parent=None,
     ):
         super().__init__(
@@ -102,10 +103,10 @@ class BudgetImportPreviewModel(
             numbers
         )
 
-        self._included = [
-            True
-            for _ in self._rows
-        ]
+        # Los row_id se regeneran al preparar el Excel. La fila de origen
+        # conserva la identidad aunque cambie el orden o una fila sea invalida.
+        self._excluded_source_rows = set(excluded_source_rows)
+        self._included = [number not in self._excluded_source_rows for number in numbers]
 
         self._business_columns = (
             import_preview_columns(
@@ -154,6 +155,9 @@ class BudgetImportPreviewModel(
             if included
         )
 
+    def excluded_source_rows(self):
+        return frozenset(self._excluded_source_rows)
+
     def set_included(
         self,
         row_index,
@@ -183,6 +187,11 @@ class BudgetImportPreviewModel(
         self._included[
             row_index
         ] = value
+        source_row = self._source_row_numbers[row_index]
+        if value:
+            self._excluded_source_rows.discard(source_row)
+        else:
+            self._excluded_source_rows.add(source_row)
 
         index = self.index(
             row_index,
@@ -203,6 +212,7 @@ class BudgetImportPreviewModel(
     def include_all(
         self,
     ):
+        self._excluded_source_rows.clear()
         changed_rows = []
 
         for index in range(

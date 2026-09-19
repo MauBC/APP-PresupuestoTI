@@ -4,8 +4,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtWidgets import QApplication, QPushButton, QTableView, QTabWidget
+from PySide6.QtCore import Qt
 
-from app.config.budget_modules import OPEX_MODULE_CONFIG
+from app.config.budget_modules import OPEX_MODULE_CONFIG, CAPEX_MODULE_CONFIG
 from app.models.budget_excel_import import (
     BudgetExcelImportResult, BudgetImportIssue, BudgetImportIssueSeverity,
 )
@@ -18,6 +19,52 @@ pytestmark = pytest.mark.unit
 @pytest.fixture(scope="module")
 def qapp():
     return QApplication.instance() or QApplication([])
+
+
+@pytest.mark.parametrize("config", [OPEX_MODULE_CONFIG, CAPEX_MODULE_CONFIG])
+def test_filtered_exclusion_is_restored_after_revalidation(qapp, config):
+    ceco_column = "ceco" if config.module.value == "OPEX" else "codigo_ceco"
+    result = BudgetExcelImportResult(
+        config.module.value, "test.xlsx", "Sheet1", 2, 1,
+        ({ceco_column: "51AAA"}, {ceco_column: "51BBB"}), source_row_numbers=(9, 12),
+    )
+    dialog = dialog_module.BudgetExcelImportDialog(result=result, module_config=config)
+    try:
+        proxy = dialog._preview_proxy
+        proxy.setFilterFixedString("51BBB")
+        proxy.sort(1, Qt.SortOrder.DescendingOrder)
+        dialog._preview_table.selectRow(0)
+        dialog._exclude_selected_preview_rows()
+        assert dialog.excluded_source_rows() == frozenset({12})
+        exclusions = dialog.excluded_source_rows()
+    finally:
+        dialog.close()
+    reopened = dialog_module.BudgetExcelImportDialog(
+        result=result, module_config=config, excluded_source_rows=exclusions,
+    )
+    try:
+        assert reopened.rows_to_import() == (result.rows[0],)
+        assert "Incluidas: 1 | Excluidas: 1" in reopened._preview_selection_label.text()
+        reopened._preview_model.set_included(0, False)
+        assert not reopened._import_button.isEnabled()
+        reopened._include_all_preview_rows()
+        assert reopened.excluded_source_rows() == frozenset()
+        assert reopened._import_button.isEnabled()
+        assert reopened.rows_to_import() == result.rows
+    finally:
+        reopened.close()
+
+
+def test_exclusions_survive_a_result_without_preview_rows(qapp):
+    result = BudgetExcelImportResult("OPEX", "test.xlsx", "Sheet1", 1, 1, ())
+    dialog = dialog_module.BudgetExcelImportDialog(
+        result=result, module_config=OPEX_MODULE_CONFIG, excluded_source_rows=(9,),
+    )
+    try:
+        assert dialog.excluded_source_rows() == frozenset({9})
+        assert dialog.rows_to_import() == ()
+    finally:
+        dialog.close()
 
 
 def test_unvalidated_corrections_cannot_import_previous_valid_result(qapp):

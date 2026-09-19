@@ -21,6 +21,35 @@ from app.ui.models.budget_import_preview_model import (
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize("config", [OPEX_MODULE_CONFIG, CAPEX_MODULE_CONFIG])
+def test_exclusion_survives_reordered_rows_and_new_technical_ids(config):
+    initial = BudgetImportPreviewModel(
+        rows=({"row_id": "old-a"}, {"row_id": "old-b"}),
+        module_config=config, source_row_numbers=(9, 12),
+    )
+    initial.set_included(1, False)
+    reviewed = BudgetImportPreviewModel(
+        rows=({"row_id": "new-b"}, {"row_id": "new-a"}),
+        module_config=config, source_row_numbers=(12, 9),
+        excluded_source_rows=initial.excluded_source_rows(),
+    )
+    assert reviewed.included_rows() == ({"row_id": "new-a"},)
+    assert reviewed.excluded_source_rows() == frozenset({12})
+    reviewed.set_included(0, True)
+    assert reviewed.excluded_source_rows() == frozenset()
+    assert reviewed.included_count == 2
+
+
+def test_absent_exclusion_is_retained_until_explicit_include_all():
+    model = BudgetImportPreviewModel(
+        rows=({"ceco": "visible"},), module_config=OPEX_MODULE_CONFIG,
+        source_row_numbers=(2,), excluded_source_rows=(8,),
+    )
+    assert model.excluded_source_rows() == frozenset({8})
+    model.include_all()
+    assert model.excluded_source_rows() == frozenset()
+
+
 def test_preview_uses_full_insert_contract():
     assert (
         import_preview_columns(
