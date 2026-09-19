@@ -13,18 +13,23 @@ pytestmark = pytest.mark.unit
 
 @pytest.mark.parametrize("error", ["Archivo temporalmente bloqueado", None])
 def test_failed_or_cancelled_revalidation_requires_retry_before_import(monkeypatch, error):
-    original = BudgetExcelImportResult("OPEX", "test.xlsx", "Sheet1", 1, 1, ({"value": "original"},))
-    corrected = replace(original, rows=({"value": "corregido"},))
+    original = BudgetExcelImportResult(
+        "OPEX", "test.xlsx", "Sheet1", 2, 1,
+        ({"value": "original"}, {"value": "excluido"}), source_row_numbers=(2, 3),
+    )
+    corrected = replace(original, rows=({"value": "corregido"}, {"value": "excluido corregido"}))
     pending_states, imported, correction_requests = [], [], []
+    received_exclusions = []
     dialog_codes = iter([1001, 1001, 1])
     outcomes = iter([(None, error), (corrected, None)])
 
     class ReviewDialog:
         REVALIDATE_CODE = 1001
 
-        def __init__(self, *, result, validation_pending, corrections, **kwargs):
+        def __init__(self, *, result, validation_pending, corrections, excluded_source_rows, **kwargs):
             self.result_value = result
             pending_states.append(validation_pending)
+            received_exclusions.append(excluded_source_rows)
 
         def exec(self):
             return next(dialog_codes)
@@ -32,8 +37,11 @@ def test_failed_or_cancelled_revalidation_requires_retry_before_import(monkeypat
         def corrections(self):
             return {(2, "enero_usd"): "12.50"}
 
+        def excluded_source_rows(self):
+            return frozenset({3})
+
         def rows_to_import(self):
-            return self.result_value.rows
+            return tuple(row for number, row in zip(self.result_value.source_row_numbers, self.result_value.rows) if number != 3)
 
     class ProgressDialog:
         def __init__(self, *, corrections, **kwargs):
@@ -64,5 +72,6 @@ def test_failed_or_cancelled_revalidation_requires_retry_before_import(monkeypat
 
     assert pending_states == [False, True, False]
     assert imported == [{"value": "corregido"}]
+    assert received_exclusions == [frozenset(), frozenset({3}), frozenset({3})]
     assert correction_requests == [{(2, "enero_usd"): "12.50"}] * 2
     assert holder._excel_import_actor is None

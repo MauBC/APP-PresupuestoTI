@@ -1835,6 +1835,7 @@ class PresupuestoPage(QWidget):
     ):
         corrections = {}
         validation_pending = False
+        excluded_source_rows = frozenset()
 
         current_result = result
 
@@ -1852,6 +1853,7 @@ class PresupuestoPage(QWidget):
                         corrections
                     ),
                     validation_pending=validation_pending,
+                    excluded_source_rows=excluded_source_rows,
                     parent=self,
                 )
             )
@@ -1863,6 +1865,7 @@ class PresupuestoPage(QWidget):
             corrections = (
                 dialog.corrections()
             )
+            excluded_source_rows = dialog.excluded_source_rows()
 
             if (
                 dialog_code

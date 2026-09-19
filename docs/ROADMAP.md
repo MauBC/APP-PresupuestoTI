@@ -1,6 +1,6 @@
 # Roadmap de APP-PresupuestoTI
 
-Actualizado: 2026-09-18. Los estados distinguen implementacion de validacion
+Actualizado: 2026-09-19. Los estados distinguen implementacion de validacion
 funcional; la existencia de tests no significa que todo el milestone este cerrado.
 
 ## Base de trabajo
@@ -9,7 +9,9 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 - PR #3: diagnostico contextual, ya integrado en `main`.
 - PR #4: decisiones CEBE explicitas y mejoras del editor, ya integrado en `main`.
 - PR #5: microimportes y residuales no negativos, ya integrado en `main`.
-- Validacion de esa base: 1094 pruebas unitarias aprobadas, 18 excluidas.
+- PR #6: correccion Excel asincrona y bloqueo de resultados desactualizados,
+  ya integrado en `main`.
+- Validacion del ultimo checkpoint: 1139 pruebas unitarias aprobadas, 18 excluidas.
 - Cada mejora comienza en una rama limpia y conserva Workspace, staging,
   auditoria, batches y concurrencia optimista.
 - Las mejoras siguientes parten de `main` actualizado, con PR independientes.
@@ -24,9 +26,9 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 | M11: Ver cambios | Mejoras implementadas | Validacion funcional de revision de lotes grandes |
 | M12: historial avanzado | Contexto de negocio y tipos de operacion implementados | Confirmar criterios funcionales en ambos modulos |
 | M13: dashboard | Simulacion, Top dinamico y graficos implementados | Conciliar cifras y validar filtros y uso funcional |
-| M8G: altas asistidas | Base OPEX e inferencias/selecciones implementadas | Validar casos completos y cerrar alcance pendiente |
+| M8G: altas asistidas | Base OPEX e inferencias/selecciones implementadas; reservado para el final por indicacion del usuario | Validar casos completos y cerrar alcance pendiente |
 | M9: ML/FX avanzado | FX de importacion implementado | Definir edicion multimoneda, recalculo y referencia de TC auditable |
-| M8E: Excel corregible | Correccion por pestaña y revalidacion asincrona verificadas; bloqueo de vistas previas desactualizadas | Completar revision funcional de seleccion/exclusion y archivos reales OPEX/CAPEX |
+| M8E: Excel corregible | Correccion asincrona, bloqueo de vistas desactualizadas y persistencia de exclusiones verificados en OPEX/CAPEX | Completar revision funcional con archivos reales OPEX/CAPEX |
 | M14: empaquetado | Pendiente de cierre | Distribucion y prueba en una PC sin entorno de desarrollo |
 | M16F: SharePoint OPEX | Reservado para el final | Contrato, sincronizacion idempotente y conciliacion |
 
@@ -51,9 +53,10 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 1. H2D/M9: completar politica de precision para edicion/redistribucion y validar
    round-trip real de BigQuery en una prueba controlada. La importacion inteligente
    hasta staging ya conserva nueve decimales en los casos automatizados.
-2. M8G/M8E: validacion funcional de altas asistidas y correccion Excel.
+2. M8E: validacion funcional de correccion Excel con archivos reales.
 3. M10, M9 y M14: rendimiento, edicion multimoneda y distribucion de la aplicacion.
-4. M16F: SharePoint OPEX, al final.
+4. M8G: altas asistidas, reservadas para el final por indicacion del usuario.
+5. M16F: SharePoint OPEX, al final.
 
 ## Checkpoint H2C/H2D: decisiones explicitas y GUI
 
@@ -119,4 +122,17 @@ Estas recomendaciones no se consideran implementadas ni sustituyen el roadmap.
   reintento y agregado exclusivo del resultado corregido al Workspace.
   Renders locales de progreso y bloqueo revisados; diff --check limpio.
 - No se modifican los Excel originales ni se escribe en BigQuery/SharePoint.
-- M8G (altas asistidas) sigue pendiente de su revision especifica.
+- M8G (altas asistidas) queda reservado para el final por indicacion del usuario.
+
+## Checkpoint M8E: conservar exclusiones al revalidar
+
+- Las filas excluidas se identifican por su fila Excel, conservando la decision
+  aunque se regenere el identificador tecnico o cambie el orden de la vista previa.
+- Revalidar, cancelar y reintentar conserva las exclusiones junto a las correcciones.
+  Solo las filas incluidas del resultado validado pasan al Workspace.
+- Una fila excluida temporalmente ausente mantiene su estado si vuelve a aparecer.
+  Incluir todas restablece explicitamente las exclusiones de esta importacion.
+- Validacion: 1139 pruebas unitarias aprobadas, 18 excluidas; casos OPEX/CAPEX
+  de filtros, orden, cambio de identificadores, ausencia de filas y reintentos.
+- Pendiente de cierre M8E: recorrido funcional con archivos reales de ambos modulos.
+  Este checkpoint no realiza escrituras en BigQuery ni SharePoint.

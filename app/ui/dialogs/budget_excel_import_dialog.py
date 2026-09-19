@@ -47,6 +47,7 @@ class BudgetExcelImportDialog(
         module_config,
         corrections=None,
         validation_pending=False,
+        excluded_source_rows=(),
         parent=None,
     ):
         super().__init__(
@@ -66,6 +67,7 @@ class BudgetExcelImportDialog(
             or {}
         )
         self._validation_pending = validation_pending
+        self._excluded_source_rows = frozenset(excluded_source_rows)
 
         self._models = []
         self._proxies = []
@@ -598,6 +600,7 @@ class BudgetExcelImportDialog(
                     self._result
                     .source_row_numbers
                 ),
+                excluded_source_rows=self._excluded_source_rows,
                 parent=self,
             )
         )
@@ -724,6 +727,11 @@ class BudgetExcelImportDialog(
             self._preview_model
             .included_rows()
         )
+
+    def excluded_source_rows(self):
+        if self._preview_model is None:
+            return self._excluded_source_rows
+        return self._preview_model.excluded_source_rows()
 
     def _include_all_preview_rows(
         self,
