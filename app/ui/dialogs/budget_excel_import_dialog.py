@@ -46,6 +46,7 @@ class BudgetExcelImportDialog(
         result,
         module_config,
         corrections=None,
+        validation_pending=False,
         parent=None,
     ):
         super().__init__(
@@ -64,14 +65,10 @@ class BudgetExcelImportDialog(
             corrections
             or {}
         )
+        self._validation_pending = validation_pending
 
         self._models = []
         self._proxies = []
-
-        self._issue_model = None
-        self._issue_proxy = None
-        self._issue_table = None
-        self._issue_edit_button = None
 
         self._preview_model = None
         self._preview_proxy = None
@@ -317,7 +314,7 @@ class BudgetExcelImportDialog(
             True
         )
 
-        if self._result.is_valid:
+        if self._result.is_valid and not self._validation_pending:
             status.setObjectName(
                 "importValid"
             )
@@ -410,6 +407,10 @@ class BudgetExcelImportDialog(
         buttons = QHBoxLayout()
 
         buttons.addStretch()
+        if self._validation_pending:
+            retry_button = QPushButton("Reintentar validación")
+            retry_button.clicked.connect(lambda: self.done(self.REVALIDATE_CODE))
+            buttons.addWidget(retry_button)
 
         cancel_button = QPushButton(
             "Cancelar"
@@ -709,6 +710,8 @@ class BudgetExcelImportDialog(
     def rows_to_import(
         self,
     ):
+        if self._validation_pending or not self._result.is_valid:
+            return ()
         if (
             self._preview_model
             is None
@@ -836,6 +839,7 @@ class BudgetExcelImportDialog(
             self._import_button.setEnabled(
                 bool(
                     self._result.is_valid
+                    and not self._validation_pending
                     and included > 0
                 )
             )
@@ -852,6 +856,16 @@ class BudgetExcelImportDialog(
                 "para agregarse "
                 "al Workspace."
             )
+        if self._validation_pending and self._status_label is not None:
+            self._status_label.setObjectName("importBlocked")
+            self._status_label.setText(
+                "Correcciones pendientes de validar. La vista previa corresponde "
+                "a la última validación; no puede importarse. Reintenta la validación."
+            )
+
+    def accept(self):
+        if not self._validation_pending and self._result.is_valid and self.rows_to_import():
+            super().accept()
 
     def _build_issue_tab(
         self,
@@ -916,18 +930,10 @@ class BudgetExcelImportDialog(
             )
         )
 
-        self._issue_model = (
-            model
-        )
-
         proxy = (
             BudgetImportIssueFilterProxyModel(
                 self
             )
-        )
-
-        self._issue_proxy = (
-            proxy
         )
 
         proxy.setSourceModel(
@@ -935,14 +941,6 @@ class BudgetExcelImportDialog(
         )
 
         table = QTableView()
-
-        self._issue_table = (
-            table
-        )
-
-        self._issue_edit_button = (
-            edit_button
-        )
 
         table.setModel(
             proxy
@@ -963,9 +961,11 @@ class BudgetExcelImportDialog(
                 )
         )
 
-        edit_button.clicked.connect(
-            self._edit_selected_issue
-        )
+        def selected_issue():
+            index = proxy.mapToSource(table.currentIndex())
+            return model.issue_at(index.row()) if index.isValid() else None
+
+        edit_button.clicked.connect(lambda: self._edit_selected_issue(selected_issue()))
 
         selection = (
             table.selectionModel()
@@ -973,7 +973,7 @@ class BudgetExcelImportDialog(
 
         if selection is not None:
             selection.selectionChanged.connect(
-                self._update_issue_edit_button
+                lambda *_: edit_button.setEnabled(self._issue_can_be_corrected(selected_issue()))
             )
 
         self._models.append(
@@ -1015,44 +1015,6 @@ class BudgetExcelImportDialog(
             self._corrections
         )
 
-    def _selected_issue(
-        self,
-    ):
-        if (
-            self._issue_table
-            is None
-            or self._issue_proxy
-            is None
-            or self._issue_model
-            is None
-        ):
-            return None
-
-        index = (
-            self._issue_table
-            .currentIndex()
-        )
-
-        if not index.isValid():
-            return None
-
-        source_index = (
-            self._issue_proxy
-            .mapToSource(
-                index
-            )
-        )
-
-        if not source_index.isValid():
-            return None
-
-        return (
-            self._issue_model
-            .issue_at(
-                source_index.row()
-            )
-        )
-
     def _issue_can_be_corrected(
         self,
         issue,
@@ -1085,28 +1047,12 @@ class BudgetExcelImportDialog(
             .insert_columns
         )
 
-    def _update_issue_edit_button(
-        self,
-        *_,
-    ):
-        if (
-            self._issue_edit_button
-            is None
-        ):
-            return
-
-        self._issue_edit_button.setEnabled(
-            self._issue_can_be_corrected(
-                self._selected_issue()
-            )
-        )
-
     def _edit_selected_issue(
         self,
+        issue=None,
     ):
-        issue = (
-            self._selected_issue()
-        )
+        if issue is None:
+            return
 
         if not (
             self._issue_can_be_corrected(

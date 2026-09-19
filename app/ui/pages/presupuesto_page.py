@@ -37,8 +37,8 @@ from app.services.current_actor_service import (
     CurrentActorError,
     resolve_current_actor,
 )
-from app.services.budget_excel_import_service import (
-    BudgetExcelImportService,
+from app.ui.dialogs.budget_excel_revalidation_dialog import (
+    BudgetExcelRevalidationDialog,
 )
 from app.services.capex_new_row_amount_service import (
     CapexNewRowAmountService,
@@ -1834,6 +1834,7 @@ class PresupuestoPage(QWidget):
         result,
     ):
         corrections = {}
+        validation_pending = False
 
         current_result = result
 
@@ -1850,6 +1851,7 @@ class PresupuestoPage(QWidget):
                     corrections=(
                         corrections
                     ),
+                    validation_pending=validation_pending,
                     parent=self,
                 )
             )
@@ -1873,25 +1875,19 @@ class PresupuestoPage(QWidget):
                     "del Excel..."
                 )
 
-                try:
-                    current_result = (
-                        BudgetExcelImportService(
-                            self._workspace
-                            .module_config
-                        )
-                        .prepare(
-                            current_result
-                            .source_path,
-                            actor=(
-                                self._excel_import_actor
-                            ),
-                            overrides=(
-                                corrections
-                            ),
-                        )
-                    )
-
-                except Exception as exc:
+                validation_pending = True
+                progress = BudgetExcelRevalidationDialog(
+                    module_config=self._workspace.module_config,
+                    source_path=current_result.source_path,
+                    actor=self._excel_import_actor,
+                    corrections=corrections,
+                    parent=self,
+                )
+                progress.exec()
+                if progress.prepared_result is not None:
+                    current_result = progress.prepared_result
+                    validation_pending = False
+                elif progress.error_message:
                     AppMessageBox.warning(
                         self,
                         "No se pudo revalidar",
@@ -1899,10 +1895,9 @@ class PresupuestoPage(QWidget):
                         "ser revalidada. "
                         "El Excel original no "
                         "fue modificado.\n\n"
-                        f"{type(exc).__name__}: "
-                        f"{exc}",
+                        f"{progress.error_message}",
                     )
-
+                progress.deleteLater()
                 continue
 
             if (
@@ -1926,6 +1921,9 @@ class PresupuestoPage(QWidget):
             result = (
                 current_result
             )
+
+            if validation_pending:
+                continue
 
             break
 

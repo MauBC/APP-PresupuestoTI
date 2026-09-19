@@ -1,4 +1,6 @@
 
+from copy import deepcopy
+
 from PySide6.QtCore import (
     QThread,
     Signal,
@@ -26,6 +28,7 @@ class BudgetExcelImportThread(
         module_config,
         file_path,
         actor,
+        overrides=None,
         parent=None,
     ):
         super().__init__(
@@ -43,6 +46,7 @@ class BudgetExcelImportThread(
         self._actor = str(
             actor
         ).strip()
+        self._overrides = deepcopy(dict(overrides or {}))
 
     def run(
         self,
@@ -57,10 +61,13 @@ class BudgetExcelImportThread(
                     actor=(
                         self._actor
                     ),
+                    overrides=self._overrides,
                 )
             )
 
         except Exception as exc:
+            if self.isInterruptionRequested():
+                return
             self.failed.emit(
                 f"{type(exc).__name__}: "
                 f"{exc}"
@@ -68,6 +75,8 @@ class BudgetExcelImportThread(
 
             return
 
+        if self.isInterruptionRequested():
+            return
         self.loaded.emit(
             result
         )
