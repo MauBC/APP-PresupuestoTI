@@ -1,4 +1,5 @@
-from collections import defaultdict
+from collections import defaultdict, deque
+from itertools import islice
 from decimal import (
     Decimal,
     ROUND_HALF_UP,
@@ -236,89 +237,39 @@ class PresupuestoWorkspaceAnalysisService:
                 f"{enabled_filter}"
             )
 
-        start = (
-            page_index
-            * page_size
-        )
-
-        end = (
-            start
-            + page_size
-        )
-
-        selected_rows = []
-        matched_rows = 0
-
-        for row in (
-            self._workspace.iter_rows()
-        ):
-            enabled = (
-                self._is_enabled(
-                    row
-                )
-            )
-
-            if (
-                filter_value == "enabled"
-                and not enabled
-            ):
-                continue
-
-            if (
-                filter_value == "disabled"
-                and enabled
-            ):
-                continue
-
-            current_position = (
-                matched_rows
-            )
-
-            matched_rows += 1
-
-            if (
-                current_position < start
-                or
-                current_position >= end
-            ):
-                continue
-
-            item = {
-                column:
-                    row.get(column)
-                for column
-                in self._app_columns
-            }
-
-            item[
-                SESSION_ROW_ID
-            ] = row[
-                SESSION_ROW_ID
-            ]
-
-            selected_rows.append(
-                item
-            )
-
-        last_page = max(
-            0,
-            (
-                matched_rows
-                - 1
-            )
-            // page_size,
-        )
-
-        if page_index > last_page:
-            return self.get_page(
-                page_index=last_page,
-                page_size=page_size,
-                enabled_filter=filter_value,
-            )
+        if filter_value == "all":
+            matched_rows = self._workspace.row_count
+            last_page = max(0, (matched_rows - 1) // page_size)
+            page_index = min(page_index, last_page)
+            start = page_index * page_size
+            selected_rows = islice(self._workspace.iter_rows(), start, start + page_size)
+        else:
+            start = page_index * page_size
+            end = start + page_size
+            selected_rows = []
+            last_page_rows = deque(maxlen=page_size)
+            matched_rows = 0
+            expected_enabled = filter_value == "enabled"
+            for row in self._workspace.iter_rows():
+                if self._is_enabled(row) != expected_enabled:
+                    continue
+                # Keep only the requested page and the last partial/full page.
+                # This avoids rescanning after a filter shrinks the page count.
+                last_page_rows.append(row)
+                if start <= matched_rows < end:
+                    selected_rows.append(row)
+                matched_rows += 1
+            last_page = max(0, (matched_rows - 1) // page_size)
+            if page_index > last_page:
+                page_index = last_page
+                tail_size = matched_rows % page_size or page_size
+                selected_rows = list(last_page_rows)[-tail_size:]
 
         return PageResult(
             rows=tuple(
-                selected_rows
+                {**{column: row.get(column) for column in self._app_columns},
+                 SESSION_ROW_ID: row[SESSION_ROW_ID]}
+                for row in selected_rows
             ),
             columns=self._app_columns,
             total_rows=matched_rows,

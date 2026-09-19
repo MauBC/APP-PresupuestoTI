@@ -12,7 +12,8 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 - PR #6: correccion Excel asincrona y bloqueo de resultados desactualizados,
   ya integrado en `main`.
 - PR #7: conservar exclusiones al revalidar Excel, ya integrado en `main`.
-- Validacion del ultimo checkpoint: 1143 pruebas unitarias aprobadas, 18 excluidas.
+- PR #8: exclusion masiva Excel optimizada, ya integrado en `main`.
+- Validacion del ultimo checkpoint: 1183 pruebas unitarias aprobadas, 18 excluidas.
 - Cada mejora comienza en una rama limpia y conserva Workspace, staging,
   auditoria, batches y concurrencia optimista.
 - Las mejoras siguientes parten de `main` actualizado, con PR independientes.
@@ -23,7 +24,7 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 | --- | --- | --- |
 | H2C/H2D: OPEX inteligente | Diagnostico contextual y seleccion explicita de CEBE completados; restauracion exacta de decisiones y GUI verificadas | Validar recuperacion ante error y politica de microimportes de extremo a extremo |
 | M8F: deshabilitar/reactivar | Soporte y pruebas existentes | Verificar circuito completo OPEX/CAPEX con auditoria y reversion |
-| M10: rendimiento | Carga OPEX optimizada, cache de metadatos y exclusion masiva Excel medida con 50.000 filas OPEX/CAPEX | Completar medicion de carga del Workspace, filtros, agrupaciones, edicion y memoria con 50.000 filas |
+| M10: rendimiento | Exclusion Excel y paginacion optimizadas; carga, filtros de estado y agrupaciones del Workspace medidos con 50.000 filas sinteticas OPEX/CAPEX | Completar mediciones con datos representativos, edicion, memoria total y respuesta de la GUI |
 | M11: Ver cambios | Mejoras implementadas | Validacion funcional de revision de lotes grandes |
 | M12: historial avanzado | Contexto de negocio y tipos de operacion implementados | Confirmar criterios funcionales en ambos modulos |
 | M13: dashboard | Simulacion, Top dinamico y graficos implementados | Conciliar cifras y validar filtros y uso funcional |
@@ -161,3 +162,35 @@ Estas recomendaciones no se consideran implementadas ni sustituyen el roadmap.
   y bloqueo de importacion sin filas incluidas. Render local de 50.000 filas revisado.
 - M10 sigue abierto: faltan filtros, agrupaciones, edicion y memoria del Workspace
   con datos representativos. Las altas asistidas siguen reservadas para el final.
+
+## Checkpoint M10: paginacion del Workspace
+
+- Sin filtro de estado, la pagina usa el total conocido del Workspace y deja de
+  consumir filas al completar el rango solicitado. Conserva el orden de sesion.
+- Con filtro, calcula el total exacto en un recorrido y conserva una ventana
+  acotada de filas para devolver la ultima pagina si la solicitada ya no existe.
+  Se elimina la consulta recursiva que repetia todo el recorrido.
+- No se agregan caches de resultados: ediciones, habilitaciones y recargas se
+  reflejan en la siguiente consulta. Las filas entregadas siguen siendo copias.
+- Benchmark offline: `python -m tools.benchmark_workspace_analysis --rows 50000`.
+  Mediana de cinco consultas por operacion, paginas de 100 filas. Datos sinteticos
+  con dimensiones, importes Decimal de nueve decimales y 20% de filas deshabilitadas.
+
+| Operacion | OPEX antes / despues | CAPEX antes / despues |
+| --- | --- | --- |
+| Primera pagina sin filtro | 20,66 / 0,78 ms | 35,92 / 1,48 ms |
+| Pagina fuera de rango sin filtro | 34,71 / 6,63 ms | 81,00 / 8,64 ms |
+| Pagina fuera de rango, habilitadas | 49,35 / 21,48 ms | 51,19 / 26,34 ms |
+
+- Referencias de la ejecucion final: carga local 2,54 s OPEX / 4,13 s CAPEX;
+  agrupacion por pais y presupuestador 0,27 / 0,30 s; agrupacion con filtro de
+  pais 0,18 / 0,18 s. Estas operaciones no se modificaron en este checkpoint.
+- El filtro de estado sigue requiriendo recorrer todas las filas para contar;
+  no se promete una mejora en todas las consultas filtradas. iter_rows conserva
+  su ordenacion de identificadores y su coste de memoria existente.
+- Validacion: 1183 pruebas unitarias aprobadas, 18 excluidas; ambos modulos,
+  paginas exactas/parciales/vacias, filtros, retorno a ultima pagina, conteo de
+  recorridos, edicion, cambios de estado y recarga. No se consultaron servicios
+  externos ni se modificaron BigQuery/SharePoint.
+- M10 continua abierto para memoria total, edicion y mediciones funcionales de
+  GUI con datos representativos. M8G permanece reservado para el final.
