@@ -334,3 +334,29 @@ def test_preview_rejects_mismatched_source_rows():
                 9,
             ),
         )
+
+
+@pytest.mark.parametrize("config", [OPEX_MODULE_CONFIG, CAPEX_MODULE_CONFIG])
+def test_bulk_selection_emits_once_and_preserves_exact_counts(config):
+    model = BudgetImportPreviewModel(
+        rows=({"row_id": str(i)} for i in range(6)), module_config=config,
+        source_row_numbers=(2, 4, 7, 9, 11, 15), excluded_source_rows=(4, 99),
+    )
+    changes = []
+    model.dataChanged.connect(lambda first, last, roles: changes.append(
+        (first.row(), last.row(), model.included_count, model.excluded_count)))
+    assert model.set_rows_included((4, 0, 4, 1, -1, 6), False)
+    assert changes == [(0, 4, 3, 3)]
+    assert model.excluded_source_rows() == frozenset({2, 4, 11, 99})
+    assert [r["row_id"] for r in model.included_rows()] == ["2", "3", "5"]
+    assert not model.set_rows_included((0, 1, 4), False)
+    assert not model.set_rows_included((), True)
+    assert len(changes) == 1
+    assert model.set_included(1, True)
+    assert model.included_count == 4
+    model.include_all()
+    assert model.included_count == 6 and model.excluded_count == 0
+    assert model.excluded_source_rows() == frozenset()
+    assert len(changes) == 3
+    model.include_all()
+    assert len(changes) == 3

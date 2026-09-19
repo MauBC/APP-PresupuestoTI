@@ -11,7 +11,8 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 - PR #5: microimportes y residuales no negativos, ya integrado en `main`.
 - PR #6: correccion Excel asincrona y bloqueo de resultados desactualizados,
   ya integrado en `main`.
-- Validacion del ultimo checkpoint: 1139 pruebas unitarias aprobadas, 18 excluidas.
+- PR #7: conservar exclusiones al revalidar Excel, ya integrado en `main`.
+- Validacion del ultimo checkpoint: 1143 pruebas unitarias aprobadas, 18 excluidas.
 - Cada mejora comienza en una rama limpia y conserva Workspace, staging,
   auditoria, batches y concurrencia optimista.
 - Las mejoras siguientes parten de `main` actualizado, con PR independientes.
@@ -22,7 +23,7 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 | --- | --- | --- |
 | H2C/H2D: OPEX inteligente | Diagnostico contextual y seleccion explicita de CEBE completados; restauracion exacta de decisiones y GUI verificadas | Validar recuperacion ante error y politica de microimportes de extremo a extremo |
 | M8F: deshabilitar/reactivar | Soporte y pruebas existentes | Verificar circuito completo OPEX/CAPEX con auditoria y reversion |
-| M10: rendimiento | Carga OPEX optimizada, cache de metadatos y benchmarks | Medir carga, filtros, agrupaciones, edicion y memoria con 50.000 filas |
+| M10: rendimiento | Carga OPEX optimizada, cache de metadatos y exclusion masiva Excel medida con 50.000 filas OPEX/CAPEX | Completar medicion de carga del Workspace, filtros, agrupaciones, edicion y memoria con 50.000 filas |
 | M11: Ver cambios | Mejoras implementadas | Validacion funcional de revision de lotes grandes |
 | M12: historial avanzado | Contexto de negocio y tipos de operacion implementados | Confirmar criterios funcionales en ambos modulos |
 | M13: dashboard | Simulacion, Top dinamico y graficos implementados | Conciliar cifras y validar filtros y uso funcional |
@@ -136,3 +137,27 @@ Estas recomendaciones no se consideran implementadas ni sustituyen el roadmap.
   de filtros, orden, cambio de identificadores, ausencia de filas y reintentos.
 - Pendiente de cierre M8E: recorrido funcional con archivos reales de ambos modulos.
   Este checkpoint no realiza escrituras en BigQuery ni SharePoint.
+
+## Checkpoint M10: seleccion masiva en la vista previa Excel
+
+- Excluir seleccionadas actualiza el modelo y notifica a la interfaz una sola vez.
+  Los contadores se actualizan incrementalmente, sin recorrer todas las filas por
+  cada cambio. Incluir todas utiliza la misma operacion en bloque.
+- La GUI obtiene las filas desde los rangos seleccionados, evitando que Qt revise
+  cada columna por cada fila. Conserva el mapeo correcto con filtros y ordenacion.
+- Medicion local sintetica: en un modelo de 50.000 filas, excluir 5.000 con el
+  recuento conectado paso de 26,73 s a 0,004 s aproximadamente. Es una medicion
+  del modelo, no del tiempo total de la interfaz.
+- En el dialogo completo, una vez aplicada la operacion en bloque, cambiar la
+  lectura de seleccion de Qt redujo excluir 50.000 filas de 30,21 a 1,79 s en
+  OPEX y de 23,92 a 1,89 s en CAPEX. Restaurar todas tomo 1,35 y 1,54 s.
+- Benchmark reproducible sin servicios externos:
+  `python -m tools.benchmark_import_selection --rows 50000 --dialog`.
+  Usa filas sinteticas con CECO; no representa un archivo de negocio completo.
+  La memoria informada corresponde solo a asignaciones Python durante la carga
+  del modelo, no al consumo total de Qt ni de la aplicacion.
+- Validacion: 1143 pruebas unitarias aprobadas, 18 excluidas; seleccion filtrada
+  y ordenada OPEX/CAPEX, duplicados, indices invalidos, contadores, restauracion
+  y bloqueo de importacion sin filas incluidas. Render local de 50.000 filas revisado.
+- M10 sigue abierto: faltan filtros, agrupaciones, edicion y memoria del Workspace
+  con datos representativos. Las altas asistidas siguen reservadas para el final.

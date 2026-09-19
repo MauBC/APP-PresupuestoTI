@@ -117,3 +117,34 @@ def test_corrects_selected_issue_in_its_own_tab(qapp, monkeypatch, tab_index):
         assert f"Fila Excel: {expected.row_number}" in captured[0]
     finally:
         dialog.close()
+
+
+@pytest.mark.parametrize("config", [OPEX_MODULE_CONFIG, CAPEX_MODULE_CONFIG])
+def test_bulk_exclusion_maps_filtered_sorted_selection_once(qapp, config):
+    ceco = "ceco" if config == OPEX_MODULE_CONFIG else "codigo_ceco"
+    rows = tuple({ceco: "51KEEP" if i % 2 else "51DROP"} for i in range(100))
+    result = BudgetExcelImportResult(config.module.value, "test.xlsx", "Sheet1", 100, 1, rows)
+    dialog = dialog_module.BudgetExcelImportDialog(result=result, module_config=config)
+    try:
+        proxy = dialog._preview_proxy
+        proxy.setFilterFixedString("51DROP")
+        proxy.sort(1, Qt.SortOrder.DescendingOrder)
+        dialog._preview_table.selectAll()
+        changes = []
+        dialog._preview_model.dataChanged.connect(lambda *_: changes.append(True))
+        dialog._exclude_selected_preview_rows()
+        assert len(changes) == 1
+        assert dialog.excluded_source_rows() == frozenset(range(2, 102, 2))
+        assert dialog.rows_to_import() == tuple(row for row in rows if row[ceco] == "51KEEP")
+        assert "Incluidas: 50 | Excluidas: 50" in dialog._preview_selection_label.text()
+        proxy.setFilterFixedString("")
+        dialog._preview_table.selectAll()
+        dialog._exclude_selected_preview_rows()
+        assert len(changes) == 2
+        assert not dialog._import_button.isEnabled()
+        dialog._include_all_preview_rows()
+        assert len(changes) == 3
+        assert dialog._import_button.isEnabled()
+        assert dialog.rows_to_import() == rows
+    finally:
+        dialog.close()
