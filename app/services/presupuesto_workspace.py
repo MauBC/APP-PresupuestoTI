@@ -104,8 +104,9 @@ class PresupuestoWorkspace:
     @property
     def pending_change_count(self) -> int:
         return sum(
-            len(change.changes)
-            for change in self.get_pending_changes()
+            original.get(column) != working.get(column)
+            for _, original, working, columns in self._iter_pending_row_values()
+            for column in columns
         )
 
     @staticmethod
@@ -1155,15 +1156,9 @@ class PresupuestoWorkspace:
         self._history.clear()
         self._dirty_row_ids.clear()
 
-    def get_pending_changes(
-        self,
-    ) -> tuple[
-        PendingRowChange,
-        ...
-    ]:
+    def _iter_pending_row_values(self):
+        """Share comparison rules without allocating audit objects for counters."""
         self._require_loaded()
-
-        pending = []
 
         for row_id in sorted(
             self._dirty_row_ids
@@ -1205,6 +1200,11 @@ class PresupuestoWorkspace:
                     )
                 )
 
+            yield row_id, original, working, columns
+
+    def get_pending_changes(self) -> tuple[PendingRowChange, ...]:
+        pending = []
+        for row_id, original, working, columns in self._iter_pending_row_values():
             changes = []
 
             for column in columns:

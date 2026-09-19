@@ -13,7 +13,8 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
   ya integrado en `main`.
 - PR #7: conservar exclusiones al revalidar Excel, ya integrado en `main`.
 - PR #8: exclusion masiva Excel optimizada, ya integrado en `main`.
-- Validacion del ultimo checkpoint: 1183 pruebas unitarias aprobadas, 18 excluidas.
+- PR #9: paginacion del Workspace optimizada, ya integrado en `main`.
+- Validacion del ultimo checkpoint: 1190 pruebas unitarias aprobadas, 18 excluidas.
 - Cada mejora comienza en una rama limpia y conserva Workspace, staging,
   auditoria, batches y concurrencia optimista.
 - Las mejoras siguientes parten de `main` actualizado, con PR independientes.
@@ -24,7 +25,7 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 | --- | --- | --- |
 | H2C/H2D: OPEX inteligente | Diagnostico contextual y seleccion explicita de CEBE completados; restauracion exacta de decisiones y GUI verificadas | Validar recuperacion ante error y politica de microimportes de extremo a extremo |
 | M8F: deshabilitar/reactivar | Soporte y pruebas existentes | Verificar circuito completo OPEX/CAPEX con auditoria y reversion |
-| M10: rendimiento | Exclusion Excel y paginacion optimizadas; carga, filtros de estado y agrupaciones del Workspace medidos con 50.000 filas sinteticas OPEX/CAPEX | Completar mediciones con datos representativos, edicion, memoria total y respuesta de la GUI |
+| M10: rendimiento | Exclusion Excel, paginacion y contador de cambios optimizados; benchmarks de carga, filtros, agrupaciones y edicion por lotes con 50.000 filas sinteticas OPEX/CAPEX | Completar mediciones con datos representativos, memoria total y respuesta de la GUI al editar |
 | M11: Ver cambios | Mejoras implementadas | Validacion funcional de revision de lotes grandes |
 | M12: historial avanzado | Contexto de negocio y tipos de operacion implementados | Confirmar criterios funcionales en ambos modulos |
 | M13: dashboard | Simulacion, Top dinamico y graficos implementados | Conciliar cifras y validar filtros y uso funcional |
@@ -194,3 +195,30 @@ Estas recomendaciones no se consideran implementadas ni sustituyen el roadmap.
   externos ni se modificaron BigQuery/SharePoint.
 - M10 continua abierto para memoria total, edicion y mediciones funcionales de
   GUI con datos representativos. M8G permanece reservado para el final.
+
+## Checkpoint M10: contador de cambios sin construir la auditoria
+
+- Actualizar la etiqueta de cambios pendientes cuenta diferencias directamente,
+  evitando construir FieldChange/PendingRowChange y copiar valores que la etiqueta
+  no utiliza. El detalle de auditoria sigue generandose bajo demanda con copias.
+- Contador y detalle comparten las reglas de columnas para filas existentes y
+  nuevas. No se introduce cache ni estado adicional que invalidar al deshacer.
+- Benchmark offline: `python -m tools.benchmark_pending_count --rows 50000 --dirty 5000`.
+  Modifica los doce meses y el anual de 5.000 filas en un Workspace de 50.000:
+  65.000 campos pendientes, mediana de cinco recuentos.
+
+| Medicion del contador | OPEX antes / despues | CAPEX antes / despues |
+| --- | --- | --- |
+| Tiempo | 168,52 / 41,29 ms | 171,65 / 52,53 ms |
+| Pico de asignaciones Python | 6,333 / 0,046 MB | 6,336 / 0,050 MB |
+
+- Referencia final del lote: editar 5.000 filas tomo 0,49 / 0,50 s y deshacer
+  0,11 / 0,12 s en OPEX/CAPEX. Esos mecanismos no se modificaron.
+- El pico corresponde exclusivamente al recuento, no a la memoria total del
+  Workspace, historial o Qt. Son datos sinteticos y no miden la latencia total
+  de la GUI; el recuento sigue siendo proporcional a las filas pendientes.
+- Validacion: 1190 pruebas unitarias aprobadas, 18 excluidas. Se verifican conteo
+  frente a detalle, edicion/reversion, habilitacion, deshacer, descartar, recarga,
+  insercion existente y aislamiento de valores mutables en la auditoria.
+- M10 sigue abierto para memoria total y respuesta funcional de la GUI con datos
+  representativos. Las altas asistidas siguen reservadas para el final.
