@@ -771,33 +771,19 @@ class BudgetExcelImportDialog(
 
         source_rows = set()
 
-        for proxy_index in (
-            selection.selectedRows()
-        ):
-            source_index = (
-                self._preview_proxy
-                .mapToSource(
-                    proxy_index
-                )
+        # The view selects whole rows. Iterate selection ranges instead of
+        # selectedRows(), which checks every column for every selected row.
+        proxy_rows = set()
+        for selected_range in selection.selection():
+            proxy_rows.update(range(selected_range.top(), selected_range.bottom() + 1))
+        for row_index in proxy_rows:
+            source_index = self._preview_proxy.mapToSource(
+                self._preview_proxy.index(row_index, 0)
             )
+            if source_index.isValid():
+                source_rows.add(source_index.row())
 
-            if (
-                source_index
-                .isValid()
-            ):
-                source_rows.add(
-                    source_index.row()
-                )
-
-        for row_index in (
-            source_rows
-        ):
-            self._preview_model.set_included(
-                row_index,
-                False,
-            )
-
-        self._update_import_selection()
+        self._preview_model.set_rows_included(source_rows, False)
 
     def _update_import_selection(
         self,

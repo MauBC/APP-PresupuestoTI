@@ -107,6 +107,7 @@ class BudgetImportPreviewModel(
         # conserva la identidad aunque cambie el orden o una fila sea invalida.
         self._excluded_source_rows = set(excluded_source_rows)
         self._included = [number not in self._excluded_source_rows for number in numbers]
+        self._included_count = sum(self._included)
 
         self._business_columns = (
             import_preview_columns(
@@ -124,12 +125,7 @@ class BudgetImportPreviewModel(
     def included_count(
         self,
     ) -> int:
-        return sum(
-            1
-            for value
-            in self._included
-            if value
-        )
+        return self._included_count
 
     @property
     def excluded_count(
@@ -163,97 +159,39 @@ class BudgetImportPreviewModel(
         row_index,
         included,
     ) -> bool:
-        if not (
-            0
-            <= row_index
-            < len(
-                self._rows
-            )
-        ):
+        return self.set_rows_included((row_index,), included)
+
+    def set_rows_included(self, row_indices, included) -> bool:
+        """Update a selection once, without a recount or signal per row."""
+        value = bool(included)
+        first = len(self._rows)
+        last = -1
+        for row_index in row_indices:
+            if not 0 <= row_index < len(self._rows):
+                continue
+            if self._included[row_index] == value:
+                continue
+            self._included[row_index] = value
+            self._included_count += 1 if value else -1
+            source_row = self._source_row_numbers[row_index]
+            if value:
+                self._excluded_source_rows.discard(source_row)
+            else:
+                self._excluded_source_rows.add(source_row)
+            first = min(first, row_index)
+            last = max(last, row_index)
+
+        if last < 0:
             return False
-
-        value = bool(
-            included
-        )
-
-        if (
-            self._included[
-                row_index
-            ]
-            == value
-        ):
-            return False
-
-        self._included[
-            row_index
-        ] = value
-        source_row = self._source_row_numbers[row_index]
-        if value:
-            self._excluded_source_rows.discard(source_row)
-        else:
-            self._excluded_source_rows.add(source_row)
-
-        index = self.index(
-            row_index,
-            0,
-        )
-
         self.dataChanged.emit(
-            index,
-            index,
-            [
-                Qt.ItemDataRole
-                .CheckStateRole,
-            ],
+            self.index(first, 0), self.index(last, 0),
+            [Qt.ItemDataRole.CheckStateRole],
         )
-
         return True
 
-    def include_all(
-        self,
-    ):
+    def include_all(self):
         self._excluded_source_rows.clear()
-        changed_rows = []
-
-        for index in range(
-            len(
-                self._included
-            )
-        ):
-            if not (
-                self._included[
-                    index
-                ]
-            ):
-                self._included[
-                    index
-                ] = True
-
-                changed_rows.append(
-                    index
-                )
-
-        if not changed_rows:
-            return
-
-        self.dataChanged.emit(
-            self.index(
-                min(
-                    changed_rows
-                ),
-                0,
-            ),
-            self.index(
-                max(
-                    changed_rows
-                ),
-                0,
-            ),
-            [
-                Qt.ItemDataRole
-                .CheckStateRole,
-            ],
-        )
+        self.set_rows_included(range(len(self._rows)), True)
 
     def rowCount(
         self,
