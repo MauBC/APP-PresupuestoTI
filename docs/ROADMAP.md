@@ -8,6 +8,7 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 - PR #2: consolidacion del estado probado por el usuario, ya integrado en `main`.
 - PR #3: diagnostico contextual, ya integrado en `main`.
 - PR #4: decisiones CEBE explicitas y mejoras del editor, ya integrado en `main`.
+- PR #5: microimportes y residuales no negativos, ya integrado en `main`.
 - Validacion de esa base: 1094 pruebas unitarias aprobadas, 18 excluidas.
 - Cada mejora comienza en una rama limpia y conserva Workspace, staging,
   auditoria, batches y concurrencia optimista.
@@ -25,7 +26,7 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 | M13: dashboard | Simulacion, Top dinamico y graficos implementados | Conciliar cifras y validar filtros y uso funcional |
 | M8G: altas asistidas | Base OPEX e inferencias/selecciones implementadas | Validar casos completos y cerrar alcance pendiente |
 | M9: ML/FX avanzado | FX de importacion implementado | Definir edicion multimoneda, recalculo y referencia de TC auditable |
-| M8E: Excel corregible | Correccion y revalidacion implementadas con pruebas | Validar visualmente errores corregibles e importacion final OPEX/CAPEX |
+| M8E: Excel corregible | Correccion por pestaña y revalidacion asincrona verificadas; bloqueo de vistas previas desactualizadas | Completar revision funcional de seleccion/exclusion y archivos reales OPEX/CAPEX |
 | M14: empaquetado | Pendiente de cierre | Distribucion y prueba en una PC sin entorno de desarrollo |
 | M16F: SharePoint OPEX | Reservado para el final | Contrato, sincronizacion idempotente y conciliacion |
 
@@ -101,3 +102,21 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 - Conciliacion por hoja y moneda, incluidos microimportes.
 
 Estas recomendaciones no se consideran implementadas ni sustituyen el roadmap.
+
+## Checkpoint M8E: correccion Excel consistente y asincrona
+
+- Revalidar correcciones utiliza el worker existente, con copia de las
+  correcciones y una ventana de progreso que mantiene activa la interfaz.
+- Cancelar espera a que termine la lectura en curso y descarta su resultado;
+  no destruye un hilo activo ni utiliza terminacion forzada.
+- Un fallo o cancelacion conserva las correcciones para reintentar y bloquea
+  la importacion de la vista previa anterior. Solo un resultado validado vuelve
+  a habilitar la importacion.
+- Cada pestaña de incidencias utiliza su propia seleccion y modelo; Errores y
+  Advertencias ya no consultan accidentalmente la tabla de Informativos.
+- Validacion: 1133 pruebas unitarias aprobadas, 18 excluidas. Pruebas de GUI,
+  temporizador activo durante revalidacion, cancelacion segura, errores,
+  reintento y agregado exclusivo del resultado corregido al Workspace.
+  Renders locales de progreso y bloqueo revisados; diff --check limpio.
+- No se modifican los Excel originales ni se escribe en BigQuery/SharePoint.
+- M8G (altas asistidas) sigue pendiente de su revision especifica.
