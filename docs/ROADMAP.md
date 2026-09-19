@@ -7,6 +7,7 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 
 - PR #2: consolidacion del estado probado por el usuario, ya integrado en `main`.
 - PR #3: diagnostico contextual, ya integrado en `main`.
+- PR #4: decisiones CEBE explicitas y mejoras del editor, ya integrado en `main`.
 - Validacion de esa base: 1094 pruebas unitarias aprobadas, 18 excluidas.
 - Cada mejora comienza en una rama limpia y conserva Workspace, staging,
   auditoria, batches y concurrencia optimista.
@@ -46,9 +47,9 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 
 ## Siguientes checkpoints propuestos
 
-1. H2D/M9: validar microimportes, totales y precision en importacion, Workspace,
-   exportacion y persistencia. El codigo usa nueve decimales en importacion
-   inteligente; falta cerrar la politica de negocio y su coherencia completa.
+1. H2D/M9: completar politica de precision para edicion/redistribucion y validar
+   round-trip real de BigQuery en una prueba controlada. La importacion inteligente
+   hasta staging ya conserva nueve decimales en los casos automatizados.
 2. M8G/M8E: validacion funcional de altas asistidas y correccion Excel.
 3. M10, M9 y M14: rendimiento, edicion multimoneda y distribucion de la aplicacion.
 4. M16F: SharePoint OPEX, al final.
@@ -69,6 +70,27 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
   pruebas GUI de bloqueo, restauracion y scroll. Renders locales revisados en
   840x620 y 720x520. No se ejecutaron escrituras en BigQuery ni SharePoint.
 - La politica de precision monetaria no cambia en este checkpoint.
+
+## Checkpoint H2D/M9: microimportes y correccion de residuales
+
+- El plan valida totales con los mismos nueve decimales que la distribucion
+  inteligente. Ya no acepta perder un microimporte por comparar a centavos.
+- El ruido binario de Excel (por ejemplo 5954.3499999999985) sigue normalizandose.
+- La correccion de residuales no genera filas negativas cuando muchos redondeos
+  superan el saldo de la fila de mayor peso. Aplica al motor compartido tanto a
+  centavos como a nueve decimales, conservando el comportamiento habitual.
+- La periodizacion rechaza negativos antes de redondear, incluidos valores que
+  antes se convertian silenciosamente en cero.
+- La tabla muestra los importes no nulos menores a 0.01 con sus decimales y
+  ofrece el valor almacenado completo en el tooltip de las columnas numericas.
+- Validacion: 1125 pruebas unitarias aprobadas, 18 excluidas. Casos ANUAL/MENSUAL
+  recorren seleccion, distribucion, FX, filas, Workspace, batch, JSON de staging
+  y exportacion Excel. Se verifican totales mensuales/anuales y no negatividad.
+  Render local de la tabla revisado y diff --check limpio.
+- Limites: no se escribio en BigQuery; staging se verifico localmente. Excel
+  sigue usando celdas numericas y no garantiza todos los digitos de valores de
+  gran magnitud. No cambia la politica de edicion/redistribucion a centavos ni
+  se declara cerrada la edicion multimoneda M9.
 
 ## Recomendaciones adicionales por priorizar
 

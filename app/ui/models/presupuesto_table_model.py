@@ -239,6 +239,8 @@ class PresupuestoTableModel(
                 return ""
 
             if isinstance(value, Decimal):
+                if value.is_finite() and 0 < abs(value) < Decimal("0.01"):
+                    return f"{value:,f}".rstrip("0")
                 return f"{value:,.2f}"
 
             return str(value)
@@ -328,6 +330,11 @@ class PresupuestoTableModel(
             )
 
         if role == Qt.ItemDataRole.ToolTipRole:
+            stored_value = (
+                f"Valor almacenado: {value:f}\n"
+                if column in self._amount_columns and isinstance(value, Decimal)
+                else ""
+            )
             if column == HABILITADO_COLUMN:
                 return (
                     "Estado informativo. Usa el boton "
@@ -337,16 +344,20 @@ class PresupuestoTableModel(
 
             if column in self._month_columns:
                 return (
+                    stored_value +
                     "Doble clic para modificar "
                     "el importe mensual en USD."
                 )
 
             if column == self._annual_column:
                 return (
+                    stored_value +
                     "Doble clic para modificar el "
                     "total anual. Los meses se "
                     "redistribuiran proporcionalmente."
                 )
+            if stored_value:
+                return stored_value.rstrip()
 
         return None
 

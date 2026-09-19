@@ -114,6 +114,22 @@ def test_usd_column_is_editable():
     )
 
 
+@pytest.mark.parametrize(("value", "display"), [
+    ("0.001153901", "0.001153901"),
+    ("0.000000001", "0.000000001"),
+    ("-0.001000000", "-0.001"),
+    ("0", "0.00"),
+    ("100.123456789", "100.12"),
+])
+def test_microamount_display_and_exact_value_tooltip(value, display):
+    _, model = build_model()
+    model._rows[0]["enero_usd"] = Decimal(value)
+    index = model.index(0, column_index(model, "enero_usd"))
+    assert model.data(index) == display
+    assert f"Valor almacenado: {value}" in model.data(index, Qt.ItemDataRole.ToolTipRole)
+    assert model.data(index, Qt.ItemDataRole.EditRole) == str(Decimal(value))
+
+
 def test_month_edit_updates_workspace():
     workspace, model = build_model()
 

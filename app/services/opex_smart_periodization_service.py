@@ -65,15 +65,15 @@ class OpexSmartPeriodizationService:
                 f"{label} debe ser finito."
             )
 
-        result = result.quantize(
-            quantum,
-            rounding=ROUND_HALF_UP,
-        )
-
         if result < ZERO:
             raise OpexSmartPeriodizationError(
                 f"{label} no puede ser negativo."
             )
+
+        result = result.quantize(
+            quantum,
+            rounding=ROUND_HALF_UP,
+        )
 
         return result
 

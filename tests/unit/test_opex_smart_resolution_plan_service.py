@@ -1,4 +1,5 @@
 from decimal import Decimal
+from dataclasses import replace
 
 import pytest
 
@@ -366,6 +367,25 @@ def test_wrong_distribution_total_blocks_ready():
         == "DISTRIBUTION_TOTAL_MISMATCH"
         for issue in plan.issues
     )
+
+
+@pytest.mark.parametrize("amount", ["0.001153901", "0.000000001"])
+def test_lost_microamount_blocks_distribution(amount):
+    value = replace(budget(), monto=Decimal(amount))
+    valid, issue = OpexSmartResolutionPlanService._validate_distribution(
+        value, OpexTemplateResolvedDistribution("IMPORTE", (("04WF2EAF93", Decimal("0")),)),
+    )
+    assert not valid
+    assert issue.code == "DISTRIBUTION_TOTAL_MISMATCH"
+
+
+def test_excel_noise_is_ignored_at_nine_decimals():
+    value = replace(budget(), monto=Decimal("5954.3499999999985"))
+    valid, issue = OpexSmartResolutionPlanService._validate_distribution(
+        value, OpexTemplateResolvedDistribution("IMPORTE", (("04WF2EAF93", Decimal("5954.35")),)),
+    )
+    assert valid
+    assert issue is None
 
 
 def test_foreign_cebe_selection_blocks_ready():

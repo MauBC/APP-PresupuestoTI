@@ -198,17 +198,19 @@ class ProportionalAllocationService:
                 ),
             )[0]
 
-            result[
-                correction_key
-            ] = (
-                result[
-                    correction_key
-                ]
-                + residual
-            ).quantize(
-                quantum,
-                rounding=ROUND_HALF_UP,
-            )
+            if result[correction_key] + residual >= ZERO:
+                result[correction_key] += residual
+            else:
+                # Muchos redondeos hacia arriba pueden superar el importe
+                # de una sola fila. Descontar solo el saldo disponible en
+                # cada fila conserva el total sin crear valores negativos.
+                remaining = -residual
+                for key, _ in sorted(normalized, key=lambda item: item[1], reverse=True):
+                    correction = min(result[key], remaining)
+                    result[key] -= correction
+                    remaining -= correction
+                    if remaining == ZERO:
+                        break
 
         final_total = sum(
             result.values(),
