@@ -15,7 +15,8 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 - PR #8: exclusion masiva Excel optimizada, ya integrado en `main`.
 - PR #9: paginacion del Workspace optimizada, ya integrado en `main`.
 - PR #10: contador de cambios sin construir auditoria, ya integrado en `main`.
-- Validacion del ultimo checkpoint: 1198 pruebas unitarias aprobadas, 18 excluidas.
+- PR #11: descarte proporcional a filas modificadas, ya integrado en `main`.
+- Validacion del ultimo checkpoint: 1200 pruebas unitarias aprobadas, 18 excluidas.
 - Cada mejora comienza en una rama limpia y conserva Workspace, staging,
   auditoria, batches y concurrencia optimista.
 - Las mejoras siguientes parten de `main` actualizado, con PR independientes.
@@ -244,3 +245,18 @@ Estas recomendaciones no se consideran implementadas ni sustituyen el roadmap.
   aislamiento de originales y fallo de copia sin mutacion parcial.
 - M10 sigue abierto para memoria total y validacion de la ventana completa con
   datos representativos. M8G sigue reservado para el final.
+
+## Checkpoint GUI: columnas fijas alineadas con la tabla
+
+- La vista fija y la tabla principal ahora colocan las mismas columnas de
+  contexto al principio, en el mismo orden visual. Antes la superposicion podia
+  tapar Origen u otras columnas y mostrar Pais duplicado.
+- Solo cambia el orden visual de las cabeceras; se conservan las identidades
+  logicas de las columnas, datos, ordenacion, filtros y seleccion compartida.
+- Validacion: 1200 pruebas unitarias aprobadas, 18 excluidas. Casos OPEX/CAPEX
+  verifican posicion y ancho, acceso a la primera columna no fija, orden logico,
+  ordenacion desde la cabecera fija, filtro y sincronizacion repetida.
+  Renders locales de ambas paginas revisados con datos sinteticos.
+- Es una correccion de GUI detectada durante M10; no cierra sus pendientes de
+  memoria total y ventana completa con datos representativos. Altas asistidas
+  reservadas para el final.

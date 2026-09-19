@@ -334,31 +334,14 @@ class FrozenColumnsController(
     def _sync_frozen_visual_order(
         self,
     ):
-        header = (
-            self.view
-            .horizontalHeader()
-        )
-
-        for (
-            target_visual,
-            logical_index,
-        ) in enumerate(
-            self._frozen_indexes
-        ):
-            current_visual = (
-                header.visualIndex(
-                    logical_index
-                )
-            )
-
-            if (
-                current_visual
-                != target_visual
-            ):
-                header.moveSection(
-                    current_visual,
-                    target_visual,
-                )
+        # The overlay must cover the same columns in the main table. Otherwise
+        # non-frozen columns are concealed and context columns appear twice.
+        for table in (self._main_table, self.view):
+            header = table.horizontalHeader()
+            for target_visual, logical_index in enumerate(self._frozen_indexes):
+                current_visual = header.visualIndex(logical_index)
+                if current_visual != target_visual:
+                    header.moveSection(current_visual, target_visual)
 
     def _main_section_resized(
         self,
