@@ -14,7 +14,8 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 - PR #7: conservar exclusiones al revalidar Excel, ya integrado en `main`.
 - PR #8: exclusion masiva Excel optimizada, ya integrado en `main`.
 - PR #9: paginacion del Workspace optimizada, ya integrado en `main`.
-- Validacion del ultimo checkpoint: 1190 pruebas unitarias aprobadas, 18 excluidas.
+- PR #10: contador de cambios sin construir auditoria, ya integrado en `main`.
+- Validacion del ultimo checkpoint: 1198 pruebas unitarias aprobadas, 18 excluidas.
 - Cada mejora comienza en una rama limpia y conserva Workspace, staging,
   auditoria, batches y concurrencia optimista.
 - Las mejoras siguientes parten de `main` actualizado, con PR independientes.
@@ -25,7 +26,7 @@ funcional; la existencia de tests no significa que todo el milestone este cerrad
 | --- | --- | --- |
 | H2C/H2D: OPEX inteligente | Diagnostico contextual y seleccion explicita de CEBE completados; restauracion exacta de decisiones y GUI verificadas | Validar recuperacion ante error y politica de microimportes de extremo a extremo |
 | M8F: deshabilitar/reactivar | Soporte y pruebas existentes | Verificar circuito completo OPEX/CAPEX con auditoria y reversion |
-| M10: rendimiento | Exclusion Excel, paginacion y contador de cambios optimizados; benchmarks de carga, filtros, agrupaciones y edicion por lotes con 50.000 filas sinteticas OPEX/CAPEX | Completar mediciones con datos representativos, memoria total y respuesta de la GUI al editar |
+| M10: rendimiento | Exclusion Excel, paginacion, contador y descarte optimizados; benchmarks con 50.000 filas sinteticas y recorrido local de edicion/descarte en pagina OPEX/CAPEX | Completar mediciones con datos representativos, memoria total y respuesta de la ventana completa |
 | M11: Ver cambios | Mejoras implementadas | Validacion funcional de revision de lotes grandes |
 | M12: historial avanzado | Contexto de negocio y tipos de operacion implementados | Confirmar criterios funcionales en ambos modulos |
 | M13: dashboard | Simulacion, Top dinamico y graficos implementados | Conciliar cifras y validar filtros y uso funcional |
@@ -222,3 +223,24 @@ Estas recomendaciones no se consideran implementadas ni sustituyen el roadmap.
   insercion existente y aislamiento de valores mutables en la auditoria.
 - M10 sigue abierto para memoria total y respuesta funcional de la GUI con datos
   representativos. Las altas asistidas siguen reservadas para el final.
+
+## Checkpoint M10: descarte proporcional a las filas modificadas
+
+- Descartar copia solo los originales de las filas modificadas y retira las
+  filas nuevas. Conserva las filas sin cambios y limpia historial/pendientes.
+- Prepara todas las copias antes de modificar el estado: si una copia falla,
+  no deja un descarte parcial. Los valores anidados restaurados siguen siendo
+  independientes del original.
+- Benchmark offline: `python -m tools.benchmark_workspace_discard --rows 50000 --dirty 1`.
+  En datos sinteticos, descartar una fila editada paso de 1,35 s OPEX / 1,46 s
+  CAPEX a menos de 1 ms. El pico de asignaciones Python de esa operacion paso
+  de 46,62 MB a 0,0015 MB; no representa la memoria total de la aplicacion.
+- Recorrido local de PresupuestoPage con 50.000 filas y 250 visibles: edicion
+  mediante el modelo 6 / 15 ms; descarte y recarga 42 / 51 ms OPEX/CAPEX.
+  La confirmacion se acepto programaticamente para la medicion; no incluye tiempo
+  de usuario ni la ventana principal y sus conexiones. Render local revisado.
+- Validacion: 1198 pruebas unitarias aprobadas, 18 excluidas; restauracion mixta
+  de ediciones y estado, retirada de filas nuevas, limpieza de historial,
+  aislamiento de originales y fallo de copia sin mutacion parcial.
+- M10 sigue abierto para memoria total y validacion de la ventana completa con
+  datos representativos. M8G sigue reservado para el final.
