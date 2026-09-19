@@ -7,6 +7,7 @@ from app.models.opex_smart_resolution_plan import (
     OpexSmartBudgetResolutionPlan,
     OpexSmartResolutionPlanIssue,
 )
+from app.config.opex_smart_precision import OPEX_SMART_MONEY_QUANTUM
 from app.services.opex_smart_resolution_service import (
     OpexSmartResolutionError,
     OpexSmartResolutionService,
@@ -14,9 +15,6 @@ from app.services.opex_smart_resolution_service import (
 from app.services.opex_template_distribution_service import (
     OpexTemplateDistributionService,
 )
-
-
-CENT = Decimal("0.01")
 
 
 class OpexSmartResolutionPlanService:
@@ -201,14 +199,14 @@ class OpexSmartResolutionPlanService:
             ),
             Decimal("0"),
         ).quantize(
-            CENT,
+            OPEX_SMART_MONEY_QUANTUM,
             rounding=ROUND_HALF_UP,
         )
 
         target = Decimal(
             budget.monto
         ).quantize(
-            CENT,
+            OPEX_SMART_MONEY_QUANTUM,
             rounding=ROUND_HALF_UP,
         )
 

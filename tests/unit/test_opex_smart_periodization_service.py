@@ -70,6 +70,14 @@ def test_monthly_amount_is_repeated_each_month():
     )
 
 
+@pytest.mark.parametrize("quantum", [Decimal("0.01"), Decimal("0.000000001")])
+def test_negative_subquantum_amount_is_not_silently_rounded_to_zero(quantum):
+    with pytest.raises(OpexSmartPeriodizationError, match="negativo"):
+        OpexSmartPeriodizationService.periodize_row(
+            row(tipo="MENSUAL", monto_ceco=-quantum / 10), quantum=quantum,
+        )
+
+
 def test_annual_amount_is_split_between_twelve_months():
     result = (
         OpexSmartPeriodizationService

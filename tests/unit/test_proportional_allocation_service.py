@@ -99,3 +99,17 @@ def test_negative_source_is_rejected():
                 Decimal("100"),
             )
         )
+
+
+@pytest.mark.parametrize("quantum", [Decimal("0.01"), Decimal("0.000000001")])
+@pytest.mark.parametrize("count", [4, 10, 100])
+def test_rounding_correction_never_creates_negative_rows(quantum, count):
+    target = Decimal(count // 2) * quantum
+    result = ProportionalAllocationService.allocate(
+        [(str(index), Decimal("1")) for index in range(count)] + [("zero", Decimal("0"))],
+        target, quantum=quantum,
+    )
+    assert sum(result.values()) == target
+    assert all(value >= 0 for value in result.values())
+    assert result["zero"] == 0
+    assert all(value == value.quantize(quantum) for value in result.values())
